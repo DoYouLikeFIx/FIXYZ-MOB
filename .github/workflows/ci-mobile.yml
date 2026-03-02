@@ -9,9 +9,6 @@ jobs:
   validate:
     name: validate (node-${{ matrix.node-version }})
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: MOB
     strategy:
       fail-fast: false
       matrix:
@@ -26,7 +23,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-          cache-dependency-path: MOB/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
