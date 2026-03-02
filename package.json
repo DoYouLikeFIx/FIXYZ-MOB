@@ -1,17 +1,40 @@
 {
-  "name": "mob",
-  "version": "1.0.0",
-  "description": "Let's FIX! MOB!",
-  "main": "index.js",
+  "name": "fixyz-mob",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FIXYZ mobile foundation scaffold",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "android": "bash ./scripts/run-android.sh",
+    "ios": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer react-native run-ios --port 8088 --simulator \"${IOS_SIMULATOR:-iPhone 17}\"",
+    "start": "react-native start --port 8088",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "bundle:dry-run": "mkdir -p .tmp/assets && react-native bundle --platform ios --dev true --entry-file index.js --bundle-output .tmp/main.jsbundle --assets-dest .tmp/assets --reset-cache",
+    "ci-mobile": "npm run typecheck && npm run lint && npm run test && npm run bundle:dry-run",
     "prepare": "husky"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "dependencies": {
+    "@react-native-cookies/cookies": "^6.2.1",
+    "react": "19.2.4",
+    "react-native": "0.84.0",
+    "react-native-keychain": "^10.0.0"
+  },
   "devDependencies": {
-    "husky": "^9.1.7"
+    "@react-native-community/cli": "^20.1.2",
+    "@react-native/babel-preset": "0.84.0",
+    "@react-native/metro-config": "0.84.0",
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.7",
+    "eslint": "^9.39.1",
+    "esbuild": "^0.27.0",
+    "globals": "^16.5.0",
+    "husky": "^9.1.7",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.2",
+    "vitest": "^4.0.8"
   }
 }

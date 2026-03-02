@@ -1,3 +1,41 @@
-node_modules/
-
+# macOS
 .DS_Store
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Metro
+.metro-health-check*
+
+# Temp
+.tmp/
+coverage/
+
+# iOS / Xcode
+ios/build/
+ios/**/build/
+ios/DerivedData/
+ios/Pods/
+ios/**/*.xcuserstate
+ios/**/xcuserdata/
+ios/.xcode.env.local
+*.ipa
+
+# Android / Gradle
+android/build/
+android/**/build/
+android/.gradle/
+android/**/.gradle/
+android/.kotlin/
+android/**/.kotlin/
+android/local.properties
+android/**/*.iml
+android/**/*.hprof
+android/**/.cxx/
+android/**/.externalNativeBuild/
+*.keystore
+
+# Local template artifacts
+.eslintrc.rn-template.js
