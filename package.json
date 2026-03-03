@@ -10,6 +10,8 @@
     "start": "react-native start --port 8088",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:collab-webhook": "node --test test/collab-webhook/*.test.js",
+    "lint:collab-webhook": "node --check .github/scripts/collab-webhook/*.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "bundle:dry-run": "mkdir -p .tmp/assets && react-native bundle --platform ios --dev true --entry-file index.js --bundle-output .tmp/main.jsbundle --assets-dest .tmp/assets --reset-cache",
