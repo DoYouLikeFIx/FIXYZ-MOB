@@ -8,7 +8,7 @@ import {
   resolveRuntimeUrlOverride,
 } from '../config/runtime-options';
 
-import { CsrfTokenManager } from './csrf';
+import { CsrfTokenManager, type CsrfBootstrapPayload } from './csrf';
 import { HttpClient } from './http-client';
 import { ReactNativeCookieReader } from './react-native-cookie-manager';
 
@@ -38,7 +38,8 @@ export const createMobileNetworkRuntime = (
     baseUrl,
     cookieManager: cookieReader,
     bootstrapCsrf: async () => {
-      await bootstrapClient.get('/api/v1/auth/csrf');
+      const response = await bootstrapClient.get<CsrfBootstrapPayload>('/api/v1/auth/csrf');
+      return response.body;
     },
   });
 
