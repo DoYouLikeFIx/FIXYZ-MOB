@@ -1,4 +1,8 @@
 import { createAuthApi } from '@/api/auth-api';
+import {
+  getLoginErrorFeedback,
+  resolveAuthErrorPresentation,
+} from '@/auth/auth-errors';
 import { createAuthFlowViewModel } from '@/auth/auth-flow-view-model';
 import { createMobileAuthService } from '@/auth/mobile-auth-service';
 import { InMemoryCookieManager } from '@/network/cookie-manager';
@@ -38,10 +42,14 @@ const errorResponse = (
   code: string,
   message: string,
   detail: string,
+  options?: {
+    traceId?: string;
+  },
 ): Response =>
   jsonResponse(status, {
     success: false,
     data: null,
+    traceId: options?.traceId,
     error: {
       code,
       message,
@@ -405,6 +413,118 @@ describe('E2E tests: mobile auth workflow', () => {
     expect(harness.getNavigationState()).toMatchObject({
       stack: 'auth',
       authRoute: 'login',
+    });
+  });
+
+  it.each([
+    ['AUTH-002', 401, '로그인 시도가 잠겨 있습니다. 잠시 후 다시 시도해 주세요.'],
+    ['RATE-001', 429, '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.'],
+  ])(
+    'maps %s login failures to consistent recoverable feedback',
+    async (code, status, expectedMessage) => {
+      const harness = createHarness((request) => {
+        if (
+          request.method === 'GET' &&
+          getPathname(request.url) === '/api/v1/auth/csrf'
+        ) {
+          return successResponse(200, {
+            token: `csrf-${code}`,
+          });
+        }
+
+        if (
+          request.method === 'POST' &&
+          getPathname(request.url) === '/api/v1/auth/login'
+        ) {
+          return errorResponse(
+            status,
+            code,
+            `${code} backend message`,
+            'Auth guardrail triggered for login',
+          );
+        }
+
+        return notFoundResponse(request);
+      });
+
+      authStore.initialize(null);
+
+      const result = await harness.viewModel.submitLogin({
+        username: 'demo',
+        password: 'wrong-password',
+      });
+
+      expect(result).toMatchObject({
+        success: false,
+      });
+      expect(
+        getLoginErrorFeedback((result as Extract<typeof result, { success: false }>).error),
+      ).toMatchObject({
+        globalMessage: expectedMessage,
+      });
+      expect(authStore.getState()).toMatchObject({
+        status: 'anonymous',
+        member: null,
+      });
+      expect(harness.getNavigationState()).toMatchObject({
+        stack: 'auth',
+        authRoute: 'login',
+      });
+    },
+  );
+
+  it('maps unknown login failures to the safe fallback with a visible correlation id', async () => {
+    const harness = createHarness((request) => {
+      if (
+        request.method === 'GET' &&
+        getPathname(request.url) === '/api/v1/auth/csrf'
+      ) {
+        return successResponse(200, {
+          token: 'csrf-auth-unknown',
+        });
+      }
+
+      if (
+        request.method === 'POST' &&
+        getPathname(request.url) === '/api/v1/auth/login'
+      ) {
+        return errorResponse(
+          500,
+          'AUTH-999',
+          'Raw backend details should not leak',
+          'Unexpected auth subsystem failure',
+          {
+            traceId: 'corr-123',
+          },
+        );
+      }
+
+      return notFoundResponse(request);
+    });
+
+    authStore.initialize(null);
+
+    const result = await harness.viewModel.submitLogin({
+      username: 'demo',
+      password: 'wrong-password',
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+    });
+    expect(
+      getLoginErrorFeedback((result as Extract<typeof result, { success: false }>).error),
+    ).toMatchObject({
+      globalMessage:
+        '로그인을 완료할 수 없습니다. 잠시 후 다시 시도해 주세요. 문제가 계속되면 고객센터에 문의해 주세요. 문의 코드: corr-123',
+    });
+    expect(
+      resolveAuthErrorPresentation(
+        (result as Extract<typeof result, { success: false }>).error,
+      ),
+    ).toMatchObject({
+      semantic: 'unknown',
+      traceId: 'corr-123',
     });
   });
 

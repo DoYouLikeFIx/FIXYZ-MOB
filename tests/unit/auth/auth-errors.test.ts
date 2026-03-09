@@ -1,10 +1,13 @@
+import authErrorContract from '../../../../docs/contracts/auth-error-standardization.json';
 import type { NormalizedHttpError } from '@/network/types';
 import {
   getLoginErrorFeedback,
   getRegisterErrorFeedback,
   getReauthMessage,
   isReauthError,
+  resolveAuthErrorPresentation,
 } from '@/auth/auth-errors';
+import { NETWORK_ERROR_MESSAGE } from '@/network/errors';
 
 const createHttpError = (
   overrides: Partial<NormalizedHttpError> & { message?: string } = {},
@@ -18,11 +21,27 @@ const createHttpError = (
   error.status = overrides.status;
   error.detail = overrides.detail;
   error.retriable = overrides.retriable;
+  error.traceId = overrides.traceId;
 
   return error;
 };
 
 describe('mobile auth error presentation', () => {
+  it.each(authErrorContract.cases)(
+    'matches the mobile auth contract for %s',
+    ({ codes, semantic, recoveryAction, message }) => {
+      for (const code of codes) {
+        const presentation = resolveAuthErrorPresentation(
+          createHttpError({ code, message: `${code} server message` }),
+        );
+
+        expect(presentation.semantic).toBe(semantic);
+        expect(presentation.recoveryAction).toBe(recoveryAction);
+        expect(presentation.message).toBe(message);
+      }
+    },
+  );
+
   it('maps duplicate username failures to the register username field', () => {
     expect(
       getRegisterErrorFeedback(
@@ -71,5 +90,31 @@ describe('mobile auth error presentation', () => {
 
     expect(isReauthError(error)).toBe(true);
     expect(getReauthMessage(error)).toBe('세션이 만료되었습니다. 다시 로그인해 주세요.');
+  });
+
+  it('uses the safe fallback and exposes the correlation id for unknown backend codes', () => {
+    const presentation = resolveAuthErrorPresentation(
+      createHttpError({
+        code: 'AUTH-999',
+        message: 'Raw backend exception should not leak',
+        traceId: 'corr-123',
+      }),
+    );
+
+    expect(presentation.semantic).toBe(authErrorContract.unknownFallback.semantic);
+    expect(presentation.recoveryAction).toBe(
+      authErrorContract.unknownFallback.recoveryAction,
+    );
+    expect(presentation.message).toBe(
+      `${authErrorContract.unknownFallback.message} ${authErrorContract.supportReferenceLabel}: corr-123`,
+    );
+  });
+
+  it('preserves client-generated transport guidance when no backend auth code exists', () => {
+    expect(
+      getLoginErrorFeedback(createHttpError({ message: NETWORK_ERROR_MESSAGE })),
+    ).toMatchObject({
+      globalMessage: NETWORK_ERROR_MESSAGE,
+    });
   });
 });
