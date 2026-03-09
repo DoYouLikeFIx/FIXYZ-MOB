@@ -14,16 +14,42 @@ const hoisted = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../config/environment', () => ({
+vi.mock('@/config/environment', () => ({
   resolveApiBaseUrl: hoisted.resolveApiBaseUrlMock,
   resolveSessionCookiePolicy: hoisted.resolveSessionCookiePolicyMock,
 }));
 
-vi.mock('../network/health', () => ({
+vi.mock('@/config/runtime-options', () => ({
+  resolveRuntimeTarget: () => {
+    const value = process.env.MOB_RUNTIME_TARGET;
+
+    return value === 'android-emulator' ||
+      value === 'ios-simulator' ||
+      value === 'physical-device'
+      ? value
+      : 'ios-simulator';
+  },
+  resolveRuntimeUrlOverride: () => process.env.MOB_API_BASE_URL,
+  shouldEnforceStrictCsrfBootstrap: () => {
+    const value = process.env.MOB_STRICT_CSRF_BOOTSTRAP;
+
+    if (value === 'true' || value === '1' || value === 'yes') {
+      return true;
+    }
+
+    if (value === 'false' || value === '0' || value === 'no') {
+      return false;
+    }
+
+    return process.env.NODE_ENV === 'production';
+  },
+}));
+
+vi.mock('@/network/health', () => ({
   checkHealth: hoisted.checkHealthMock,
 }));
 
-vi.mock('../network/http-client', () => ({
+vi.mock('@/network/http-client', () => ({
   HttpClient: class {
     constructor(input: unknown) {
       void input;
@@ -43,7 +69,7 @@ vi.mock('../network/http-client', () => ({
   },
 }));
 
-vi.mock('../network/csrf', () => ({
+vi.mock('@/network/csrf', () => ({
   CsrfTokenManager: class {
     constructor(input: unknown) {
       void input;
@@ -61,7 +87,7 @@ vi.mock('../network/csrf', () => ({
   },
 }));
 
-vi.mock('../network/react-native-cookie-manager', () => ({
+vi.mock('@/network/react-native-cookie-manager', () => ({
   ReactNativeCookieReader: class {},
 }));
 

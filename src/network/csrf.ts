@@ -1,6 +1,13 @@
 import type { CookieReader } from './cookie-manager';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const DEFAULT_CSRF_HEADER = 'X-XSRF-TOKEN';
+
+export interface CsrfBootstrapPayload {
+  csrfToken?: string;
+  token?: string;
+  headerName?: string;
+}
 
 export class MissingCsrfTokenError extends Error {
   readonly code = 'MOB-CSRF-001';
@@ -14,7 +21,7 @@ export class MissingCsrfTokenError extends Error {
 interface CsrfTokenManagerInput {
   baseUrl: string;
   cookieManager: CookieReader;
-  bootstrapCsrf: () => Promise<void>;
+  bootstrapCsrf: () => Promise<CsrfBootstrapPayload | void>;
 }
 
 export class CsrfTokenManager {
@@ -22,7 +29,11 @@ export class CsrfTokenManager {
 
   private readonly cookieManager: CookieReader;
 
-  private readonly bootstrapCsrfFn: () => Promise<void>;
+  private readonly bootstrapCsrfFn: () => Promise<CsrfBootstrapPayload | void>;
+
+  private cachedToken?: string;
+
+  private csrfHeaderName = DEFAULT_CSRF_HEADER;
 
   constructor(input: CsrfTokenManagerInput) {
     this.baseUrl = input.baseUrl;
@@ -31,15 +42,15 @@ export class CsrfTokenManager {
   }
 
   async onAppColdStart(): Promise<void> {
-    await this.bootstrapCsrfFn();
+    await this.refreshToken();
   }
 
   async onLoginSuccess(): Promise<void> {
-    await this.bootstrapCsrfFn();
+    await this.refreshToken();
   }
 
   async onForegroundResume(): Promise<void> {
-    await this.bootstrapCsrfFn();
+    await this.refreshToken();
   }
 
   async injectHeader(
@@ -55,8 +66,11 @@ export class CsrfTokenManager {
     let token = await this.readXsrfCookie();
 
     if (!token) {
-      await this.bootstrapCsrfFn();
-      token = await this.readXsrfCookie();
+      token = this.cachedToken;
+    }
+
+    if (!token) {
+      token = await this.refreshToken();
     }
 
     if (!token) {
@@ -65,12 +79,30 @@ export class CsrfTokenManager {
 
     return {
       ...headers,
-      'X-XSRF-TOKEN': token,
+      [this.csrfHeaderName]: token,
     };
   }
 
   private async readXsrfCookie(): Promise<string | undefined> {
     const cookies = await this.cookieManager.get(this.baseUrl);
     return cookies['XSRF-TOKEN']?.value;
+  }
+
+  private async refreshToken(): Promise<string | undefined> {
+    const payload = await this.bootstrapCsrfFn();
+    const cookieToken = await this.readXsrfCookie();
+    const bodyToken = payload?.csrfToken ?? payload?.token;
+
+    if (typeof payload?.headerName === 'string' && payload.headerName.trim().length > 0) {
+      this.csrfHeaderName = payload.headerName;
+    }
+
+    const resolvedToken = cookieToken ?? bodyToken;
+
+    if (resolvedToken) {
+      this.cachedToken = resolvedToken;
+    }
+
+    return resolvedToken;
   }
 }

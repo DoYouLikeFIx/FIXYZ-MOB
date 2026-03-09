@@ -1,44 +1,40 @@
-import { useEffect, useState } from 'react';
-import { SafeAreaView, Text } from 'react-native';
+import {
+  useRef,
+} from 'react';
 
-import { bootstrapAppSession } from './src/bootstrap/app-bootstrap';
+import { createMobileAuthRuntime } from './src/auth/create-mobile-auth-runtime';
+import { useAuthFlowViewModel } from './src/auth/use-auth-flow-view-model';
+import {
+  isMotionDisabled,
+  shouldEnforceStrictCsrfBootstrap,
+} from './src/config/runtime-options';
+import { AppNavigator } from './src/navigation/AppNavigator';
 
 const App = () => {
-  const [status, setStatus] = useState('Booting mobile foundation...');
+  const runtimeRef = useRef<ReturnType<typeof createMobileAuthRuntime> | null>(null);
+  const animationsDisabledRef = useRef(isMotionDisabled());
+  const strictCsrfBootstrapRef = useRef(shouldEnforceStrictCsrfBootstrap());
 
-  useEffect(() => {
-    void bootstrapAppSession()
-      .then(() => {
-        setStatus('MOB foundation ready');
-      })
-      .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : 'Unknown bootstrap error';
-        const details: string[] = [];
+  if (runtimeRef.current === null) {
+    runtimeRef.current = createMobileAuthRuntime();
+  }
 
-        if (typeof error === 'object' && error !== null) {
-          const candidate = error as {
-            status?: unknown;
-            code?: unknown;
-          };
-
-          if (typeof candidate.status === 'number') {
-            details.push(`status=${candidate.status}`);
-          }
-
-          if (typeof candidate.code === 'string' && candidate.code.length > 0) {
-            details.push(`code=${candidate.code}`);
-          }
-        }
-
-        const diagnostics = details.length > 0 ? ` (${details.join(', ')})` : '';
-        setStatus(`Bootstrap failed: ${message}${diagnostics}`);
-      });
-  }, []);
+  const authFlow = useAuthFlowViewModel({
+    authApi: runtimeRef.current.authApi,
+    csrfManager: runtimeRef.current.csrfManager,
+    appBootstrap: {
+      baseUrl: runtimeRef.current.baseUrl,
+      client: runtimeRef.current.client,
+      csrfManager: runtimeRef.current.csrfManager,
+      strictCsrfBootstrap: strictCsrfBootstrapRef.current,
+    },
+  });
 
   return (
-    <SafeAreaView>
-      <Text>{status}</Text>
-    </SafeAreaView>
+    <AppNavigator
+      animationsDisabled={animationsDisabledRef.current}
+      {...authFlow}
+    />
   );
 };
 

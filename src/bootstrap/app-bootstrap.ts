@@ -1,55 +1,7 @@
-import {
-  resolveApiBaseUrl,
-  resolveSessionCookiePolicy,
-  type RuntimeTarget,
-} from '../config/environment';
-import { CsrfTokenManager } from '../network/csrf';
+import type { CsrfTokenManager } from '../network/csrf';
 import { checkHealth } from '../network/health';
-import { HttpClient } from '../network/http-client';
-import { ReactNativeCookieReader } from '../network/react-native-cookie-manager';
+import type { HealthClient } from '../network/health';
 import type { NormalizedHttpError } from '../network/types';
-
-const getRuntimeTarget = (): RuntimeTarget => {
-  const value = process.env.MOB_RUNTIME_TARGET;
-
-  if (
-    value === 'android-emulator' ||
-    value === 'ios-simulator' ||
-    value === 'physical-device'
-  ) {
-    return value;
-  }
-
-  return 'ios-simulator';
-};
-
-const toBoolean = (value: string | undefined): boolean | undefined => {
-  if (!value) {
-    return undefined;
-  }
-
-  const normalized = value.trim().toLowerCase();
-
-  if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
-    return true;
-  }
-
-  if (normalized === 'false' || normalized === '0' || normalized === 'no') {
-    return false;
-  }
-
-  return undefined;
-};
-
-const shouldEnforceStrictCsrfBootstrap = (): boolean => {
-  const override = toBoolean(process.env.MOB_STRICT_CSRF_BOOTSTRAP);
-
-  if (override !== undefined) {
-    return override;
-  }
-
-  return process.env.NODE_ENV === 'production';
-};
 
 const isMissingCsrfEndpointError = (error: unknown): boolean => {
   if (!(error instanceof Error)) {
@@ -60,49 +12,47 @@ const isMissingCsrfEndpointError = (error: unknown): boolean => {
   return status === 404;
 };
 
-export const bootstrapAppSession = async (): Promise<void> => {
-  const target = getRuntimeTarget();
-  const baseUrl = resolveApiBaseUrl({
-    target,
-    lanIp: process.env.MOB_LAN_IP,
-    overrideUrl: process.env.MOB_API_BASE_URL,
-  });
+export interface AppBootstrapRuntime {
+  baseUrl: string;
+  client: HealthClient;
+  csrfManager: Pick<CsrfTokenManager, 'onAppColdStart'>;
+  strictCsrfBootstrap?: boolean;
+}
 
-  const cookiePolicy = resolveSessionCookiePolicy(baseUrl);
-  const cookieReader = new ReactNativeCookieReader();
-  const bootstrapClient = new HttpClient({
-    baseUrl,
-    cookiePolicy,
-  });
+const createDefaultRuntime = async (): Promise<AppBootstrapRuntime> => {
+  const { createMobileNetworkRuntime } = await import('../network/create-mobile-network-runtime');
+  const runtime = createMobileNetworkRuntime();
 
-  const csrf = new CsrfTokenManager({
-    baseUrl,
-    cookieManager: cookieReader,
-    bootstrapCsrf: async () => {
-      await bootstrapClient.get('/api/v1/auth/csrf');
-    },
-  });
+  return {
+    baseUrl: runtime.baseUrl,
+    client: runtime.client,
+    csrfManager: runtime.csrfManager,
+  };
+};
 
-  const client = new HttpClient({
-    baseUrl,
-    csrfManager: csrf,
-    cookiePolicy,
-  });
+export const bootstrapAppSession = async (
+  runtime?: AppBootstrapRuntime,
+): Promise<void> => {
+  const resolvedRuntime = runtime ?? await createDefaultRuntime();
 
   try {
-    await csrf.onAppColdStart();
+    await resolvedRuntime.csrfManager.onAppColdStart();
   } catch (error: unknown) {
+    const strictCsrfBootstrap =
+      resolvedRuntime.strictCsrfBootstrap ??
+      (await import('../config/runtime-options')).shouldEnforceStrictCsrfBootstrap();
+
     if (
-      !shouldEnforceStrictCsrfBootstrap() &&
+      !strictCsrfBootstrap &&
       isMissingCsrfEndpointError(error)
     ) {
       console.info(
-        `[MOB] Skipping CSRF bootstrap at ${baseUrl}/api/v1/auth/csrf because endpoint returned 404.`,
+        `[MOB] Skipping CSRF bootstrap at ${resolvedRuntime.baseUrl}/api/v1/auth/csrf because endpoint returned 404.`,
       );
     } else {
       throw error;
     }
   }
 
-  await checkHealth(client);
+  await checkHealth(resolvedRuntime.client);
 };

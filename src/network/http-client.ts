@@ -112,7 +112,11 @@ export class HttpClient {
       ...(options.headers ?? {}),
     };
 
-    if (options.body !== undefined && !Object.hasOwn(headers, 'Content-Type')) {
+    if (
+      options.body !== undefined
+      && typeof options.body !== 'string'
+      && !Object.hasOwn(headers, 'Content-Type')
+    ) {
       headers['Content-Type'] = 'application/json';
     }
 
@@ -123,13 +127,19 @@ export class HttpClient {
     const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const requestBody: RequestInit['body'] =
+      options.body === undefined
+        ? undefined
+        : typeof options.body === 'string'
+          ? options.body
+          : JSON.stringify(options.body);
 
     try {
       const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
       const response = await this.fetchFn(url, {
         method,
         headers: finalHeaders,
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        body: requestBody,
         credentials: 'include',
         signal: controller.signal,
       });

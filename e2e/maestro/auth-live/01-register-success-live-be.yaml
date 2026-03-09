@@ -1,0 +1,71 @@
+appId: org.reactjs.native.example.FIXYZMob
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    arguments:
+      mobApiBaseUrl: ${LIVE_API_BASE_URL}
+      mobDisableAnimations: true
+- extendedWaitUntil:
+    visible: "새 계정 만들기"
+    timeout: 20000
+- tapOn: "새 계정 만들기"
+- extendedWaitUntil:
+    visible:
+      id: register-username
+    timeout: 10000
+- tapOn:
+    id: register-username
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: ${LIVE_USERNAME}
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: register-email
+    timeout: 10000
+- tapOn:
+    id: register-email
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: ${LIVE_EMAIL}
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: register-name
+    timeout: 10000
+- tapOn:
+    id: register-name
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: ${LIVE_NAME}
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: register-password
+    timeout: 10000
+- tapOn:
+    id: register-password
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: ${LIVE_PASSWORD}
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: register-password-confirm
+    timeout: 10000
+- tapOn:
+    id: register-password-confirm
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: ${LIVE_PASSWORD}
+- pressKey: Enter
+- tapOn:
+    text: "지금 안 함"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: protected-area-title
+    timeout: 20000
+- assertVisible: "가입 완료"
+- assertVisible: "${LIVE_NAME}님, 보호된 영역에 접근했습니다"

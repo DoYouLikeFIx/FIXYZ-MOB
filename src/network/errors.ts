@@ -14,6 +14,14 @@ interface NormalizeHttpErrorInput {
   network?: boolean;
 }
 
+interface DirectApiErrorPayload {
+  code?: string;
+  message?: string;
+  path?: string;
+  correlationId?: string;
+  timestamp?: string;
+}
+
 const buildNormalizedError = (
   message: string,
   options?: {
@@ -49,6 +57,21 @@ const isApiResponseEnvelope = (
   );
 };
 
+const isDirectApiErrorPayload = (
+  value: unknown,
+): value is DirectApiErrorPayload => {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return (
+    typeof candidate.code === 'string' &&
+    typeof candidate.message === 'string'
+  );
+};
+
 export const normalizeHttpError = (
   input: NormalizeHttpErrorInput,
 ): NormalizedHttpError => {
@@ -72,6 +95,17 @@ export const normalizeHttpError = (
       {
         code: input.data.error.code,
         detail: input.data.error.detail,
+        status: input.status,
+      },
+    );
+  }
+
+  if (isDirectApiErrorPayload(input.data)) {
+    return buildNormalizedError(
+      input.data.message || DEFAULT_SERVER_ERROR_MESSAGE,
+      {
+        code: input.data.code,
+        detail: input.data.path,
         status: input.status,
       },
     );
