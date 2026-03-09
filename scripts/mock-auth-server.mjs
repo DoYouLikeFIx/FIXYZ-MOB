@@ -60,6 +60,20 @@ const loginProfiles = new Map([
     },
   ],
   [
+    'new_login_kickout',
+    {
+      sessionMode: 'new-login-kickout',
+      member: {
+        memberUuid: 'member-005',
+        username: 'new_login_kickout',
+        email: 'kickout@fix.com',
+        name: 'Kickout User',
+        role: 'ROLE_USER',
+        totpEnrolled: false,
+      },
+    },
+  ],
+  [
     'new_user_success',
     {
       sessionMode: 'valid',
@@ -312,6 +326,19 @@ const server = http.createServer(async (request, response) => {
           'CHANNEL-001',
           'Redis session expired',
           'This mock session is configured to expire on resume validation.',
+        ),
+      );
+      return;
+    }
+
+    if (profile.sessionMode === 'new-login-kickout') {
+      writeJson(
+        response,
+        401,
+        errorEnvelope(
+          'AUTH-016',
+          'Session invalidated by another login',
+          'This mock session was invalidated by a newer login on another device.',
         ),
       );
       return;
