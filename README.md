@@ -45,3 +45,30 @@ Use `npm run ci-mobile` for install-time quality checks:
 4. bundle dry-run (simulator launch intentionally skipped)
 
 Manual simulator/device smoke evidence is required in PR for AC1.
+
+## Simulator UI Automation
+
+Story 1.4 now includes Maestro-based iOS simulator coverage for the real mobile UI flow.
+
+- Command: `npm run e2e:maestro:auth`
+- Tooling:
+  - Maestro CLI in `$HOME/.maestro/bin`
+  - Xcode app installed at `/Applications/Xcode.app`
+  - iOS simulator available (default: `iPhone 17`)
+- What the command does:
+  1. starts Metro on `8088` if it is not already running
+  2. starts a local mock auth server on `127.0.0.1:18080`
+  3. builds/launches the iOS simulator app
+  4. runs the Maestro flows in `e2e/maestro/auth`
+
+The app reads Maestro launch arguments through `react-native-launch-arguments`, so the suite can point the auth runtime at the mock server without needing port `8080` to be free.
+
+The login form also supports keyboard `Enter` submission, which the Maestro flows use to avoid brittle button taps while the iOS password manager is presenting or dismissing system UI.
+
+The mock auth server validates the CSRF cookie/header contract and drives Story 1.4 scenarios by credential:
+
+- `demo` -> successful login
+- `new_user_success` -> successful register + follow-up login
+- `taken_user` -> duplicate username error
+- `reauth_refresh` -> successful login, then deterministic re-auth on protected refresh
+- `stale_resume` -> successful login, then stale-session rejection on app resume
