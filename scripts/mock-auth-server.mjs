@@ -91,7 +91,25 @@ const loginProfiles = new Map([
 
 const sessions = new Map();
 
-const readJsonBody = async (request) => {
+class InvalidRequestBodyError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'InvalidRequestBodyError';
+  }
+}
+
+const parseUrlEncodedBody = (bodyString) => {
+  const params = new URLSearchParams(bodyString);
+  const body = {};
+
+  for (const [key, value] of params.entries()) {
+    body[key] = value;
+  }
+
+  return body;
+};
+
+const readRequestBody = async (request) => {
   const chunks = [];
 
   for await (const chunk of request) {
@@ -102,7 +120,53 @@ const readJsonBody = async (request) => {
     return {};
   }
 
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  const bodyString = Buffer.concat(chunks).toString('utf8');
+  const contentType = String(request.headers['content-type'] ?? '').toLowerCase();
+
+  if (contentType.includes('application/json')) {
+    try {
+      return JSON.parse(bodyString);
+    } catch {
+      throw new InvalidRequestBodyError('Expected a valid JSON request body.');
+    }
+  }
+
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    return parseUrlEncodedBody(bodyString);
+  }
+
+  try {
+    return JSON.parse(bodyString);
+  } catch {
+    if (bodyString.includes('=')) {
+      return parseUrlEncodedBody(bodyString);
+    }
+
+    throw new InvalidRequestBodyError(
+      'Mock auth server accepts JSON or application/x-www-form-urlencoded request bodies.',
+    );
+  }
+};
+
+const readMutationBody = async (request, response) => {
+  try {
+    return await readRequestBody(request);
+  } catch (error) {
+    if (error instanceof InvalidRequestBodyError) {
+      writeJson(
+        response,
+        400,
+        errorEnvelope(
+          'VALIDATION-001',
+          'Invalid request payload',
+          error.message,
+        ),
+      );
+      return null;
+    }
+
+    throw error;
+  }
 };
 
 const parseCookies = (cookieHeader) => {
@@ -204,7 +268,12 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
-    const body = await readJsonBody(request);
+    const body = await readMutationBody(request, response);
+
+    if (!body) {
+      return;
+    }
+
     const username = typeof body.username === 'string' ? body.username.trim() : '';
     const password = typeof body.password === 'string' ? body.password : '';
     const profile = loginProfiles.get(username);
@@ -235,7 +304,12 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
-    const body = await readJsonBody(request);
+    const body = await readMutationBody(request, response);
+
+    if (!body) {
+      return;
+    }
+
     const username = typeof body.username === 'string' ? body.username.trim() : '';
     const email = typeof body.email === 'string' ? body.email.trim() : '';
     const name = typeof body.name === 'string' ? body.name.trim() : '';
