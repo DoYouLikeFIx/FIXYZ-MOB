@@ -29,6 +29,7 @@ const buildNormalizedError = (
     detail?: string;
     status?: number;
     retriable?: boolean;
+    traceId?: string;
   },
 ): NormalizedHttpError => {
   const normalized = new Error(message) as NormalizedHttpError;
@@ -37,6 +38,7 @@ const buildNormalizedError = (
   normalized.detail = options?.detail;
   normalized.status = options?.status;
   normalized.retriable = options?.retriable;
+  normalized.traceId = options?.traceId;
 
   return normalized;
 };
@@ -96,6 +98,7 @@ export const normalizeHttpError = (
         code: input.data.error.code,
         detail: input.data.error.detail,
         status: input.status,
+        traceId: input.data.traceId,
       },
     );
   }
@@ -107,6 +110,7 @@ export const normalizeHttpError = (
         code: input.data.code,
         detail: input.data.path,
         status: input.status,
+        traceId: input.data.correlationId,
       },
     );
   }
