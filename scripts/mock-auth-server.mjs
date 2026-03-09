@@ -272,6 +272,11 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (url.pathname === '/actuator/health') {
+    writeJson(response, 200, { status: 'UP' });
+    return;
+  }
+
   if (method === 'GET' && url.pathname === '/api/v1/auth/csrf') {
     const token = `csrf-${crypto.randomUUID()}`;
     writeJson(response, 200, successEnvelope({ csrfToken: token }), {
