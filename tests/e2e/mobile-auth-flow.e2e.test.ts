@@ -148,6 +148,12 @@ const createHarness = (
   const authService = createMobileAuthService({
     authApi,
     csrfManager,
+    appBootstrap: {
+      baseUrl,
+      client: bootstrapClient,
+      csrfManager,
+      strictCsrfBootstrap: false,
+    },
   });
   const viewModel = createAuthFlowViewModel({
     authService,

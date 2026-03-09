@@ -2,6 +2,7 @@ import {
   createMobileAuthService,
   type AuthApi,
 } from '@/auth/mobile-auth-service';
+import type { HealthClient } from '@/network/health';
 import type { CsrfTokenManager } from '@/network/csrf';
 import type { NormalizedHttpError } from '@/network/types';
 
@@ -29,19 +30,85 @@ describe('mobile auth service', () => {
   };
 
   const csrfManager = {
+    onAppColdStart: vi.fn(async () => {}),
     onForegroundResume: vi.fn(async () => {}),
-  } as Pick<CsrfTokenManager, 'onForegroundResume'>;
+  } as Pick<CsrfTokenManager, 'onAppColdStart' | 'onForegroundResume'>;
+
+  const healthClient = {
+    get: vi.fn(async () => ({
+      statusCode: 200,
+      body: { status: 'UP' },
+    })),
+  } as HealthClient;
 
   const service = createMobileAuthService({
     authApi,
     csrfManager,
+    appBootstrap: {
+      baseUrl: 'http://localhost:8080',
+      client: healthClient,
+      csrfManager,
+      strictCsrfBootstrap: false,
+    },
   });
 
   beforeEach(() => {
     vi.mocked(authApi.fetchSession).mockReset();
     vi.mocked(authApi.loginMember).mockReset();
     vi.mocked(authApi.registerMember).mockReset();
+    vi.mocked(csrfManager.onAppColdStart).mockClear();
     vi.mocked(csrfManager.onForegroundResume).mockClear();
+    vi.mocked(healthClient.get).mockClear();
+    vi.mocked(healthClient.get).mockResolvedValue({
+      statusCode: 200,
+      body: { status: 'UP' },
+    });
+  });
+
+  it('performs cold-start csrf bootstrap and health check before session recovery', async () => {
+    vi.mocked(authApi.fetchSession).mockResolvedValue({
+      memberUuid: 'member-001',
+      username: 'demo',
+      email: 'demo@fix.com',
+      name: 'Demo User',
+      role: 'ROLE_USER',
+      totpEnrolled: false,
+    });
+
+    const result = await service.bootstrap();
+
+    expect(vi.mocked(csrfManager.onAppColdStart)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(healthClient.get)).toHaveBeenCalledWith(
+      '/actuator/health',
+      expect.objectContaining({
+        timeoutMs: expect.any(Number),
+      }),
+    );
+    expect(result).toMatchObject({
+      recoveredSession: true,
+      member: {
+        username: 'demo',
+      },
+      error: null,
+    });
+  });
+
+  it('surfaces cold-start bootstrap failures before session recovery', async () => {
+    const error = createHttpError({
+      code: 'SYS-001',
+      status: 500,
+      message: 'Bootstrap failed',
+    });
+    vi.mocked(csrfManager.onAppColdStart).mockRejectedValue(error);
+
+    const result = await service.bootstrap();
+
+    expect(result).toEqual({
+      recoveredSession: false,
+      member: null,
+      error,
+    });
+    expect(vi.mocked(authApi.fetchSession)).not.toHaveBeenCalled();
   });
 
   it('returns the authenticated member when login succeeds', async () => {
