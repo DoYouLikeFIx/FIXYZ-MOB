@@ -16,78 +16,95 @@ if (!Number.isInteger(port) || port <= 0) {
 
 const VALID_PASSWORD = 'Test1234!';
 
-const loginProfiles = new Map([
-  [
-    'demo',
-    {
-      sessionMode: 'valid',
-      member: {
-        memberUuid: 'member-001',
-        username: 'demo',
-        email: 'demo@fix.com',
-        name: 'Demo User',
-        role: 'ROLE_USER',
-        totpEnrolled: false,
-      },
-    },
-  ],
-  [
-    'reauth_refresh',
-    {
-      sessionMode: 'reauth',
-      member: {
-        memberUuid: 'member-002',
-        username: 'reauth_refresh',
-        email: 'reauth@fix.com',
-        name: 'Reauth Refresh',
-        role: 'ROLE_USER',
-        totpEnrolled: false,
-      },
-    },
-  ],
-  [
-    'stale_resume',
-    {
-      sessionMode: 'stale',
-      member: {
-        memberUuid: 'member-003',
-        username: 'stale_resume',
-        email: 'stale@fix.com',
-        name: 'Stale Resume',
-        role: 'ROLE_USER',
-        totpEnrolled: false,
-      },
-    },
-  ],
-  [
-    'new_login_kickout',
-    {
-      sessionMode: 'new-login-kickout',
-      member: {
-        memberUuid: 'member-005',
-        username: 'new_login_kickout',
-        email: 'kickout@fix.com',
-        name: 'Kickout User',
-        role: 'ROLE_USER',
-        totpEnrolled: false,
-      },
-    },
-  ],
-  [
-    'new_user_success',
-    {
-      sessionMode: 'valid',
-      member: {
-        memberUuid: 'member-004',
-        username: 'new_user_success',
-        email: 'new-success@fix.com',
-        name: 'New User',
-        role: 'ROLE_USER',
-        totpEnrolled: false,
-      },
-    },
-  ],
-]);
+const normalizeIdentifier = (value) => value.trim().toLowerCase();
+
+const resolveUsername = (email) => {
+  const atIndex = email.indexOf('@');
+
+  if (atIndex > 0) {
+    return email.slice(0, atIndex);
+  }
+
+  return email;
+};
+
+const createProfile = ({
+  memberUuid,
+  username,
+  email,
+  name,
+  sessionMode = 'valid',
+  aliases = [],
+}) => ({
+  sessionMode,
+  aliases,
+  member: {
+    memberUuid,
+    username,
+    email,
+    name,
+    role: 'ROLE_USER',
+    totpEnrolled: false,
+  },
+});
+
+const profilesByLogin = new Map();
+const profilesByEmail = new Map();
+
+const indexProfile = (profile) => {
+  const keys = new Set([
+    profile.member.email,
+    profile.member.username,
+    ...profile.aliases,
+  ]);
+
+  for (const key of keys) {
+    profilesByLogin.set(normalizeIdentifier(key), profile);
+  }
+
+  profilesByEmail.set(normalizeIdentifier(profile.member.email), profile);
+};
+
+[
+  createProfile({
+    memberUuid: 'member-001',
+    username: 'demo',
+    email: 'demo@fix.com',
+    name: 'Demo User',
+    aliases: ['demo'],
+  }),
+  createProfile({
+    memberUuid: 'member-002',
+    username: 'reauth_refresh',
+    email: 'reauth@fix.com',
+    name: 'Reauth Refresh',
+    sessionMode: 'reauth',
+    aliases: ['reauth_refresh'],
+  }),
+  createProfile({
+    memberUuid: 'member-003',
+    username: 'stale_resume',
+    email: 'stale@fix.com',
+    name: 'Stale Resume',
+    sessionMode: 'stale',
+    aliases: ['stale_resume'],
+  }),
+  createProfile({
+    memberUuid: 'member-005',
+    username: 'new_login_kickout',
+    email: 'kickout@fix.com',
+    name: 'Kickout User',
+    sessionMode: 'new-login-kickout',
+    aliases: ['new_login_kickout'],
+  }),
+  createProfile({
+    memberUuid: 'member-006',
+    username: 'taken_user',
+    email: 'taken-user@fix.com',
+    name: 'Taken User',
+    aliases: ['taken_user'],
+  }),
+].forEach(indexProfile);
 
 const sessions = new Map();
 
@@ -274,9 +291,14 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
-    const username = typeof body.username === 'string' ? body.username.trim() : '';
+    const identifier =
+      typeof body.email === 'string'
+        ? normalizeIdentifier(body.email)
+        : typeof body.username === 'string'
+          ? normalizeIdentifier(body.username)
+          : '';
     const password = typeof body.password === 'string' ? body.password : '';
-    const profile = loginProfiles.get(username);
+    const profile = profilesByLogin.get(identifier);
 
     if (!profile || password !== VALID_PASSWORD) {
       writeJson(
@@ -310,25 +332,11 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
-    const username = typeof body.username === 'string' ? body.username.trim() : '';
-    const email = typeof body.email === 'string' ? body.email.trim() : '';
+    const email = typeof body.email === 'string' ? normalizeIdentifier(body.email) : '';
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const password = typeof body.password === 'string' ? body.password : '';
 
-    if (username === 'taken_user') {
-      writeJson(
-        response,
-        409,
-        errorEnvelope(
-          'AUTH-008',
-          'Username already exists',
-          'The chosen username is already in use.',
-        ),
-      );
-      return;
-    }
-
-    if (!username || !email || !name || password !== VALID_PASSWORD) {
+    if (!email || !name || password !== VALID_PASSWORD) {
       writeJson(
         response,
         400,
@@ -341,23 +349,32 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
-    const profile =
-      loginProfiles.get(username) ??
-      {
-        sessionMode: 'valid',
-        member: {
-          memberUuid: `member-${crypto.randomUUID()}`,
-          username,
-          email,
-          name,
-          role: 'ROLE_USER',
-          totpEnrolled: false,
-        },
-      };
+    const existingProfile = profilesByEmail.get(email);
 
-    loginProfiles.set(username, profile);
+    if (existingProfile) {
+      writeJson(
+        response,
+        400,
+        errorEnvelope(
+          'BAD_REQUEST',
+          'member already exists',
+          'Duplicate email',
+        ),
+      );
+      return;
+    }
 
-    writeJson(response, 200, successEnvelope(profile.member));
+    const profile = createProfile({
+      memberUuid: `member-${crypto.randomUUID()}`,
+      username: resolveUsername(email),
+      email,
+      name,
+      aliases: [resolveUsername(email)],
+    });
+
+    indexProfile(profile);
+
+    writeJson(response, 201, successEnvelope(profile.member));
     return;
   }
 

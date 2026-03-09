@@ -69,8 +69,8 @@ The login form also supports keyboard `Enter` submission, which the Maestro flow
 The mock auth server validates the CSRF cookie/header contract and drives Story 1.4 scenarios by credential:
 
 - `demo` -> successful login
-- `new_user_success` -> successful register + follow-up login
-- `taken_user` -> duplicate username error
+- fresh register emails such as `new-success@fix.com` -> successful register + follow-up login
+- `taken-user@fix.com` -> duplicate email error on register
 - `reauth_refresh` -> successful login, then deterministic re-auth on protected refresh
 - `stale_resume` -> successful login, then stale-session rejection on app resume
 - `new_login_kickout` -> successful login, then forced re-auth after server-side invalidation by a newer login
