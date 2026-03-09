@@ -134,7 +134,7 @@ describe('mobile auth controller', () => {
     expect(result.success).toBe(true);
     expect(vi.mocked(authApi.registerMember)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(authApi.loginMember)).toHaveBeenCalledWith({
-      username: 'new_user',
+      username: 'new@fix.com',
       password: 'Test1234!',
     });
     expect(navigationState).toMatchObject({

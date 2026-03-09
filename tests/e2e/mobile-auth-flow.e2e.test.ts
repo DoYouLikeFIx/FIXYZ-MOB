@@ -78,6 +78,12 @@ const findCall = (
     (call) => call.method === method && getPathname(call.url) === pathname,
   );
 
+const getFormBody = (body: string | undefined) =>
+  Object.fromEntries(new URLSearchParams(body ?? '').entries());
+
+const readCsrfToken = (payload: { csrfToken?: string; token?: string }) =>
+  payload.csrfToken ?? payload.token ?? '';
+
 const memberFixture: Member = {
   memberUuid: 'member-001',
   username: 'demo',
@@ -118,10 +124,10 @@ const createHarness = (
     baseUrl,
     cookieManager,
     bootstrapCsrf: async () => {
-      const response = await bootstrapClient.get<{ csrfToken: string }>(
+      const response = await bootstrapClient.get<{ csrfToken?: string; token?: string }>(
         '/api/v1/auth/csrf',
       );
-      cookieManager.setCookie(baseUrl, 'XSRF-TOKEN', response.body.csrfToken);
+      cookieManager.setCookie(baseUrl, 'XSRF-TOKEN', readCsrfToken(response.body));
     },
   });
 
@@ -187,13 +193,24 @@ describe('E2E tests: mobile auth workflow', () => {
         csrfTokenVersion += 1;
 
         return successResponse(200, {
-          csrfToken: `csrf-login-${csrfTokenVersion}`,
+          token: `csrf-login-${csrfTokenVersion}`,
         });
       }
 
       if (
         request.method === 'POST' &&
         getPathname(request.url) === '/api/v1/auth/login'
+      ) {
+        return successResponse(200, {
+          memberId: 1,
+          email: 'demo@fix.com',
+          name: 'Demo User',
+        });
+      }
+
+      if (
+        request.method === 'GET' &&
+        getPathname(request.url) === '/api/v1/auth/session'
       ) {
         return successResponse(200, memberFixture);
       }
@@ -225,6 +242,10 @@ describe('E2E tests: mobile auth workflow', () => {
         (call) => getPathname(call.url) === '/api/v1/auth/csrf',
       ),
     ).toHaveLength(2);
+    expect(getFormBody(loginCall?.body)).toEqual({
+      email: 'demo',
+      password: 'Test1234!',
+    });
 
     await expect(harness.cookieManager.get(harness.baseUrl)).resolves.toMatchObject({
       'XSRF-TOKEN': {
@@ -244,7 +265,7 @@ describe('E2E tests: mobile auth workflow', () => {
         csrfTokenVersion += 1;
 
         return successResponse(200, {
-          csrfToken: `csrf-register-${csrfTokenVersion}`,
+          token: `csrf-register-${csrfTokenVersion}`,
         });
       }
 
@@ -253,8 +274,7 @@ describe('E2E tests: mobile auth workflow', () => {
         getPathname(request.url) === '/api/v1/auth/register'
       ) {
         return successResponse(200, {
-          ...memberFixture,
-          username: 'new_user',
+          memberId: 2,
           email: 'new@fix.com',
           name: 'New User',
         });
@@ -265,8 +285,19 @@ describe('E2E tests: mobile auth workflow', () => {
         getPathname(request.url) === '/api/v1/auth/login'
       ) {
         return successResponse(200, {
+          memberId: 2,
+          email: 'new@fix.com',
+          name: 'New User',
+        });
+      }
+
+      if (
+        request.method === 'GET' &&
+        getPathname(request.url) === '/api/v1/auth/session'
+      ) {
+        return successResponse(200, {
           ...memberFixture,
-          username: 'new_user',
+          username: 'new',
           email: 'new@fix.com',
           name: 'New User',
         });
@@ -290,7 +321,7 @@ describe('E2E tests: mobile auth workflow', () => {
       status: 'authenticated',
       member: {
         ...memberFixture,
-        username: 'new_user',
+        username: 'new',
         email: 'new@fix.com',
         name: 'New User',
       },
@@ -305,14 +336,13 @@ describe('E2E tests: mobile auth workflow', () => {
 
     expect(registerCall?.headers['X-XSRF-TOKEN']).toBe('csrf-register-1');
     expect(loginCall?.headers['X-XSRF-TOKEN']).toBe('csrf-register-1');
-    expect(JSON.parse(registerCall?.body ?? '{}')).toEqual({
-      username: 'new_user',
+    expect(getFormBody(registerCall?.body)).toEqual({
       email: 'new@fix.com',
       name: 'New User',
       password: 'Test1234!',
     });
-    expect(JSON.parse(loginCall?.body ?? '{}')).toEqual({
-      username: 'new_user',
+    expect(getFormBody(loginCall?.body)).toEqual({
+      email: 'new@fix.com',
       password: 'Test1234!',
     });
   });
@@ -324,7 +354,7 @@ describe('E2E tests: mobile auth workflow', () => {
         getPathname(request.url) === '/api/v1/auth/csrf'
       ) {
         return successResponse(200, {
-          csrfToken: 'csrf-invalid-login',
+          token: 'csrf-invalid-login',
         });
       }
 
@@ -371,7 +401,7 @@ describe('E2E tests: mobile auth workflow', () => {
         getPathname(request.url) === '/api/v1/auth/csrf'
       ) {
         return successResponse(200, {
-          csrfToken: 'csrf-register-error',
+          token: 'csrf-register-error',
         });
       }
 
@@ -380,10 +410,10 @@ describe('E2E tests: mobile auth workflow', () => {
         getPathname(request.url) === '/api/v1/auth/register'
       ) {
         return errorResponse(
-          409,
-          'AUTH-008',
-          'Username already exists',
-          'Duplicate username',
+          400,
+          'BAD_REQUEST',
+          'member already exists',
+          'Duplicate email',
         );
       }
 
@@ -401,9 +431,9 @@ describe('E2E tests: mobile auth workflow', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.feedback.fieldErrors.username).toBe(true);
-    expect(result.feedback.fieldMessages.username).toBe(
-      '이미 사용 중인 아이디입니다. 다른 아이디를 선택해 주세요.',
+    expect(result.feedback.fieldErrors.email).toBe(true);
+    expect(result.feedback.fieldMessages.email).toBe(
+      '이미 가입된 이메일입니다. 다른 이메일을 입력해 주세요.',
     );
     expect(findCall(harness.calls, '/api/v1/auth/login', 'POST')).toBeUndefined();
   });
@@ -445,6 +475,43 @@ describe('E2E tests: mobile auth workflow', () => {
     });
   });
 
+  it('treats sessions invalidated by a newer login as deterministic re-auth flows', async () => {
+    const harness = createHarness((request) => {
+      if (
+        request.method === 'GET' &&
+        getPathname(request.url) === '/api/v1/auth/session'
+      ) {
+        return errorResponse(
+          401,
+          'AUTH-016',
+          'Session invalidated by another login',
+          'Existing session was invalidated by a newer device login',
+        );
+      }
+
+      return notFoundResponse(request);
+    });
+
+    harness.setAuthenticatedState();
+
+    const result = await harness.controller.refreshProtectedSession();
+
+    expect(result).toEqual({
+      status: 'reauth',
+      errorMessage: null,
+    });
+    expect(authStore.getState()).toMatchObject({
+      status: 'anonymous',
+      member: null,
+      reauthMessage: '세션이 만료되었습니다. 다시 로그인해 주세요.',
+    });
+    expect(harness.getNavigationState()).toMatchObject({
+      stack: 'auth',
+      authRoute: 'login',
+      pendingProtectedRoute: 'portfolio',
+    });
+  });
+
   it('revalidates the session on app resume and rejects stale sessions deterministically', async () => {
     const harness = createHarness((request) => {
       if (
@@ -452,7 +519,7 @@ describe('E2E tests: mobile auth workflow', () => {
         getPathname(request.url) === '/api/v1/auth/csrf'
       ) {
         return successResponse(200, {
-          csrfToken: 'csrf-resume',
+          token: 'csrf-resume',
         });
       }
 

@@ -41,6 +41,14 @@ describe('auth api', () => {
   it('logs in a member and refreshes csrf bootstrap state for subsequent protected calls', async () => {
     client.post.mockResolvedValue({
       statusCode: 200,
+      body: {
+        memberId: 1,
+        email: 'demo@fix.com',
+        name: 'Demo User',
+      },
+    });
+    client.get.mockResolvedValue({
+      statusCode: 200,
       body: memberFixture,
     });
 
@@ -53,17 +61,27 @@ describe('auth api', () => {
       }),
     ).resolves.toEqual(memberFixture);
 
-    expect(client.post).toHaveBeenCalledWith('/api/v1/auth/login', {
-      username: 'demo',
-      password: 'Test1234!',
-    });
+    expect(client.post).toHaveBeenCalledWith(
+      '/api/v1/auth/login',
+      'email=demo&password=Test1234%21',
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      },
+    );
+    expect(client.get).toHaveBeenCalledWith('/api/v1/auth/session');
     expect(csrfManager.onLoginSuccess).toHaveBeenCalledTimes(1);
   });
 
   it('registers a member without forcing an immediate csrf refresh before follow-up login', async () => {
     client.post.mockResolvedValue({
       statusCode: 200,
-      body: memberFixture,
+      body: {
+        memberId: 1,
+        email: 'new@fix.com',
+        name: 'New User',
+      },
     });
 
     const authApi = createAuthApi({ client, csrfManager });
@@ -75,14 +93,24 @@ describe('auth api', () => {
         name: 'New User',
         password: 'Test1234!',
       }),
-    ).resolves.toEqual(memberFixture);
-
-    expect(client.post).toHaveBeenCalledWith('/api/v1/auth/register', {
-      username: 'new_user',
+    ).resolves.toEqual({
+      memberUuid: '1',
+      username: 'new',
       email: 'new@fix.com',
       name: 'New User',
-      password: 'Test1234!',
+      role: 'ROLE_USER',
+      totpEnrolled: false,
     });
+
+    expect(client.post).toHaveBeenCalledWith(
+      '/api/v1/auth/register',
+      'email=new%40fix.com&password=Test1234%21&name=New+User',
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      },
+    );
     expect(csrfManager.onLoginSuccess).not.toHaveBeenCalled();
   });
 });

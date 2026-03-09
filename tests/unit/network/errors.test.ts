@@ -26,6 +26,23 @@ describe('network error normalization', () => {
     expect(normalized.status).toBe(422);
   });
 
+  it('parses direct spring security and exception-handler error payloads', () => {
+    const normalized = normalizeHttpError({
+      status: 401,
+      data: {
+        code: 'AUTH-003',
+        message: 'authentication required',
+        path: '/api/v1/auth/session',
+        correlationId: 'corr-123',
+        timestamp: '2026-03-09T00:00:00Z',
+      },
+    });
+
+    expect(normalized.code).toBe('AUTH-003');
+    expect(normalized.message).toBe('authentication required');
+    expect(normalized.status).toBe(401);
+  });
+
   it('preserves auth/session guardrail codes for downstream re-auth and abuse handling', () => {
     const invalidatedByNewLogin = normalizeHttpError({
       status: 401,

@@ -48,6 +48,27 @@ describe('csrf token manager', () => {
     expect(headers['X-XSRF-TOKEN']).toBe('new-csrf');
   });
 
+  it('falls back to bootstrap response token and header when cookie storage is unavailable', async () => {
+    const cookies = new InMemoryCookieManager();
+    let bootstraps = 0;
+    const csrf = new CsrfTokenManager({
+      baseUrl: 'http://localhost:18080',
+      cookieManager: cookies,
+      bootstrapCsrf: async () => {
+        bootstraps += 1;
+        return {
+          token: 'body-csrf',
+          headerName: 'X-CSRF-TOKEN',
+        };
+      },
+    });
+
+    const headers = await csrf.injectHeader('POST', {});
+
+    expect(bootstraps).toBe(1);
+    expect(headers['X-CSRF-TOKEN']).toBe('body-csrf');
+  });
+
   it('fails deterministically after single bootstrap retry when token is still missing', async () => {
     const cookies = new InMemoryCookieManager();
     const csrf = new CsrfTokenManager({
