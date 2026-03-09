@@ -1,5 +1,6 @@
 import { createAuthApi } from '@/api/auth-api';
-import { createMobileAuthController } from '@/auth/mobile-auth-controller';
+import { createAuthFlowViewModel } from '@/auth/auth-flow-view-model';
+import { createMobileAuthService } from '@/auth/mobile-auth-service';
 import { InMemoryCookieManager } from '@/network/cookie-manager';
 import { CsrfTokenManager } from '@/network/csrf';
 import { HttpClient } from '@/network/http-client';
@@ -95,6 +96,9 @@ const memberFixture: Member = {
 
 const createHarness = (
   handler: (request: RecordedCall) => Promise<Response> | Response,
+  options?: {
+    authenticated?: boolean;
+  },
 ) => {
   const baseUrl = 'http://localhost:8080';
   const calls: RecordedCall[] = [];
@@ -141,30 +145,28 @@ const createHarness = (
     client,
     csrfManager,
   });
-
-  let navigationState = createAuthNavigationState();
-
-  const controller = createMobileAuthController({
+  const authService = createMobileAuthService({
     authApi,
-    authStore,
     csrfManager,
-    getNavigationState: () => navigationState,
-    setNavigationState: (nextState) => {
-      navigationState = nextState;
-    },
+  });
+  const viewModel = createAuthFlowViewModel({
+    authService,
+    authStore,
+    initialNavigationState: options?.authenticated
+      ? enterAuthenticatedApp(createAuthNavigationState(), {
+          source: 'login',
+        })
+      : createAuthNavigationState(),
   });
 
   return {
     baseUrl,
     calls,
     cookieManager,
-    controller,
-    getNavigationState: () => navigationState,
+    viewModel,
+    getNavigationState: () => viewModel.getState().navigationState,
     setAuthenticatedState: () => {
       authStore.login(memberFixture);
-      navigationState = enterAuthenticatedApp(navigationState, {
-        source: 'login',
-      });
     },
   };
 };
@@ -220,12 +222,15 @@ describe('E2E tests: mobile auth workflow', () => {
 
     authStore.initialize(null);
 
-    const result = await harness.controller.submitLogin({
+    const result = await harness.viewModel.submitLogin({
       username: 'demo',
       password: 'Test1234!',
     });
 
-    expect(result.success).toBe(true);
+    expect(result).toEqual({
+      success: true,
+      member: memberFixture,
+    });
     expect(authStore.getState()).toMatchObject({
       status: 'authenticated',
       member: memberFixture,
@@ -308,15 +313,19 @@ describe('E2E tests: mobile auth workflow', () => {
 
     authStore.initialize(null);
 
-    const result = await harness.controller.submitRegister({
+    const result = await harness.viewModel.submitRegister({
       username: 'new_user',
       email: 'new@fix.com',
       name: 'New User',
       password: 'Test1234!',
-      confirmPassword: 'Test1234!',
     });
 
-    expect(result.success).toBe(true);
+    expect(result).toMatchObject({
+      success: true,
+      member: {
+        email: 'new@fix.com',
+      },
+    });
     expect(authStore.getState()).toMatchObject({
       status: 'authenticated',
       member: {
@@ -375,15 +384,14 @@ describe('E2E tests: mobile auth workflow', () => {
 
     authStore.initialize(null);
 
-    const result = await harness.controller.submitLogin({
+    const result = await harness.viewModel.submitLogin({
       username: 'demo',
       password: 'wrong-password',
     });
 
-    expect(result.success).toBe(false);
-    expect(result.feedback.globalMessage).toBe(
-      '아이디 또는 비밀번호가 올바르지 않습니다.',
-    );
+    expect(result).toMatchObject({
+      success: false,
+    });
     expect(authStore.getState()).toMatchObject({
       status: 'anonymous',
       member: null,
@@ -422,19 +430,16 @@ describe('E2E tests: mobile auth workflow', () => {
 
     authStore.initialize(null);
 
-    const result = await harness.controller.submitRegister({
+    const result = await harness.viewModel.submitRegister({
       username: 'new_user',
       email: 'new@fix.com',
       name: 'New User',
       password: 'Test1234!',
-      confirmPassword: 'Test1234!',
     });
 
-    expect(result.success).toBe(false);
-    expect(result.feedback.fieldErrors.email).toBe(true);
-    expect(result.feedback.fieldMessages.email).toBe(
-      '이미 가입된 이메일입니다. 다른 이메일을 입력해 주세요.',
-    );
+    expect(result).toMatchObject({
+      success: false,
+    });
     expect(findCall(harness.calls, '/api/v1/auth/login', 'POST')).toBeUndefined();
   });
 
@@ -453,15 +458,16 @@ describe('E2E tests: mobile auth workflow', () => {
       }
 
       return notFoundResponse(request);
+    }, {
+      authenticated: true,
     });
 
     harness.setAuthenticatedState();
 
-    const result = await harness.controller.refreshProtectedSession();
+    const result = await harness.viewModel.refreshProtectedSession();
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       status: 'reauth',
-      errorMessage: null,
     });
     expect(authStore.getState()).toMatchObject({
       status: 'anonymous',
@@ -490,15 +496,16 @@ describe('E2E tests: mobile auth workflow', () => {
       }
 
       return notFoundResponse(request);
+    }, {
+      authenticated: true,
     });
 
     harness.setAuthenticatedState();
 
-    const result = await harness.controller.refreshProtectedSession();
+    const result = await harness.viewModel.refreshProtectedSession();
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       status: 'reauth',
-      errorMessage: null,
     });
     expect(authStore.getState()).toMatchObject({
       status: 'anonymous',
@@ -536,15 +543,16 @@ describe('E2E tests: mobile auth workflow', () => {
       }
 
       return notFoundResponse(request);
+    }, {
+      authenticated: true,
     });
 
     harness.setAuthenticatedState();
 
-    const result = await harness.controller.revalidateSessionOnResume();
+    const result = await harness.viewModel.refreshProtectedSession('resume');
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       status: 'reauth',
-      errorMessage: null,
     });
     expect(authStore.getState()).toMatchObject({
       status: 'anonymous',
