@@ -16,5 +16,5 @@
     },
     "types": ["vitest/globals", "node"]
   },
-  "include": ["src", "App.tsx", "vitest.config.ts"]
+  "include": ["src", "tests", "App.tsx", "vitest.config.ts"]
 }
