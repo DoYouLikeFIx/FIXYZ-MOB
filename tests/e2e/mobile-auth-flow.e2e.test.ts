@@ -1,0 +1,505 @@
+import { createAuthApi } from '@/api/auth-api';
+import { createMobileAuthController } from '@/auth/mobile-auth-controller';
+import { InMemoryCookieManager } from '@/network/cookie-manager';
+import { CsrfTokenManager } from '@/network/csrf';
+import { HttpClient } from '@/network/http-client';
+import {
+  createAuthNavigationState,
+  enterAuthenticatedApp,
+} from '@/navigation/auth-navigation';
+import { authStore, resetAuthStore } from '@/store/auth-store';
+import type { Member } from '@/types/auth';
+
+interface RecordedCall {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body?: string;
+}
+
+const jsonResponse = (status: number, body: unknown): Response =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+const successResponse = <T,>(status: number, data: T): Response =>
+  jsonResponse(status, {
+    success: true,
+    data,
+    error: null,
+  });
+
+const errorResponse = (
+  status: number,
+  code: string,
+  message: string,
+  detail: string,
+): Response =>
+  jsonResponse(status, {
+    success: false,
+    data: null,
+    error: {
+      code,
+      message,
+      detail,
+      timestamp: '2026-03-08T00:00:00.000Z',
+    },
+  });
+
+const normalizeHeaders = (headers: HeadersInit | undefined): Record<string, string> => {
+  if (!headers) {
+    return {};
+  }
+
+  if (Array.isArray(headers)) {
+    return Object.fromEntries(headers);
+  }
+
+  if (headers instanceof Headers) {
+    return Object.fromEntries(headers.entries());
+  }
+
+  return {
+    ...headers,
+  };
+};
+
+const getPathname = (url: string) => new URL(url).pathname;
+
+const findCall = (
+  calls: RecordedCall[],
+  pathname: string,
+  method: string,
+): RecordedCall | undefined =>
+  calls.find(
+    (call) => call.method === method && getPathname(call.url) === pathname,
+  );
+
+const memberFixture: Member = {
+  memberUuid: 'member-001',
+  username: 'demo',
+  email: 'demo@fix.com',
+  name: 'Demo User',
+  role: 'ROLE_USER',
+  totpEnrolled: false,
+};
+
+const createHarness = (
+  handler: (request: RecordedCall) => Promise<Response> | Response,
+) => {
+  const baseUrl = 'http://localhost:8080';
+  const calls: RecordedCall[] = [];
+
+  const fetchMock = vi.fn(
+    async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const request: RecordedCall = {
+        url: String(input),
+        method: (init?.method ?? 'GET').toUpperCase(),
+        headers: normalizeHeaders(init?.headers),
+        body: typeof init?.body === 'string' ? init.body : undefined,
+      };
+
+      calls.push(request);
+
+      return handler(request);
+    },
+  );
+
+  const cookieManager = new InMemoryCookieManager();
+  const bootstrapClient = new HttpClient({
+    baseUrl,
+    fetchFn: fetchMock as unknown as typeof fetch,
+  });
+
+  const csrfManager = new CsrfTokenManager({
+    baseUrl,
+    cookieManager,
+    bootstrapCsrf: async () => {
+      const response = await bootstrapClient.get<{ csrfToken: string }>(
+        '/api/v1/auth/csrf',
+      );
+      cookieManager.setCookie(baseUrl, 'XSRF-TOKEN', response.body.csrfToken);
+    },
+  });
+
+  const client = new HttpClient({
+    baseUrl,
+    fetchFn: fetchMock as unknown as typeof fetch,
+    csrfManager,
+  });
+
+  const authApi = createAuthApi({
+    client,
+    csrfManager,
+  });
+
+  let navigationState = createAuthNavigationState();
+
+  const controller = createMobileAuthController({
+    authApi,
+    authStore,
+    csrfManager,
+    getNavigationState: () => navigationState,
+    setNavigationState: (nextState) => {
+      navigationState = nextState;
+    },
+  });
+
+  return {
+    baseUrl,
+    calls,
+    cookieManager,
+    controller,
+    getNavigationState: () => navigationState,
+    setAuthenticatedState: () => {
+      authStore.login(memberFixture);
+      navigationState = enterAuthenticatedApp(navigationState, {
+        source: 'login',
+      });
+    },
+  };
+};
+
+const notFoundResponse = (request: RecordedCall): Response =>
+  errorResponse(
+    404,
+    'SYS-404',
+    `Unhandled request: ${request.method} ${getPathname(request.url)}`,
+    'Test harness request handler is missing a route',
+  );
+
+describe('E2E tests: mobile auth workflow', () => {
+  beforeEach(() => {
+    resetAuthStore();
+  });
+
+  it('logs in through the mobile auth workflow, refreshes csrf state, and enters the authenticated stack', async () => {
+    let csrfTokenVersion = 0;
+
+    const harness = createHarness((request) => {
+      if (
+        request.method === 'GET' &&
+        getPathname(request.url) === '/api/v1/auth/csrf'
+      ) {
+        csrfTokenVersion += 1;
+
+        return successResponse(200, {
+          csrfToken: `csrf-login-${csrfTokenVersion}`,
+        });
+      }
+
+      if (
+        request.method === 'POST' &&
+        getPathname(request.url) === '/api/v1/auth/login'
+      ) {
+        return successResponse(200, memberFixture);
+      }
+
+      return notFoundResponse(request);
+    });
+
+    authStore.initialize(null);
+
+    const result = await harness.controller.submitLogin({
+      username: 'demo',
+      password: 'Test1234!',
+    });
+
+    expect(result.success).toBe(true);
+    expect(authStore.getState()).toMatchObject({
+      status: 'authenticated',
+      member: memberFixture,
+    });
+    expect(harness.getNavigationState()).toMatchObject({
+      stack: 'app',
+      welcomeVariant: 'login',
+    });
+
+    const loginCall = findCall(harness.calls, '/api/v1/auth/login', 'POST');
+    expect(loginCall?.headers['X-XSRF-TOKEN']).toBe('csrf-login-1');
+    expect(
+      harness.calls.filter(
+        (call) => getPathname(call.url) === '/api/v1/auth/csrf',
+      ),
+    ).toHaveLength(2);
+
+    await expect(harness.cookieManager.get(harness.baseUrl)).resolves.toMatchObject({
+      'XSRF-TOKEN': {
+        value: 'csrf-login-2',
+      },
+    });
+  });
+
+  it('registers, performs the follow-up login, and preserves the register welcome state', async () => {
+    let csrfTokenVersion = 0;
+
+    const harness = createHarness((request) => {
+      if (
+        request.method === 'GET' &&
+        getPathname(request.url) === '/api/v1/auth/csrf'
+      ) {
+        csrfTokenVersion += 1;
+
+        return successResponse(200, {
+          csrfToken: `csrf-register-${csrfTokenVersion}`,
+        });
+      }
+
+      if (
+        request.method === 'POST' &&
+        getPathname(request.url) === '/api/v1/auth/register'
+      ) {
+        return successResponse(200, {
+          ...memberFixture,
+          username: 'new_user',
+          email: 'new@fix.com',
+          name: 'New User',
+        });
+      }
+
+      if (
+        request.method === 'POST' &&
+        getPathname(request.url) === '/api/v1/auth/login'
+      ) {
+        return successResponse(200, {
+          ...memberFixture,
+          username: 'new_user',
+          email: 'new@fix.com',
+          name: 'New User',
+        });
+      }
+
+      return notFoundResponse(request);
+    });
+
+    authStore.initialize(null);
+
+    const result = await harness.controller.submitRegister({
+      username: 'new_user',
+      email: 'new@fix.com',
+      name: 'New User',
+      password: 'Test1234!',
+      confirmPassword: 'Test1234!',
+    });
+
+    expect(result.success).toBe(true);
+    expect(authStore.getState()).toMatchObject({
+      status: 'authenticated',
+      member: {
+        ...memberFixture,
+        username: 'new_user',
+        email: 'new@fix.com',
+        name: 'New User',
+      },
+    });
+    expect(harness.getNavigationState()).toMatchObject({
+      stack: 'app',
+      welcomeVariant: 'register',
+    });
+
+    const registerCall = findCall(harness.calls, '/api/v1/auth/register', 'POST');
+    const loginCall = findCall(harness.calls, '/api/v1/auth/login', 'POST');
+
+    expect(registerCall?.headers['X-XSRF-TOKEN']).toBe('csrf-register-1');
+    expect(loginCall?.headers['X-XSRF-TOKEN']).toBe('csrf-register-1');
+    expect(JSON.parse(registerCall?.body ?? '{}')).toEqual({
+      username: 'new_user',
+      email: 'new@fix.com',
+      name: 'New User',
+      password: 'Test1234!',
+    });
+    expect(JSON.parse(loginCall?.body ?? '{}')).toEqual({
+      username: 'new_user',
+      password: 'Test1234!',
+    });
+  });
+
+  it('maps invalid login responses to the standardized global auth copy', async () => {
+    const harness = createHarness((request) => {
+      if (
+        request.method === 'GET' &&
+        getPathname(request.url) === '/api/v1/auth/csrf'
+      ) {
+        return successResponse(200, {
+          csrfToken: 'csrf-invalid-login',
+        });
+      }
+
+      if (
+        request.method === 'POST' &&
+        getPathname(request.url) === '/api/v1/auth/login'
+      ) {
+        return errorResponse(
+          401,
+          'AUTH-001',
+          'Credential mismatch',
+          'Username or password was invalid',
+        );
+      }
+
+      return notFoundResponse(request);
+    });
+
+    authStore.initialize(null);
+
+    const result = await harness.controller.submitLogin({
+      username: 'demo',
+      password: 'wrong-password',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.feedback.globalMessage).toBe(
+      '아이디 또는 비밀번호가 올바르지 않습니다.',
+    );
+    expect(authStore.getState()).toMatchObject({
+      status: 'anonymous',
+      member: null,
+    });
+    expect(harness.getNavigationState()).toMatchObject({
+      stack: 'auth',
+      authRoute: 'login',
+    });
+  });
+
+  it('maps duplicate-username registration failures to the username field', async () => {
+    const harness = createHarness((request) => {
+      if (
+        request.method === 'GET' &&
+        getPathname(request.url) === '/api/v1/auth/csrf'
+      ) {
+        return successResponse(200, {
+          csrfToken: 'csrf-register-error',
+        });
+      }
+
+      if (
+        request.method === 'POST' &&
+        getPathname(request.url) === '/api/v1/auth/register'
+      ) {
+        return errorResponse(
+          409,
+          'AUTH-008',
+          'Username already exists',
+          'Duplicate username',
+        );
+      }
+
+      return notFoundResponse(request);
+    });
+
+    authStore.initialize(null);
+
+    const result = await harness.controller.submitRegister({
+      username: 'new_user',
+      email: 'new@fix.com',
+      name: 'New User',
+      password: 'Test1234!',
+      confirmPassword: 'Test1234!',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.feedback.fieldErrors.username).toBe(true);
+    expect(result.feedback.fieldMessages.username).toBe(
+      '이미 사용 중인 아이디입니다. 다른 아이디를 선택해 주세요.',
+    );
+    expect(findCall(harness.calls, '/api/v1/auth/login', 'POST')).toBeUndefined();
+  });
+
+  it('routes protected-session failures to deterministic re-auth navigation', async () => {
+    const harness = createHarness((request) => {
+      if (
+        request.method === 'GET' &&
+        getPathname(request.url) === '/api/v1/auth/session'
+      ) {
+        return errorResponse(
+          401,
+          'AUTH-003',
+          'Authentication required',
+          'Session is missing or invalid',
+        );
+      }
+
+      return notFoundResponse(request);
+    });
+
+    harness.setAuthenticatedState();
+
+    const result = await harness.controller.refreshProtectedSession();
+
+    expect(result).toEqual({
+      status: 'reauth',
+      errorMessage: null,
+    });
+    expect(authStore.getState()).toMatchObject({
+      status: 'anonymous',
+      member: null,
+      reauthMessage: '세션이 만료되었습니다. 다시 로그인해 주세요.',
+    });
+    expect(harness.getNavigationState()).toMatchObject({
+      stack: 'auth',
+      authRoute: 'login',
+      pendingProtectedRoute: 'portfolio',
+    });
+  });
+
+  it('revalidates the session on app resume and rejects stale sessions deterministically', async () => {
+    const harness = createHarness((request) => {
+      if (
+        request.method === 'GET' &&
+        getPathname(request.url) === '/api/v1/auth/csrf'
+      ) {
+        return successResponse(200, {
+          csrfToken: 'csrf-resume',
+        });
+      }
+
+      if (
+        request.method === 'GET' &&
+        getPathname(request.url) === '/api/v1/auth/session'
+      ) {
+        return errorResponse(
+          410,
+          'CHANNEL-001',
+          'Redis session expired',
+          'Session cache entry expired while app was backgrounded',
+        );
+      }
+
+      return notFoundResponse(request);
+    });
+
+    harness.setAuthenticatedState();
+
+    const result = await harness.controller.revalidateSessionOnResume();
+
+    expect(result).toEqual({
+      status: 'reauth',
+      errorMessage: null,
+    });
+    expect(authStore.getState()).toMatchObject({
+      status: 'anonymous',
+      member: null,
+      reauthMessage: '세션이 만료되었습니다. 다시 로그인해 주세요.',
+    });
+
+    const csrfCallIndex = harness.calls.findIndex(
+      (call) =>
+        call.method === 'GET' && getPathname(call.url) === '/api/v1/auth/csrf',
+    );
+    const sessionCallIndex = harness.calls.findIndex(
+      (call) =>
+        call.method === 'GET' && getPathname(call.url) === '/api/v1/auth/session',
+    );
+
+    expect(csrfCallIndex).toBeGreaterThanOrEqual(0);
+    expect(sessionCallIndex).toBeGreaterThanOrEqual(0);
+    expect(csrfCallIndex).toBeLessThan(sessionCallIndex);
+    expect(harness.getNavigationState()).toMatchObject({
+      stack: 'auth',
+      authRoute: 'login',
+    });
+  });
+});
