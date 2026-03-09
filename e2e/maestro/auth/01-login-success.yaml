@@ -1,0 +1,33 @@
+appId: org.reactjs.native.example.FIXYZMob
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    arguments:
+      mobApiBaseUrl: http://localhost:18080
+      mobDisableAnimations: true
+- extendedWaitUntil:
+    visible:
+      id: login-username
+    timeout: 20000
+- tapOn:
+    id: login-username
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: demo
+- tapOn:
+    id: login-password
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: Test1234!
+- pressKey: Enter
+- tapOn:
+    text: "지금 안 함"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: protected-area-title
+    timeout: 20000
+- assertVisible: "Demo User님, 보호된 영역에 접근했습니다"
+- assertVisible:
+    id: session-refresh-button
