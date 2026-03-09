@@ -1,11 +1,9 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
 import type { LoginRequest } from '../../types/auth';
-import {
-  createEmptyLoginFeedback,
-  type LoginFormFeedback,
-} from '../../types/auth-ui';
+import type { AuthMutationResult } from '../../auth/mobile-auth-service';
+import { useLoginViewModel } from '../../auth/use-login-view-model';
 import { AuthField } from '../../components/auth/AuthField';
 import { AuthScaffold } from '../../components/auth/AuthScaffold';
 import { authSharedStyles as styles } from '../../components/auth/auth-styles';
@@ -13,10 +11,7 @@ import { authSharedStyles as styles } from '../../components/auth/auth-styles';
 interface LoginScreenProps {
   bannerMessage?: string | null;
   bannerTone?: 'info' | 'error';
-  onSubmit: (payload: LoginRequest) => Promise<{
-    success: boolean;
-    feedback: LoginFormFeedback;
-  }>;
+  onSubmit: (payload: LoginRequest) => Promise<AuthMutationResult>;
   onRegisterPress: () => void;
   onLoginPress: () => void;
 }
@@ -29,46 +24,9 @@ export const LoginScreen = ({
   onLoginPress,
 }: LoginScreenProps) => {
   const passwordInputRef = useRef<TextInput | null>(null);
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [feedback, setFeedback] =
-    useState<LoginFormFeedback>(createEmptyLoginFeedback);
-
-  const clearField = (field: keyof LoginFormFeedback['fieldErrors']) => {
-    setFeedback((current) => ({
-      ...current,
-      globalMessage: null,
-      fieldErrors: {
-        ...current.fieldErrors,
-        [field]: false,
-      },
-      fieldMessages: {
-        ...current.fieldMessages,
-        [field]: undefined,
-      },
-    }));
-  };
-
-  const handleSubmit = async () => {
-    if (isSubmitting) {
-      return;
-    }
-
-    setIsSubmitting(true);
-
-    try {
-      const result = await onSubmit({
-        username,
-        password,
-      });
-
-      setFeedback(result.feedback);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  const viewModel = useLoginViewModel({
+    submit: onSubmit,
+  });
 
   return (
     <AuthScaffold
@@ -84,12 +42,9 @@ export const LoginScreen = ({
       <AuthField
         autoCapitalize="none"
         blurOnSubmit={false}
-        errorMessage={feedback.fieldMessages.username}
+        errorMessage={viewModel.feedback.fieldMessages.username}
         label="아이디"
-        onChangeText={(value) => {
-          clearField('username');
-          setUsername(value);
-        }}
+        onChangeText={viewModel.updateUsername}
         onSubmitEditing={() => {
           passwordInputRef.current?.focus();
         }}
@@ -98,53 +53,48 @@ export const LoginScreen = ({
         testID="login-username"
         autoComplete="username"
         textContentType="username"
-        value={username}
+        value={viewModel.username}
       />
       <AuthField
         autoCapitalize="none"
         blurOnSubmit={false}
-        errorMessage={feedback.fieldMessages.password}
+        errorMessage={viewModel.feedback.fieldMessages.password}
         label="비밀번호"
-        onChangeText={(value) => {
-          clearField('password');
-          setPassword(value);
-        }}
-        onRightActionPress={() => {
-          setShowPassword((current) => !current);
-        }}
+        onChangeText={viewModel.updatePassword}
+        onRightActionPress={viewModel.togglePasswordVisibility}
         onSubmitEditing={() => {
-          void handleSubmit();
+          void viewModel.submitLogin();
         }}
         placeholder="비밀번호"
         ref={passwordInputRef}
         returnKeyType="done"
-        rightActionActive={showPassword}
+        rightActionActive={viewModel.showPassword}
         rightActionVariant="visibility"
-        secureTextEntry={!showPassword}
+        secureTextEntry={!viewModel.showPassword}
         testID="login-password"
         autoComplete="password"
         textContentType="password"
-        value={password}
+        value={viewModel.password}
       />
-      {feedback.globalMessage ? (
+      {viewModel.feedback.globalMessage ? (
         <View style={[styles.banner, styles.bannerError]}>
           <Text style={[styles.bannerLabel, styles.bannerLabelError]}>로그인 오류</Text>
-          <Text style={styles.bannerMessage}>{feedback.globalMessage}</Text>
+          <Text style={styles.bannerMessage}>{viewModel.feedback.globalMessage}</Text>
         </View>
       ) : null}
       <Pressable
-        disabled={isSubmitting}
+        disabled={viewModel.isSubmitting}
         onPress={() => {
-          void handleSubmit();
+          void viewModel.submitLogin();
         }}
         style={[
           styles.primaryButton,
-          isSubmitting ? styles.primaryButtonDisabled : null,
+          viewModel.isSubmitting ? styles.primaryButtonDisabled : null,
         ]}
         testID="login-submit"
       >
         <Text style={styles.primaryButtonText}>
-          {isSubmitting ? '로그인 중...' : '로그인'}
+          {viewModel.isSubmitting ? '로그인 중...' : '로그인'}
         </Text>
       </Pressable>
       <View style={styles.secondaryLinkWrap}>

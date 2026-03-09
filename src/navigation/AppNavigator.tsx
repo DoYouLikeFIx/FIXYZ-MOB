@@ -7,11 +7,8 @@ import { RegisterScreen } from '../screens/auth/RegisterScreen';
 import { AuthenticatedHomeScreen } from '../screens/app/AuthenticatedHomeScreen';
 import type { AuthStatus } from '../store/auth-store';
 import type { Member } from '../types/auth';
-import type {
-  LoginFormFeedback,
-  RegisterFormFeedback,
-  RegisterFormValues,
-} from '../types/auth-ui';
+import type { LoginRequest, RegisterRequest } from '../types/auth';
+import type { AuthMutationResult } from '../auth/mobile-auth-service';
 
 import type { AuthNavigationState } from './auth-navigation';
 
@@ -24,17 +21,8 @@ interface AppNavigatorProps {
   bootstrapErrorMessage: string | null;
   protectedErrorMessage: string | null;
   isRefreshingSession: boolean;
-  onLoginSubmit: (payload: {
-    username: string;
-    password: string;
-  }) => Promise<{
-    success: boolean;
-    feedback: LoginFormFeedback;
-  }>;
-  onRegisterSubmit: (payload: RegisterFormValues) => Promise<{
-    success: boolean;
-    feedback: RegisterFormFeedback;
-  }>;
+  onLoginSubmit: (payload: LoginRequest) => Promise<AuthMutationResult>;
+  onRegisterSubmit: (payload: RegisterRequest) => Promise<AuthMutationResult>;
   onOpenLogin: () => void;
   onOpenRegister: () => void;
   onRefreshProtectedSession: () => void;
@@ -164,7 +152,6 @@ export const AppNavigator = ({
     screen = (
       <RegisterScreen
         onLoginPress={onOpenLogin}
-        onRegisterPress={onOpenRegister}
         onSubmit={onRegisterSubmit}
       />
     );

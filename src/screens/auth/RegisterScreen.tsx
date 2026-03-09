@@ -12,138 +12,39 @@ import {
 } from 'react-native';
 
 import {
-  getConfirmPasswordState,
-  getPasswordPolicyState,
-  getRegisterKeyboardMessage,
-  validateRegisterField,
-} from '../../auth/form-validation';
-import {
-  createEmptyRegisterFeedback,
   type RegisterField,
-  type RegisterFormFeedback,
-  type RegisterFormValues,
 } from '../../types/auth-ui';
+import type { AuthMutationResult } from '../../auth/mobile-auth-service';
+import type { RegisterRequest } from '../../types/auth';
+import {
+  REGISTER_FIELD_LABELS,
+  REGISTER_STEP_ORDER,
+  getRegisterFieldPreview,
+  useRegisterViewModel,
+} from '../../auth/use-register-view-model';
 import { AuthField } from '../../components/auth/AuthField';
 import { authSharedStyles as styles } from '../../components/auth/auth-styles';
 
 interface RegisterScreenProps {
-  onSubmit: (payload: RegisterFormValues) => Promise<{
-    success: boolean;
-    feedback: RegisterFormFeedback;
-  }>;
-  onRegisterPress: () => void;
+  onSubmit: (payload: RegisterRequest) => Promise<AuthMutationResult>;
   onLoginPress: () => void;
 }
-
-const REGISTER_STEP_ORDER: RegisterField[] = [
-  'username',
-  'email',
-  'name',
-  'password',
-  'confirmPassword',
-];
-
-const STEP_COPY: Record<RegisterField, { title: string; description: string }> = {
-  username: {
-    title: '아이디를 입력해 주세요',
-    description: '입력이 끝나면 다음 항목으로 바로 이어집니다.',
-  },
-  email: {
-    title: '이메일을 입력해 주세요',
-    description: '인증과 안내를 받을 주소입니다.',
-  },
-  name: {
-    title: '이름을 입력해 주세요',
-    description: '실명 기준으로 입력해 주세요.',
-  },
-  password: {
-    title: '비밀번호를 설정해 주세요',
-    description: '정책을 만족하면 바로 다음 항목으로 이동합니다.',
-  },
-  confirmPassword: {
-    title: '비밀번호를 한 번 더 입력해 주세요',
-    description: '마지막 Enter로 바로 회원가입을 완료합니다.',
-  },
-};
-
-const FIELD_LABELS: Record<RegisterField, string> = {
-  username: '아이디',
-  email: '이메일',
-  name: '이름',
-  password: '비밀번호',
-  confirmPassword: '비밀번호 확인',
-};
-
-const getFieldPreview = (
-  field: RegisterField,
-  values: RegisterFormValues,
-): string => {
-  switch (field) {
-    case 'password':
-    case 'confirmPassword':
-      return values[field] ? '*'.repeat(Math.max(values[field].length, 8)) : '';
-    case 'email':
-      return values.email.trim();
-    case 'name':
-      return values.name.trim();
-    case 'username':
-      return values.username.trim();
-    default:
-      return '';
-  }
-};
-
-const getFirstInvalidField = (
-  feedback: RegisterFormFeedback,
-): RegisterField | null => {
-  for (const field of REGISTER_STEP_ORDER) {
-    if (feedback.fieldErrors[field]) {
-      return field;
-    }
-  }
-
-  return null;
-};
 
 export const RegisterScreen = ({
   onSubmit,
   onLoginPress,
 }: RegisterScreenProps) => {
-  const [values, setValues] = useState<RegisterFormValues>({
-    username: '',
-    email: '',
-    name: '',
-    password: '',
-    confirmPassword: '',
-  });
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
-  const [feedback, setFeedback] =
-    useState<RegisterFormFeedback>(createEmptyRegisterFeedback);
   const fieldRefs = useRef<Partial<Record<RegisterField, TextInput | null>>>({});
   const summaryScrollRef = useRef<ScrollView | null>(null);
   const previousActiveStepRef = useRef(0);
-
-  const activeField = REGISTER_STEP_ORDER[activeStepIndex];
-  const completedFields = REGISTER_STEP_ORDER.slice(0, activeStepIndex);
-  const stepCopy = STEP_COPY[activeField];
-  const passwordPolicyState = getPasswordPolicyState(values.password);
-  const confirmPasswordState = getConfirmPasswordState(values);
-  const {
-    message: keyboardStepMessage,
-    tone: keyboardStepTone,
-  } = getRegisterKeyboardMessage(
-    activeField,
-    values,
-    feedback,
-    stepCopy.description,
-  );
+  const viewModel = useRegisterViewModel({
+    submit: onSubmit,
+  });
 
   useEffect(() => {
-    const currentField = REGISTER_STEP_ORDER[activeStepIndex];
+    const currentField = REGISTER_STEP_ORDER[viewModel.activeStepIndex];
 
     const timeout = setTimeout(() => {
       fieldRefs.current[currentField]?.focus();
@@ -152,7 +53,7 @@ export const RegisterScreen = ({
     return () => {
       clearTimeout(timeout);
     };
-  }, [activeStepIndex]);
+  }, [viewModel.activeStepIndex]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -184,9 +85,9 @@ export const RegisterScreen = ({
 
   useEffect(() => {
     const shouldSnapToLatestSummary =
-      isKeyboardVisible && activeStepIndex > previousActiveStepRef.current;
+      isKeyboardVisible && viewModel.activeStepIndex > previousActiveStepRef.current;
 
-    previousActiveStepRef.current = activeStepIndex;
+    previousActiveStepRef.current = viewModel.activeStepIndex;
 
     if (!shouldSnapToLatestSummary) {
       return;
@@ -201,111 +102,22 @@ export const RegisterScreen = ({
     return () => {
       clearTimeout(timeout);
     };
-  }, [activeStepIndex, isKeyboardVisible]);
-
-  const setFieldFeedback = (
-    field: RegisterField,
-    message?: string,
-  ) => {
-    setFeedback((current) => ({
-      ...current,
-      globalMessage: null,
-      fieldErrors: {
-        ...current.fieldErrors,
-        [field]: Boolean(message),
-      },
-      fieldMessages: {
-        ...current.fieldMessages,
-        [field]: message,
-      },
-    }));
-  };
-
-  const clearField = (field: RegisterField) => {
-    setFieldFeedback(field, undefined);
-  };
-
-  const updateValue = (
-    field: RegisterField,
-    value: string,
-  ) => {
-    clearField(field);
-
-    setValues((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  };
-
-  const validateStep = (field: RegisterField): boolean => {
-    const message = validateRegisterField(field, values);
-
-    if (message) {
-      setFieldFeedback(field, message);
-      return false;
-    }
-
-    clearField(field);
-
-    return true;
-  };
-
-  const focusStep = (index: number) => {
-    setActiveStepIndex(index);
-  };
-
-  const handleSubmit = async () => {
-    const firstInvalidField = REGISTER_STEP_ORDER.find(
-      (field) => !validateStep(field),
-    );
-
-    if (firstInvalidField) {
-      focusStep(REGISTER_STEP_ORDER.indexOf(firstInvalidField));
-      return;
-    }
-
-    const result = await onSubmit(values);
-    setFeedback(result.feedback);
-
-    if (!result.success) {
-      const invalidField = getFirstInvalidField(result.feedback);
-
-      if (invalidField) {
-        focusStep(REGISTER_STEP_ORDER.indexOf(invalidField));
-      }
-    }
-  };
-
-  const advanceFromField = (field: RegisterField) => {
-    if (!validateStep(field)) {
-      return;
-    }
-
-    const currentIndex = REGISTER_STEP_ORDER.indexOf(field);
-    const nextIndex = currentIndex + 1;
-
-    if (nextIndex >= REGISTER_STEP_ORDER.length) {
-      void handleSubmit();
-      return;
-    }
-
-    focusStep(nextIndex);
-  };
+  }, [isKeyboardVisible, viewModel.activeStepIndex]);
 
   const renderCompletedField = (field: RegisterField, index: number) => (
     <Pressable
       key={field}
       onPress={() => {
-        setActiveStepIndex(index);
+        viewModel.focusStep(index);
       }}
       style={styles.minimalStepSummary}
     >
       <View style={styles.minimalStepSummaryTextWrap}>
         <Text style={styles.minimalStepSummaryLabel}>
-          {FIELD_LABELS[field]}
+          {REGISTER_FIELD_LABELS[field]}
         </Text>
         <Text style={styles.minimalStepSummaryValue}>
-          {getFieldPreview(field, values)}
+          {getRegisterFieldPreview(field, viewModel.values)}
         </Text>
       </View>
     </Pressable>
@@ -315,38 +127,40 @@ export const RegisterScreen = ({
     autoFocus: true,
     blurOnSubmit: false,
     onFocus: () => {
-      setActiveStepIndex(activeStepIndex);
+      viewModel.focusStep(viewModel.activeStepIndex);
     },
     onSubmitEditing: () => {
-      advanceFromField(activeField);
+      viewModel.advanceFromField(viewModel.activeField);
     },
     ref: (node: TextInput | null) => {
-      fieldRefs.current[activeField] = node;
+      fieldRefs.current[viewModel.activeField] = node;
     },
     returnKeyType: (
-      activeStepIndex === REGISTER_STEP_ORDER.length - 1 ? 'done' : 'next'
+      viewModel.activeStepIndex === REGISTER_STEP_ORDER.length - 1
+        ? 'done'
+        : 'next'
     ) as 'done' | 'next',
     variant: 'minimal' as const,
   };
 
   const renderCurrentField = () => {
-    switch (activeField) {
+    switch (viewModel.activeField) {
       case 'username':
         return (
           <View style={styles.minimalStepCurrentField}>
             <AuthField
               {...commonCurrentFieldProps}
               autoCapitalize="none"
-              errorMessage={feedback.fieldMessages.username}
-              label={FIELD_LABELS.username}
+              errorMessage={viewModel.feedback.fieldMessages.username}
+              label={REGISTER_FIELD_LABELS.username}
               onChangeText={(value) => {
-                updateValue(activeField, value);
+                viewModel.updateValue(viewModel.activeField, value);
               }}
               placeholder="사용할 아이디"
               testID="register-username"
               autoComplete="username-new"
               textContentType="username"
-              value={values.username}
+              value={viewModel.values.username}
             />
           </View>
         );
@@ -357,16 +171,16 @@ export const RegisterScreen = ({
               {...commonCurrentFieldProps}
               autoCapitalize="none"
               autoComplete="email"
-              errorMessage={feedback.fieldMessages.email}
+              errorMessage={viewModel.feedback.fieldMessages.email}
               keyboardType="email-address"
-              label={FIELD_LABELS.email}
+              label={REGISTER_FIELD_LABELS.email}
               onChangeText={(value) => {
-                updateValue(activeField, value);
+                viewModel.updateValue(viewModel.activeField, value);
               }}
               placeholder="example@fix.com"
               testID="register-email"
               textContentType="emailAddress"
-              value={values.email}
+              value={viewModel.values.email}
             />
           </View>
         );
@@ -377,15 +191,15 @@ export const RegisterScreen = ({
               {...commonCurrentFieldProps}
               autoCapitalize="words"
               autoComplete="name"
-              errorMessage={feedback.fieldMessages.name}
-              label={FIELD_LABELS.name}
+              errorMessage={viewModel.feedback.fieldMessages.name}
+              label={REGISTER_FIELD_LABELS.name}
               onChangeText={(value) => {
-                updateValue(activeField, value);
+                viewModel.updateValue(viewModel.activeField, value);
               }}
               placeholder="이름"
               testID="register-name"
               textContentType="name"
-              value={values.name}
+              value={viewModel.values.name}
             />
           </View>
         );
@@ -395,25 +209,23 @@ export const RegisterScreen = ({
             <AuthField
               {...commonCurrentFieldProps}
               autoCapitalize="none"
-              errorMessage={feedback.fieldMessages.password}
-              label={FIELD_LABELS.password}
+              errorMessage={viewModel.feedback.fieldMessages.password}
+              label={REGISTER_FIELD_LABELS.password}
               onChangeText={(value) => {
-                updateValue(activeField, value);
+                viewModel.updateValue(viewModel.activeField, value);
               }}
-              onRightActionPress={() => {
-                setShowPassword((current) => !current);
-              }}
+              onRightActionPress={viewModel.togglePasswordVisibility}
               placeholder="비밀번호"
-              rightActionActive={showPassword}
+              rightActionActive={viewModel.showPassword}
               rightActionVariant="visibility"
-              secureTextEntry={!showPassword}
+              secureTextEntry={!viewModel.showPassword}
               hideMessage={isKeyboardVisible}
-              supportMessage={passwordPolicyState.message}
-              supportTone={passwordPolicyState.tone}
+              supportMessage={viewModel.passwordPolicyState.message}
+              supportTone={viewModel.passwordPolicyState.tone}
               testID="register-password"
               autoComplete="password-new"
               textContentType="newPassword"
-              value={values.password}
+              value={viewModel.values.password}
             />
           </View>
         );
@@ -423,25 +235,23 @@ export const RegisterScreen = ({
             <AuthField
               {...commonCurrentFieldProps}
               autoCapitalize="none"
-              errorMessage={feedback.fieldMessages.confirmPassword}
-              label={FIELD_LABELS.confirmPassword}
+              errorMessage={viewModel.feedback.fieldMessages.confirmPassword}
+              label={REGISTER_FIELD_LABELS.confirmPassword}
               onChangeText={(value) => {
-                updateValue(activeField, value);
+                viewModel.updateValue(viewModel.activeField, value);
               }}
-              onRightActionPress={() => {
-                setShowConfirmPassword((current) => !current);
-              }}
+              onRightActionPress={viewModel.toggleConfirmPasswordVisibility}
               placeholder="비밀번호를 다시 입력"
-              rightActionActive={showConfirmPassword}
+              rightActionActive={viewModel.showConfirmPassword}
               rightActionVariant="visibility"
-              secureTextEntry={!showConfirmPassword}
+              secureTextEntry={!viewModel.showConfirmPassword}
               hideMessage={isKeyboardVisible}
-              supportMessage={confirmPasswordState.message}
-              supportTone={confirmPasswordState.tone}
+              supportMessage={viewModel.confirmPasswordState.message}
+              supportTone={viewModel.confirmPasswordState.tone}
               testID="register-password-confirm"
               autoComplete="password-new"
               textContentType="newPassword"
-              value={values.confirmPassword}
+              value={viewModel.values.confirmPassword}
             />
           </View>
         );
@@ -478,19 +288,21 @@ export const RegisterScreen = ({
           >
             <View style={styles.minimalRegisterHeader}>
               <Text style={styles.minimalRegisterEyebrow}>Sign Up</Text>
-              <Text style={styles.minimalRegisterTitle}>{stepCopy.title}</Text>
+              <Text style={styles.minimalRegisterTitle}>{viewModel.stepCopy.title}</Text>
               <Text
                 style={[
                   styles.minimalRegisterSubtitle,
-                  isKeyboardVisible && keyboardStepTone === 'success'
+                  isKeyboardVisible && viewModel.keyboardStepTone === 'success'
                     ? styles.minimalRegisterSubtitleSuccess
                     : null,
-                  isKeyboardVisible && keyboardStepTone === 'error'
+                  isKeyboardVisible && viewModel.keyboardStepTone === 'error'
                     ? styles.minimalRegisterSubtitleError
                     : null,
                 ]}
               >
-                {isKeyboardVisible ? keyboardStepMessage : stepCopy.description}
+                {isKeyboardVisible
+                  ? viewModel.keyboardStepMessage
+                  : viewModel.stepCopy.description}
               </Text>
             </View>
 
@@ -500,7 +312,7 @@ export const RegisterScreen = ({
                 isKeyboardVisible ? styles.minimalRegisterStageKeyboard : null,
               ]}
             >
-              {completedFields.length > 0 ? (
+              {viewModel.completedFields.length > 0 ? (
                 <ScrollView
                   bounces={false}
                   contentContainerStyle={styles.minimalRegisterSummaryContent}
@@ -509,17 +321,17 @@ export const RegisterScreen = ({
                   showsVerticalScrollIndicator={false}
                   style={styles.minimalRegisterSummaryScroll}
                 >
-                  {completedFields.map(renderCompletedField)}
+                  {viewModel.completedFields.map(renderCompletedField)}
                 </ScrollView>
               ) : null}
 
               <View style={styles.minimalRegisterCurrentSection}>
                 {renderCurrentField()}
 
-                {feedback.globalMessage ? (
+                {viewModel.feedback.globalMessage ? (
                   <View style={styles.minimalInlineError}>
                     <Text style={styles.minimalInlineErrorText}>
-                      {feedback.globalMessage}
+                      {viewModel.feedback.globalMessage}
                     </Text>
                   </View>
                 ) : null}
