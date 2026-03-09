@@ -172,7 +172,7 @@ export const createMobileAuthController = ({
         await authApi.registerMember(validation.payload);
 
         const member = await authApi.loginMember({
-          username: validation.payload.username,
+          username: validation.payload.email,
           password: validation.payload.password,
         });
 
