@@ -30,7 +30,8 @@ Mobile foundation scaffold for Epic 0 Story 0.4.
 ## Security Contract
 
 - Cookie-session is canonical (`JSESSIONID` managed by transport, never read/persisted by app code).
-- CSRF token is read from `XSRF-TOKEN` cookie and injected as `X-XSRF-TOKEN` for non-safe methods.
+- CSRF token is read from `XSRF-TOKEN` cookie when available, with fallback to the `GET /api/v1/auth/csrf` response body for backends that use `HttpSessionCsrfTokenRepository`.
+- Non-safe methods inject the server-advertised CSRF header name. Default remains `X-XSRF-TOKEN` when the backend does not override it.
 - CSRF bootstrap/refresh endpoint: `GET /api/v1/auth/csrf` at app start, login success, and foreground resume.
 - Forbidden persistence: password, OTP, raw session cookie, raw CSRF token.
 - Conditional secure-storage only: device-bound key material / future bootstrap secret classes.
@@ -72,3 +73,16 @@ The mock auth server validates the CSRF cookie/header contract and drives Story 
 - `taken_user` -> duplicate username error
 - `reauth_refresh` -> successful login, then deterministic re-auth on protected refresh
 - `stale_resume` -> successful login, then stale-session rejection on app resume
+- `new_login_kickout` -> successful login, then forced re-auth after server-side invalidation by a newer login
+
+### Live Backend Auth Flows
+
+Real backend verification flows live in `e2e/maestro/auth-live`.
+
+- Register against a live backend:
+  - `export PATH="$PATH:$HOME/.maestro/bin"`
+  - `maestro test --udid <SIMULATOR_UDID> -e LIVE_API_BASE_URL=http://localhost:18080 -e LIVE_USERNAME=<unique_username> -e LIVE_EMAIL=<unique_email> -e LIVE_NAME='<display_name>' -e LIVE_PASSWORD=<password> MOB/e2e/maestro/auth-live/01-register-success-live-be.yaml`
+- Login against the same live backend account:
+  - `maestro test --udid <SIMULATOR_UDID> -e LIVE_API_BASE_URL=http://localhost:18080 -e LIVE_USERNAME=<same_username> -e LIVE_EMAIL=<same_email> -e LIVE_NAME='<same_display_name>' -e LIVE_PASSWORD=<same_password> MOB/e2e/maestro/auth-live/02-login-success-live-be.yaml`
+
+Run the live flows individually in that order. Passing the whole folder at once does not guarantee register-before-login execution.
