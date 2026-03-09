@@ -84,5 +84,7 @@ Real backend verification flows live in `e2e/maestro/auth-live`.
   - `maestro test --udid <SIMULATOR_UDID> -e LIVE_API_BASE_URL=http://localhost:18080 -e LIVE_USERNAME=<unique_username> -e LIVE_EMAIL=<unique_email> -e LIVE_NAME='<display_name>' -e LIVE_PASSWORD=<password> e2e/maestro/auth-live/01-register-success-live-be.yaml`
 - Login against the same live backend account:
   - `maestro test --udid <SIMULATOR_UDID> -e LIVE_API_BASE_URL=http://localhost:18080 -e LIVE_USERNAME=<same_username> -e LIVE_EMAIL=<same_email> -e LIVE_NAME='<same_display_name>' -e LIVE_PASSWORD=<same_password> e2e/maestro/auth-live/02-login-success-live-be.yaml`
+- Invalid-credentials check against the live backend:
+  - `maestro test --udid <SIMULATOR_UDID> -e LIVE_API_BASE_URL=http://localhost:18080 -e LIVE_EMAIL=<existing_email> -e LIVE_INVALID_PASSWORD=<wrong_password> e2e/maestro/auth-live/03-login-invalid-credentials-live-be.yaml`
 
-Run the live flows individually in that order. Passing the whole folder at once does not guarantee register-before-login execution.
+Run the live flows individually. `01-register-success-live-be.yaml` should run before `02-login-success-live-be.yaml` when you are validating a freshly created account, while `03-login-invalid-credentials-live-be.yaml` can run independently against any existing account email.
