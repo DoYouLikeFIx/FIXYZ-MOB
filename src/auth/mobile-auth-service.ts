@@ -1,3 +1,5 @@
+import type { AppBootstrapRuntime } from '../bootstrap/app-bootstrap';
+import { bootstrapAppSession } from '../bootstrap/app-bootstrap';
 import type { CsrfTokenManager } from '../network/csrf';
 import type {
   LoginRequest,
@@ -14,6 +16,7 @@ export type { AuthApi } from '../api/auth-api';
 interface CreateMobileAuthServiceInput {
   authApi: AuthApi;
   csrfManager?: Pick<CsrfTokenManager, 'onForegroundResume'>;
+  appBootstrap?: AppBootstrapRuntime;
 }
 
 export type AuthMutationResult =
@@ -49,8 +52,21 @@ export interface BootstrapResult {
 export const createMobileAuthService = ({
   authApi,
   csrfManager,
+  appBootstrap,
 }: CreateMobileAuthServiceInput) => ({
   async bootstrap(): Promise<BootstrapResult> {
+    if (appBootstrap) {
+      try {
+        await bootstrapAppSession(appBootstrap);
+      } catch (error) {
+        return {
+          recoveredSession: false,
+          member: null,
+          error,
+        };
+      }
+    }
+
     try {
       const member = await authApi.fetchSession();
 

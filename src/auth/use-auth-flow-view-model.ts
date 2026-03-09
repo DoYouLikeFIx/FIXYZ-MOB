@@ -1,6 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 
+import type { AppBootstrapRuntime } from '../bootstrap/app-bootstrap';
 import { authStore, useAuthStore } from '../store/auth-store';
 import type { LoginRequest, RegisterRequest } from '../types/auth';
 
@@ -16,11 +17,13 @@ import type { CsrfTokenManager } from '../network/csrf';
 interface UseAuthFlowViewModelInput {
   authApi: AuthApi;
   csrfManager?: Pick<CsrfTokenManager, 'onForegroundResume'>;
+  appBootstrap?: AppBootstrapRuntime;
 }
 
 export const useAuthFlowViewModel = ({
   authApi,
   csrfManager,
+  appBootstrap,
 }: UseAuthFlowViewModelInput) => {
   const viewModelRef = useRef<ReturnType<typeof createAuthFlowViewModel> | null>(null);
 
@@ -29,6 +32,7 @@ export const useAuthFlowViewModel = ({
       authService: createMobileAuthService({
         authApi,
         csrfManager,
+        appBootstrap,
       }),
       authStore,
       initialAppState: AppState.currentState,
