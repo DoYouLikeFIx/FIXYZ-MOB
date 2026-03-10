@@ -16,6 +16,7 @@ import {
 } from '../../types/auth-ui';
 import type { AuthMutationResult } from '../../auth/mobile-auth-service';
 import type { RegisterRequest } from '../../types/auth';
+import { REGISTER_EMAIL_USAGE_HINT } from '../../auth/auth-copy';
 import {
   REGISTER_FIELD_LABELS,
   REGISTER_STEP_ORDER,
@@ -145,25 +146,6 @@ export const RegisterScreen = ({
 
   const renderCurrentField = () => {
     switch (viewModel.activeField) {
-      case 'username':
-        return (
-          <View style={styles.minimalStepCurrentField}>
-            <AuthField
-              {...commonCurrentFieldProps}
-              autoCapitalize="none"
-              errorMessage={viewModel.feedback.fieldMessages.username}
-              label={REGISTER_FIELD_LABELS.username}
-              onChangeText={(value) => {
-                viewModel.updateValue(viewModel.activeField, value);
-              }}
-              placeholder="사용할 아이디"
-              testID="register-username"
-              autoComplete="username-new"
-              textContentType="username"
-              value={viewModel.values.username}
-            />
-          </View>
-        );
       case 'email':
         return (
           <View style={styles.minimalStepCurrentField}>
@@ -178,6 +160,7 @@ export const RegisterScreen = ({
                 viewModel.updateValue(viewModel.activeField, value);
               }}
               placeholder="example@fix.com"
+              supportMessage={REGISTER_EMAIL_USAGE_HINT}
               testID="register-email"
               textContentType="emailAddress"
               value={viewModel.values.email}

@@ -173,7 +173,6 @@ export const AuthenticatedHomeScreen = ({
           현재 세션 상태
         </Text>
         {[
-          ['아이디', member.username],
           ['이메일', member.email],
           ['권한', member.role],
           ['TOTP 등록', member.totpEnrolled ? '완료' : '미등록'],
