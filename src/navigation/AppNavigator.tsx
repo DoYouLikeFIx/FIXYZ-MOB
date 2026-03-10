@@ -21,7 +21,7 @@ import type {
   PasswordForgotResult,
   PasswordRecoveryChallengeResult,
   PasswordResetResult,
-} from '../auth/mobile-auth-service';
+} from '../types/auth-ui';
 
 import type { AuthNavigationState } from './auth-navigation';
 
