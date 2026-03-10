@@ -1,6 +1,8 @@
 import {
   DEFAULT_SERVER_ERROR_MESSAGE,
 } from '@/network/errors';
+import { InMemoryCookieManager } from '@/network/cookie-manager';
+import { CsrfTokenManager } from '@/network/csrf';
 import { HttpClient } from '@/network/http-client';
 import type { NormalizedHttpError } from '@/network/types';
 
@@ -110,5 +112,75 @@ describe('API tests: HttpClient contract', () => {
       status: 500,
       message: 'Internal server failure',
     } satisfies Partial<NormalizedHttpError>);
+  });
+
+  it('refreshes csrf and retries an unsafe request once after a 403 response', async () => {
+    let postAttempts = 0;
+    const cookieManager = new InMemoryCookieManager();
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+
+      if (url.endsWith('/api/v1/auth/csrf')) {
+        const nextToken = postAttempts === 0 ? 'csrf-1' : 'csrf-2';
+        cookieManager.setCookie('http://localhost:8080', 'XSRF-TOKEN', nextToken);
+
+        return jsonResponse(200, {
+          success: true,
+          data: {
+            token: nextToken,
+          },
+          error: null,
+        });
+      }
+
+      if (url.endsWith('/api/v1/auth/password/reset')) {
+        postAttempts += 1;
+
+        if (postAttempts === 1) {
+          return jsonResponse(403, {
+            status: 403,
+            error: 'Forbidden',
+            message: 'Forbidden',
+          });
+        }
+
+        return new Response(null, {
+          status: 204,
+        });
+      }
+
+      return jsonResponse(404, { message: 'Not Found' });
+    });
+
+    const csrfManager = new CsrfTokenManager({
+      baseUrl: 'http://localhost:8080',
+      cookieManager,
+      bootstrapCsrf: async () => {
+        const response = await fetchMock('http://localhost:8080/api/v1/auth/csrf');
+        const payload = await response.json() as {
+          data: { token: string };
+        };
+
+        return payload.data;
+      },
+    });
+
+    const client = new HttpClient({
+      baseUrl: 'http://localhost:8080',
+      fetchFn: fetchMock as unknown as typeof fetch,
+      csrfManager,
+    });
+
+    await expect(
+      client.post('/api/v1/auth/password/reset', {
+        token: 'reset-token',
+        newPassword: 'Test1234!',
+      }),
+    ).resolves.toMatchObject({
+      statusCode: 204,
+      body: null,
+    });
+
+    expect(postAttempts).toBe(2);
   });
 });

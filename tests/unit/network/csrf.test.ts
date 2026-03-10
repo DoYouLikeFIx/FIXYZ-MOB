@@ -100,4 +100,24 @@ describe('csrf token manager', () => {
 
     expect(reasons).toHaveLength(3);
   });
+
+  it('forces a fresh csrf bootstrap for retry flows', async () => {
+    const cookies = new InMemoryCookieManager();
+    const csrf = new CsrfTokenManager({
+      baseUrl: 'http://localhost:8080',
+      cookieManager: cookies,
+      bootstrapCsrf: async () => {
+        cookies.setCookie('http://localhost:8080', 'XSRF-TOKEN', 'csrf-refresh');
+        return {
+          headerName: 'X-CSRF-TOKEN',
+          token: 'csrf-refresh',
+        };
+      },
+    });
+
+    await expect(csrf.forceRefresh()).resolves.toEqual({
+      headerName: 'X-CSRF-TOKEN',
+      token: 'csrf-refresh',
+    });
+  });
 });

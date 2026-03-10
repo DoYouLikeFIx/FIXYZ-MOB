@@ -1,6 +1,8 @@
 import {
   createAuthNavigationState,
   enterAuthenticatedApp,
+  openForgotPasswordRoute,
+  openResetPasswordRoute,
   openRegisterRoute,
   requireReauthRoute,
 } from '@/navigation/auth-navigation';
@@ -35,6 +37,20 @@ describe('mobile auth navigation state', () => {
       authRoute: 'login',
       pendingProtectedRoute: 'portfolio',
       welcomeVariant: null,
+    });
+  });
+
+  it('opens the dedicated forgot-password and reset-password auth routes', () => {
+    expect(openForgotPasswordRoute(createAuthNavigationState())).toMatchObject({
+      stack: 'auth',
+      authRoute: 'forgotPassword',
+      resetPasswordToken: null,
+    });
+
+    expect(openResetPasswordRoute(createAuthNavigationState(), 'handoff-token')).toMatchObject({
+      stack: 'auth',
+      authRoute: 'resetPassword',
+      resetPasswordToken: 'handoff-token',
     });
   });
 });

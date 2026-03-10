@@ -27,6 +27,9 @@ describe('mobile auth service', () => {
     fetchSession: vi.fn(),
     loginMember: vi.fn(),
     registerMember: vi.fn(),
+    requestPasswordResetEmail: vi.fn(),
+    requestPasswordRecoveryChallenge: vi.fn(),
+    resetPassword: vi.fn(),
   };
 
   const csrfManager = {
@@ -56,6 +59,9 @@ describe('mobile auth service', () => {
     vi.mocked(authApi.fetchSession).mockReset();
     vi.mocked(authApi.loginMember).mockReset();
     vi.mocked(authApi.registerMember).mockReset();
+    vi.mocked(authApi.requestPasswordResetEmail).mockReset();
+    vi.mocked(authApi.requestPasswordRecoveryChallenge).mockReset();
+    vi.mocked(authApi.resetPassword).mockReset();
     vi.mocked(csrfManager.onAppColdStart).mockClear();
     vi.mocked(csrfManager.onForegroundResume).mockClear();
     vi.mocked(healthClient.get).mockClear();
@@ -218,6 +224,67 @@ describe('mobile auth service', () => {
       member: {
         email: 'demo@fix.com',
       },
+    });
+  });
+
+  it('returns the forgot-password response when the recovery request succeeds', async () => {
+    vi.mocked(authApi.requestPasswordResetEmail).mockResolvedValue({
+      accepted: true,
+      message: 'If the account is eligible, a reset email will be sent.',
+      recovery: {
+        challengeEndpoint: '/api/v1/auth/password/forgot/challenge',
+        challengeMayBeRequired: true,
+      },
+    });
+
+    await expect(
+      service.requestPasswordResetEmail({
+        email: 'demo@fix.com',
+      }),
+    ).resolves.toEqual({
+      success: true,
+      response: {
+        accepted: true,
+        message: 'If the account is eligible, a reset email will be sent.',
+        recovery: {
+          challengeEndpoint: '/api/v1/auth/password/forgot/challenge',
+          challengeMayBeRequired: true,
+        },
+      },
+    });
+  });
+
+  it('returns challenge metadata for the recovery bootstrap flow', async () => {
+    vi.mocked(authApi.requestPasswordRecoveryChallenge).mockResolvedValue({
+      challengeToken: 'challenge-token',
+      challengeType: 'captcha',
+      challengeTtlSeconds: 300,
+    });
+
+    await expect(
+      service.requestPasswordRecoveryChallenge({
+        email: 'demo@fix.com',
+      }),
+    ).resolves.toEqual({
+      success: true,
+      challenge: {
+        challengeToken: 'challenge-token',
+        challengeType: 'captcha',
+        challengeTtlSeconds: 300,
+      },
+    });
+  });
+
+  it('returns success when the password reset completes', async () => {
+    vi.mocked(authApi.resetPassword).mockResolvedValue(undefined);
+
+    await expect(
+      service.resetPassword({
+        token: 'reset-token',
+        newPassword: 'Test1234!',
+      }),
+    ).resolves.toEqual({
+      success: true,
     });
   });
 });
