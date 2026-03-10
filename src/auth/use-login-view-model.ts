@@ -15,7 +15,7 @@ interface LoginViewModelInput {
 }
 
 export const useLoginViewModel = ({ submit }: LoginViewModelInput) => {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -37,9 +37,9 @@ export const useLoginViewModel = ({ submit }: LoginViewModelInput) => {
     }));
   };
 
-  const updateUsername = (value: string) => {
-    clearField('username');
-    setUsername(value);
+  const updateEmail = (value: string) => {
+    clearField('email');
+    setEmail(value);
   };
 
   const updatePassword = (value: string) => {
@@ -53,7 +53,7 @@ export const useLoginViewModel = ({ submit }: LoginViewModelInput) => {
     }
 
     const validation = validateLoginForm({
-      username,
+      email,
       password,
     });
 
@@ -78,12 +78,12 @@ export const useLoginViewModel = ({ submit }: LoginViewModelInput) => {
   };
 
   return {
-    username,
+    email,
     password,
     showPassword,
     isSubmitting,
     feedback,
-    updateUsername,
+    updateEmail,
     updatePassword,
     togglePasswordVisibility: () => {
       setShowPassword((current) => !current);

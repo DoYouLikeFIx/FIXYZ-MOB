@@ -41,6 +41,7 @@ describe('network error normalization', () => {
     expect(normalized.code).toBe('AUTH-003');
     expect(normalized.message).toBe('authentication required');
     expect(normalized.status).toBe(401);
+    expect(normalized.traceId).toBe('corr-123');
   });
 
   it('preserves auth/session guardrail codes for downstream re-auth and abuse handling', () => {
@@ -76,6 +77,25 @@ describe('network error normalization', () => {
     expect(invalidatedByNewLogin.status).toBe(401);
     expect(rateLimited.code).toBe('RATE-001');
     expect(rateLimited.status).toBe(429);
+  });
+
+  it('preserves envelope trace ids for downstream support diagnostics', () => {
+    const normalized = normalizeHttpError({
+      status: 500,
+      data: {
+        success: false,
+        data: null,
+        traceId: 'trace-auth-001',
+        error: {
+          code: 'SYS-500',
+          message: 'Internal server failure',
+          detail: 'Unexpected exception',
+          timestamp: '2026-03-09T00:00:00Z',
+        },
+      },
+    });
+
+    expect(normalized.traceId).toBe('trace-auth-001');
   });
 
   it('normalizes timeout and network failures', () => {

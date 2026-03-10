@@ -1,8 +1,9 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
 import type { LoginRequest } from '../../types/auth';
 import type { AuthMutationResult } from '../../auth/mobile-auth-service';
+import { buildPasswordRecoveryGuidance } from '../../auth/auth-copy';
 import { useLoginViewModel } from '../../auth/use-login-view-model';
 import { AuthField } from '../../components/auth/AuthField';
 import { AuthScaffold } from '../../components/auth/AuthScaffold';
@@ -24,9 +25,11 @@ export const LoginScreen = ({
   onLoginPress,
 }: LoginScreenProps) => {
   const passwordInputRef = useRef<TextInput | null>(null);
+  const [showPasswordRecoveryHelp, setShowPasswordRecoveryHelp] = useState(false);
   const viewModel = useLoginViewModel({
     submit: onSubmit,
   });
+  const passwordRecoveryGuidance = buildPasswordRecoveryGuidance(viewModel.email);
 
   return (
     <AuthScaffold
@@ -42,18 +45,20 @@ export const LoginScreen = ({
       <AuthField
         autoCapitalize="none"
         blurOnSubmit={false}
-        errorMessage={viewModel.feedback.fieldMessages.username}
-        label="아이디"
-        onChangeText={viewModel.updateUsername}
+        errorMessage={viewModel.feedback.fieldMessages.email}
+        label="이메일"
+        onChangeText={viewModel.updateEmail}
         onSubmitEditing={() => {
           passwordInputRef.current?.focus();
         }}
-        placeholder="아이디"
+        placeholder="이메일"
         returnKeyType="next"
-        testID="login-username"
-        autoComplete="username"
-        textContentType="username"
-        value={viewModel.username}
+        testID="login-email"
+        autoComplete="email"
+        keyboardType="email-address"
+        textContentType="emailAddress"
+        supportMessage="로그인과 비밀번호 재설정에 같은 이메일을 사용합니다."
+        value={viewModel.email}
       />
       <AuthField
         autoCapitalize="none"
@@ -80,6 +85,27 @@ export const LoginScreen = ({
         <View style={[styles.banner, styles.bannerError]}>
           <Text style={[styles.bannerLabel, styles.bannerLabelError]}>로그인 오류</Text>
           <Text style={styles.bannerMessage}>{viewModel.feedback.globalMessage}</Text>
+        </View>
+      ) : null}
+      <View style={styles.inlineInfoActions}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            setShowPasswordRecoveryHelp((current) => !current);
+          }}
+          style={styles.inlineInfoTrigger}
+          testID="login-password-recovery-toggle"
+        >
+          <Text style={styles.inlineInfoTriggerText}>
+            {showPasswordRecoveryHelp ? '안내 닫기' : '비밀번호 재설정 안내'}
+          </Text>
+        </Pressable>
+      </View>
+      {showPasswordRecoveryHelp ? (
+        <View style={styles.inlineInfoCard} testID="login-password-recovery-help">
+          <Text style={styles.inlineInfoTitle}>{passwordRecoveryGuidance.title}</Text>
+          <Text style={styles.inlineInfoBody}>{passwordRecoveryGuidance.body}</Text>
+          <Text style={styles.inlineInfoDetail}>{passwordRecoveryGuidance.detail}</Text>
         </View>
       ) : null}
       <Pressable

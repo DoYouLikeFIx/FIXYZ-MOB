@@ -3,7 +3,6 @@ import type { Member } from '@/types/auth';
 
 const memberFixture: Member = {
   memberUuid: 'member-001',
-  username: 'demo',
   email: 'demo@fix.com',
   name: 'Demo User',
   role: 'ROLE_USER',
@@ -56,14 +55,14 @@ describe('auth api', () => {
 
     await expect(
       authApi.loginMember({
-        username: 'demo',
+        email: 'demo@fix.com',
         password: 'Test1234!',
       }),
     ).resolves.toEqual(memberFixture);
 
     expect(client.post).toHaveBeenCalledWith(
       '/api/v1/auth/login',
-      'email=demo&password=Test1234%21',
+      'email=demo%40fix.com&password=Test1234%21',
       {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -88,14 +87,12 @@ describe('auth api', () => {
 
     await expect(
       authApi.registerMember({
-        username: 'new_user',
         email: 'new@fix.com',
         name: 'New User',
         password: 'Test1234!',
       }),
     ).resolves.toEqual({
       memberUuid: '1',
-      username: 'new',
       email: 'new@fix.com',
       name: 'New User',
       role: 'ROLE_USER',

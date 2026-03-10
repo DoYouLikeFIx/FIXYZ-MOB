@@ -8,7 +8,6 @@ import type { Member } from '@/types/auth';
 
 const memberFixture: Member = {
   memberUuid: 'member-001',
-  username: 'demo',
   email: 'demo@fix.com',
   name: 'Demo User',
   role: 'ROLE_USER',
@@ -107,7 +106,7 @@ describe('auth flow view model', () => {
     });
 
     const result = await viewModel.submitLogin({
-      username: 'demo',
+      email: 'demo@fix.com',
       password: 'Test1234!',
     });
 

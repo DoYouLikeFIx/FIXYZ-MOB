@@ -8,13 +8,13 @@ appId: org.reactjs.native.example.FIXYZMob
       mobDisableAnimations: true
 - extendedWaitUntil:
     visible:
-      id: login-username
+      id: login-email
     timeout: 20000
 - tapOn:
-    id: login-username
+    id: login-email
 - waitForAnimationToEnd:
     timeout: 5000
-- inputText: stale_resume
+- inputText: stale@fix.com
 - tapOn:
     id: login-password
 - waitForAnimationToEnd:

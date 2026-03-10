@@ -68,7 +68,6 @@ describe('mobile auth service', () => {
   it('performs cold-start csrf bootstrap and health check before session recovery', async () => {
     vi.mocked(authApi.fetchSession).mockResolvedValue({
       memberUuid: 'member-001',
-      username: 'demo',
       email: 'demo@fix.com',
       name: 'Demo User',
       role: 'ROLE_USER',
@@ -87,7 +86,7 @@ describe('mobile auth service', () => {
     expect(result).toMatchObject({
       recoveredSession: true,
       member: {
-        username: 'demo',
+        email: 'demo@fix.com',
       },
       error: null,
     });
@@ -114,7 +113,6 @@ describe('mobile auth service', () => {
   it('returns the authenticated member when login succeeds', async () => {
     vi.mocked(authApi.loginMember).mockResolvedValue({
       memberUuid: 'member-001',
-      username: 'demo',
       email: 'demo@fix.com',
       name: 'Demo User',
       role: 'ROLE_USER',
@@ -122,14 +120,13 @@ describe('mobile auth service', () => {
     });
 
     const result = await service.loginMember({
-      username: 'demo',
+      email: 'demo@fix.com',
       password: 'Test1234!',
     });
 
     expect(result).toMatchObject({
       success: true,
       member: {
-        username: 'demo',
         email: 'demo@fix.com',
       },
     });
@@ -144,7 +141,7 @@ describe('mobile auth service', () => {
     vi.mocked(authApi.loginMember).mockRejectedValue(error);
 
     const result = await service.loginMember({
-      username: 'demo',
+      email: 'demo@fix.com',
       password: 'wrong-password',
     });
 
@@ -157,7 +154,6 @@ describe('mobile auth service', () => {
   it('registers then logs in with email for the follow-up session', async () => {
     vi.mocked(authApi.registerMember).mockResolvedValue({
       memberUuid: 'member-002',
-      username: 'new',
       email: 'new@fix.com',
       name: 'New User',
       role: 'ROLE_USER',
@@ -165,7 +161,6 @@ describe('mobile auth service', () => {
     });
     vi.mocked(authApi.loginMember).mockResolvedValue({
       memberUuid: 'member-002',
-      username: 'new',
       email: 'new@fix.com',
       name: 'New User',
       role: 'ROLE_USER',
@@ -173,7 +168,6 @@ describe('mobile auth service', () => {
     });
 
     const result = await service.registerMember({
-      username: 'ignored-by-be-contract',
       email: 'new@fix.com',
       name: 'New User',
       password: 'Test1234!',
@@ -186,7 +180,7 @@ describe('mobile auth service', () => {
       },
     });
     expect(vi.mocked(authApi.loginMember)).toHaveBeenCalledWith({
-      username: 'new@fix.com',
+      email: 'new@fix.com',
       password: 'Test1234!',
     });
   });
@@ -210,7 +204,6 @@ describe('mobile auth service', () => {
   it('refreshes csrf state before resume revalidation', async () => {
     vi.mocked(authApi.fetchSession).mockResolvedValue({
       memberUuid: 'member-001',
-      username: 'demo',
       email: 'demo@fix.com',
       name: 'Demo User',
       role: 'ROLE_USER',
@@ -223,7 +216,7 @@ describe('mobile auth service', () => {
     expect(result).toMatchObject({
       status: 'authenticated',
       member: {
-        username: 'demo',
+        email: 'demo@fix.com',
       },
     });
   });

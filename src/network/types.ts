@@ -9,6 +9,7 @@ export interface ApiResponseEnvelope<T> {
   success: boolean;
   data: T | null;
   error: ApiErrorPayload | null;
+  traceId?: string;
 }
 
 export interface NormalizedHttpError extends Error {
@@ -16,6 +17,7 @@ export interface NormalizedHttpError extends Error {
   status?: number;
   detail?: string;
   retriable?: boolean;
+  traceId?: string;
 }
 
 export interface HttpClientResponse<T> {

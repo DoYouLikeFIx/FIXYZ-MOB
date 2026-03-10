@@ -18,7 +18,6 @@ const PASSWORD_POLICY_GUIDANCE =
   '8자 이상, 대문자, 숫자, 특수문자를 포함해 주세요.';
 const PASSWORD_POLICY_ERROR = '비밀번호 정책을 모두 충족해 주세요.';
 const REGISTER_FIELD_ORDER: RegisterField[] = [
-  'username',
   'email',
   'name',
   'password',
@@ -26,9 +25,6 @@ const REGISTER_FIELD_ORDER: RegisterField[] = [
 ];
 
 const trimValue = (value: string) => value.trim();
-
-const getUsernameValidationMessage = (username: string): string | undefined =>
-  trimValue(username) ? undefined : '아이디를 입력해 주세요.';
 
 const getEmailValidationMessage = (email: string): string | undefined => {
   const normalizedEmail = trimValue(email);
@@ -94,8 +90,6 @@ export const validateRegisterField = (
   values: RegisterFormValues,
 ): string | undefined => {
   switch (field) {
-    case 'username':
-      return getUsernameValidationMessage(values.username);
     case 'email':
       return getEmailValidationMessage(values.email);
     case 'name':
@@ -135,13 +129,13 @@ interface InvalidLoginResult {
 export const validateLoginForm = (
   values: LoginRequest,
 ): ValidatedLoginResult | InvalidLoginResult => {
-  const username = trimValue(values.username);
+  const email = trimValue(values.email);
   const feedback = createEmptyLoginFeedback();
-  const usernameValidationMessage = getUsernameValidationMessage(values.username);
+  const emailValidationMessage = getEmailValidationMessage(values.email);
 
-  if (usernameValidationMessage) {
-    feedback.fieldErrors.username = true;
-    feedback.fieldMessages.username = usernameValidationMessage;
+  if (emailValidationMessage) {
+    feedback.fieldErrors.email = true;
+    feedback.fieldMessages.email = emailValidationMessage;
 
     return {
       valid: false,
@@ -162,7 +156,7 @@ export const validateLoginForm = (
   return {
     valid: true,
     payload: {
-      username,
+      email,
       password: values.password,
     },
     feedback,
@@ -183,7 +177,6 @@ interface InvalidRegisterResult {
 export const validateRegisterForm = (
   values: RegisterFormValues,
 ): ValidatedRegisterResult | InvalidRegisterResult => {
-  const username = trimValue(values.username);
   const email = trimValue(values.email);
   const name = trimValue(values.name);
   const feedback = createEmptyRegisterFeedback();
@@ -205,7 +198,6 @@ export const validateRegisterForm = (
   return {
     valid: true,
     payload: {
-      username,
       email,
       name,
       password: values.password,

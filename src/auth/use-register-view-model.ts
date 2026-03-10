@@ -22,7 +22,6 @@ interface RegisterViewModelInput {
 }
 
 export const REGISTER_STEP_ORDER: RegisterField[] = [
-  'username',
   'email',
   'name',
   'password',
@@ -33,10 +32,6 @@ export const REGISTER_STEP_COPY: Record<
   RegisterField,
   { title: string; description: string }
 > = {
-  username: {
-    title: '아이디를 입력해 주세요',
-    description: '입력이 끝나면 다음 항목으로 바로 이어집니다.',
-  },
   email: {
     title: '이메일을 입력해 주세요',
     description: '인증과 안내를 받을 주소입니다.',
@@ -56,7 +51,6 @@ export const REGISTER_STEP_COPY: Record<
 };
 
 export const REGISTER_FIELD_LABELS: Record<RegisterField, string> = {
-  username: '아이디',
   email: '이메일',
   name: '이름',
   password: '비밀번호',
@@ -64,7 +58,6 @@ export const REGISTER_FIELD_LABELS: Record<RegisterField, string> = {
 };
 
 const createInitialRegisterValues = (): RegisterFormValues => ({
-  username: '',
   email: '',
   name: '',
   password: '',
@@ -95,8 +88,6 @@ export const getRegisterFieldPreview = (
       return values.email.trim();
     case 'name':
       return values.name.trim();
-    case 'username':
-      return values.username.trim();
     default:
       return '';
   }

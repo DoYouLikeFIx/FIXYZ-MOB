@@ -15,14 +15,12 @@ appId: org.reactjs.native.example.FIXYZMob
 - waitForAnimationToEnd:
     timeout: 5000
 - inputText: demo@fix.com
+- waitForAnimationToEnd:
+    timeout: 1000
 - tapOn:
     id: login-password
 - waitForAnimationToEnd:
     timeout: 5000
-- inputText: wrong-password
-- pressKey: Enter
-- extendedWaitUntil:
-    visible: "이메일 또는 비밀번호가 올바르지 않습니다."
-    timeout: 10000
-- assertVisible:
-    id: login-submit
+- inputText: Test1234!
+- waitForAnimationToEnd:
+    timeout: 2000

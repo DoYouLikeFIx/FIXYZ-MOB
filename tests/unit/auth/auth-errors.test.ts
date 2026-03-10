@@ -4,7 +4,10 @@ import {
   getRegisterErrorFeedback,
   getReauthMessage,
   isReauthError,
+  resolveAuthErrorPresentation,
 } from '@/auth/auth-errors';
+import { NETWORK_ERROR_MESSAGE } from '@/network/errors';
+import { authErrorContract } from '../../fixtures/auth-error-contract';
 
 const createHttpError = (
   overrides: Partial<NormalizedHttpError> & { message?: string } = {},
@@ -18,23 +21,38 @@ const createHttpError = (
   error.status = overrides.status;
   error.detail = overrides.detail;
   error.retriable = overrides.retriable;
+  error.traceId = overrides.traceId;
 
   return error;
 };
 
 describe('mobile auth error presentation', () => {
-  it('maps duplicate username failures to the register username field', () => {
+  for (const { codes, semantic, recoveryAction, message } of authErrorContract.cases) {
+    it(`matches the mobile auth contract for ${codes.join(', ')}`, () => {
+      for (const code of codes) {
+        const presentation = resolveAuthErrorPresentation(
+          createHttpError({ code, message: `${code} server message` }),
+        );
+
+        expect(presentation.semantic).toBe(semantic);
+        expect(presentation.recoveryAction).toBe(recoveryAction);
+        expect(presentation.message).toBe(message);
+      }
+    });
+  }
+
+  it('maps duplicate email failures to the register email field', () => {
     expect(
       getRegisterErrorFeedback(
-        createHttpError({ code: 'AUTH-008', message: 'Username already exists' }),
+        createHttpError({ code: 'AUTH-017', message: 'Email already exists' }),
       ),
     ).toMatchObject({
       globalMessage: null,
       fieldErrors: {
-        username: true,
+        email: true,
       },
       fieldMessages: {
-        username: '이미 사용 중인 아이디입니다. 다른 아이디를 선택해 주세요.',
+        email: '이미 가입된 이메일입니다. 다른 이메일을 입력해 주세요.',
       },
     });
   });
@@ -61,7 +79,7 @@ describe('mobile auth error presentation', () => {
         createHttpError({ code: 'AUTH-001', message: 'Credential mismatch' }),
       ),
     ).toMatchObject({
-      globalMessage: '아이디 또는 비밀번호가 올바르지 않습니다.',
+      globalMessage: '이메일 또는 비밀번호가 올바르지 않습니다.',
       fieldMessages: {},
     });
   });
@@ -71,5 +89,31 @@ describe('mobile auth error presentation', () => {
 
     expect(isReauthError(error)).toBe(true);
     expect(getReauthMessage(error)).toBe('세션이 만료되었습니다. 다시 로그인해 주세요.');
+  });
+
+  it('uses the safe fallback and exposes the correlation id for unknown backend codes', () => {
+    const presentation = resolveAuthErrorPresentation(
+      createHttpError({
+        code: 'AUTH-999',
+        message: 'Raw backend exception should not leak',
+        traceId: 'corr-123',
+      }),
+    );
+
+    expect(presentation.semantic).toBe(authErrorContract.unknownFallback.semantic);
+    expect(presentation.recoveryAction).toBe(
+      authErrorContract.unknownFallback.recoveryAction,
+    );
+    expect(presentation.message).toBe(
+      `${authErrorContract.unknownFallback.message} ${authErrorContract.supportReferenceLabel}: corr-123`,
+    );
+  });
+
+  it('preserves client-generated transport guidance when no backend auth code exists', () => {
+    expect(
+      getLoginErrorFeedback(createHttpError({ message: NETWORK_ERROR_MESSAGE })),
+    ).toMatchObject({
+      globalMessage: NETWORK_ERROR_MESSAGE,
+    });
   });
 });

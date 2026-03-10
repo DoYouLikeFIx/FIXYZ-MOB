@@ -3,16 +3,19 @@ import type { HttpClient } from '../network/http-client';
 import type { LoginRequest, Member, RegisterRequest } from '../types/auth';
 
 interface AuthMutationResponse {
-  memberId: number;
+  memberId?: number;
+  memberUuid?: string;
   email: string;
   name: string;
+  role?: string;
+  totpEnrolled?: boolean;
+  accountId?: string | null;
 }
 
 const isMember = (value: unknown): value is Member =>
   typeof value === 'object'
   && value !== null
   && 'memberUuid' in value
-  && 'username' in value
   && 'email' in value
   && 'name' in value
   && 'role' in value
@@ -26,12 +29,12 @@ const FORM_HEADERS = {
 };
 
 const createCompatMember = (payload: AuthMutationResponse): Member => ({
-  memberUuid: String(payload.memberId),
-  username: payload.email.split('@')[0] ?? payload.email,
+  memberUuid: payload.memberUuid ?? String(payload.memberId ?? ''),
   email: payload.email,
   name: payload.name,
-  role: 'ROLE_USER',
-  totpEnrolled: false,
+  role: payload.role ?? 'ROLE_USER',
+  totpEnrolled: payload.totpEnrolled ?? false,
+  accountId: payload.accountId ?? undefined,
 });
 
 export interface AuthApi {
@@ -57,7 +60,7 @@ export const createAuthApi = ({
     const response = await client.post<Member | AuthMutationResponse>(
       '/api/v1/auth/login',
       createFormBody({
-        email: payload.username,
+        email: payload.email,
         password: payload.password,
       }),
       {

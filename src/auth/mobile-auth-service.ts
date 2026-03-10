@@ -109,7 +109,7 @@ export const createMobileAuthService = ({
       await authApi.registerMember(values);
 
       const member = await authApi.loginMember({
-        username: values.email,
+        email: values.email,
         password: values.password,
       });
 
