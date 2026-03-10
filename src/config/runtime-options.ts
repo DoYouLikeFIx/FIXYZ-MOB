@@ -36,6 +36,14 @@ const toBoolean = (value: string | undefined): boolean | undefined => {
   return undefined;
 };
 
+const isDevelopmentRuntime = (): boolean => {
+  if (typeof __DEV__ !== 'undefined') {
+    return __DEV__;
+  }
+
+  return process.env.NODE_ENV !== 'production';
+};
+
 export const getMobileLaunchArguments = (): MobileLaunchArguments => {
   if (cachedArguments) {
     return cachedArguments;
@@ -71,7 +79,7 @@ export const isMotionDisabled = (): boolean => {
 export const shouldUseQaPlaintextPasswords = (): boolean => {
   const { mobQaPlaintextPasswords } = getMobileLaunchArguments();
 
-  return __DEV__ && (
+  return isDevelopmentRuntime() && (
     mobQaPlaintextPasswords === true
     || toBoolean(
       typeof mobQaPlaintextPasswords === 'string' ? mobQaPlaintextPasswords : undefined,
