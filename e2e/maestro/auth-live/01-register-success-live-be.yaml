@@ -12,16 +12,6 @@ appId: org.reactjs.native.example.FIXYZMob
 - tapOn: "새 계정 만들기"
 - extendedWaitUntil:
     visible:
-      id: register-username
-    timeout: 10000
-- tapOn:
-    id: register-username
-- waitForAnimationToEnd:
-    timeout: 5000
-- inputText: ${LIVE_USERNAME}
-- pressKey: Enter
-- extendedWaitUntil:
-    visible:
       id: register-email
     timeout: 10000
 - tapOn:
