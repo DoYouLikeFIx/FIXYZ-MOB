@@ -44,13 +44,6 @@ export const useForgotPasswordViewModel = ({
     setChallengeMayBeRequired(false);
   };
 
-  const clearStaleChallengeState = () => {
-    setChallengeAnswer('');
-    setChallengeState(null);
-    setAcceptedMessage(null);
-    setChallengeMayBeRequired(false);
-  };
-
   const updateEmail = (value: string) => {
     setEmail(value);
     resetFlowState();
@@ -80,7 +73,7 @@ export const useForgotPasswordViewModel = ({
 
       if (!result.success) {
         if (challengeState) {
-          clearStaleChallengeState();
+          resetFlowState();
         } else {
           setAcceptedMessage(null);
         }

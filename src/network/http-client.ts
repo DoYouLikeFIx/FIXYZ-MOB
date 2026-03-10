@@ -154,9 +154,7 @@ export class HttpClient {
           && this.csrfManager
           && !SAFE_METHODS.has(method)
         ) {
-          const refreshed = await this.csrfManager.forceRefresh();
-
-          requestHeaders[refreshed.headerName] = refreshed.token;
+          await this.csrfManager.forceRefresh();
 
           return sendRequest(true);
         }

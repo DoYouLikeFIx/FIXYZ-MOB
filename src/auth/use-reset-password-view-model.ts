@@ -32,7 +32,7 @@ export const useResetPasswordViewModel = ({
   const passwordState = getResetPasswordState(newPassword);
 
   useEffect(() => {
-    if (!initialToken || initialToken === token) {
+    if (!initialToken) {
       return;
     }
 
@@ -49,7 +49,7 @@ export const useResetPasswordViewModel = ({
         token: undefined,
       },
     }));
-  }, [initialToken, token]);
+  }, [initialToken]);
 
   const clearField = (field: 'token' | 'newPassword') => {
     setFeedback((current) => ({
