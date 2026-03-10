@@ -2,10 +2,13 @@ import { LaunchArguments } from 'react-native-launch-arguments';
 
 import type { RuntimeTarget } from './environment';
 
+declare const __DEV__: boolean;
+
 export interface MobileLaunchArguments {
   mobApiBaseUrl?: string;
   mobRuntimeTarget?: RuntimeTarget;
-  mobDisableAnimations?: boolean;
+  mobDisableAnimations?: boolean | string;
+  mobQaPlaintextPasswords?: boolean | string;
 }
 
 let cachedArguments: MobileLaunchArguments | null = null;
@@ -56,8 +59,25 @@ export const resolveRuntimeTarget = (): RuntimeTarget => {
 export const resolveRuntimeUrlOverride = (): string | undefined =>
   getMobileLaunchArguments().mobApiBaseUrl ?? process.env.MOB_API_BASE_URL;
 
-export const isMotionDisabled = (): boolean =>
-  getMobileLaunchArguments().mobDisableAnimations === true;
+export const isMotionDisabled = (): boolean => {
+  const { mobDisableAnimations } = getMobileLaunchArguments();
+
+  return mobDisableAnimations === true
+    || toBoolean(
+      typeof mobDisableAnimations === 'string' ? mobDisableAnimations : undefined,
+    ) === true;
+};
+
+export const shouldUseQaPlaintextPasswords = (): boolean => {
+  const { mobQaPlaintextPasswords } = getMobileLaunchArguments();
+
+  return __DEV__ && (
+    mobQaPlaintextPasswords === true
+    || toBoolean(
+      typeof mobQaPlaintextPasswords === 'string' ? mobQaPlaintextPasswords : undefined,
+    ) === true
+  );
+};
 
 export const shouldEnforceStrictCsrfBootstrap = (): boolean => {
   const override = toBoolean(process.env.MOB_STRICT_CSRF_BOOTSTRAP);
