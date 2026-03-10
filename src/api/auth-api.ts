@@ -1,6 +1,15 @@
 import type { CsrfTokenManager } from '../network/csrf';
 import type { HttpClient } from '../network/http-client';
-import type { LoginRequest, Member, RegisterRequest } from '../types/auth';
+import type {
+  LoginRequest,
+  Member,
+  PasswordForgotRequest,
+  PasswordForgotResponse,
+  PasswordRecoveryChallengeRequest,
+  PasswordRecoveryChallengeResponse,
+  PasswordResetRequest,
+  RegisterRequest,
+} from '../types/auth';
 
 interface AuthMutationResponse {
   memberId?: number;
@@ -41,6 +50,11 @@ export interface AuthApi {
   fetchSession: () => Promise<Member>;
   loginMember: (payload: LoginRequest) => Promise<Member>;
   registerMember: (payload: RegisterRequest) => Promise<Member>;
+  requestPasswordResetEmail: (payload: PasswordForgotRequest) => Promise<PasswordForgotResponse>;
+  requestPasswordRecoveryChallenge: (
+    payload: PasswordRecoveryChallengeRequest,
+  ) => Promise<PasswordRecoveryChallengeResponse>;
+  resetPassword: (payload: PasswordResetRequest) => Promise<void>;
 }
 
 interface CreateAuthApiInput {
@@ -96,5 +110,24 @@ export const createAuthApi = ({
     }
 
     return createCompatMember(response.body);
+  },
+  requestPasswordResetEmail: async (payload) => {
+    const response = await client.post<PasswordForgotResponse>(
+      '/api/v1/auth/password/forgot',
+      payload,
+    );
+
+    return response.body;
+  },
+  requestPasswordRecoveryChallenge: async (payload) => {
+    const response = await client.post<PasswordRecoveryChallengeResponse>(
+      '/api/v1/auth/password/forgot/challenge',
+      payload,
+    );
+
+    return response.body;
+  },
+  resetPassword: async (payload) => {
+    await client.post('/api/v1/auth/password/reset', payload);
   },
 });
