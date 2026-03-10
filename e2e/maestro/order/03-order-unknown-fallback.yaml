@@ -1,0 +1,51 @@
+appId: org.reactjs.native.example.FIXYZMob
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    arguments:
+      mobApiBaseUrl: http://localhost:18080
+      mobDisableAnimations: true
+- extendedWaitUntil:
+    visible:
+      id: login-email
+    timeout: 20000
+- tapOn:
+    id: login-email
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: unknown-order@fix.com
+- tapOn:
+    id: login-password
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: Test1234!
+- pressKey: Enter
+- tapOn:
+    text: "지금 안 함"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: protected-area-title
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: mobile-external-order-submit
+    direction: DOWN
+    timeout: 15000
+    visibilityPercentage: 60
+- tapOn:
+    id: mobile-external-order-submit
+- extendedWaitUntil:
+    visible:
+      id: external-order-error-title
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      id: external-order-error-support-reference
+    direction: DOWN
+    timeout: 15000
+    visibilityPercentage: 60
+- assertVisible: "주문 상태 확인이 더 필요합니다"
+- assertVisible:
+    id: external-order-error-support-reference
