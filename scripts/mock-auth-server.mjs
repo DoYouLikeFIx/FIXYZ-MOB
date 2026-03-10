@@ -18,19 +18,39 @@ const VALID_PASSWORD = 'Test1234!';
 
 const normalizeIdentifier = (value) => value.trim().toLowerCase();
 
-const resolveUsername = (email) => {
-  const atIndex = email.indexOf('@');
-
-  if (atIndex > 0) {
-    return email.slice(0, atIndex);
-  }
-
-  return email;
-};
+const scriptedLoginErrors = new Map([
+  [
+    'locked@fix.com',
+    {
+      status: 401,
+      code: 'AUTH-002',
+      message: 'Account locked',
+      detail: 'This account is locked and must wait before another login attempt.',
+    },
+  ],
+  [
+    'rate@fix.com',
+    {
+      status: 429,
+      code: 'RATE-001',
+      message: 'Too many login attempts',
+      detail: 'Too many login attempts were received from this client.',
+    },
+  ],
+  [
+    'unknown@fix.com',
+    {
+      status: 500,
+      code: 'AUTH-999',
+      message: 'Unmapped auth failure',
+      detail: 'This fixture simulates an untranslated backend auth code.',
+      traceId: 'corr-auth-999',
+    },
+  ],
+]);
 
 const createProfile = ({
   memberUuid,
-  username,
   email,
   name,
   sessionMode = 'valid',
@@ -40,7 +60,6 @@ const createProfile = ({
   aliases,
   member: {
     memberUuid,
-    username,
     email,
     name,
     role: 'ROLE_USER',
@@ -54,7 +73,6 @@ const profilesByEmail = new Map();
 const indexProfile = (profile) => {
   const keys = new Set([
     profile.member.email,
-    profile.member.username,
     ...profile.aliases,
   ]);
 
@@ -68,41 +86,31 @@ const indexProfile = (profile) => {
 [
   createProfile({
     memberUuid: 'member-001',
-    username: 'demo',
     email: 'demo@fix.com',
     name: 'Demo User',
-    aliases: ['demo'],
   }),
   createProfile({
     memberUuid: 'member-002',
-    username: 'reauth_refresh',
     email: 'reauth@fix.com',
     name: 'Reauth Refresh',
     sessionMode: 'reauth',
-    aliases: ['reauth_refresh'],
   }),
   createProfile({
     memberUuid: 'member-003',
-    username: 'stale_resume',
     email: 'stale@fix.com',
     name: 'Stale Resume',
     sessionMode: 'stale',
-    aliases: ['stale_resume'],
   }),
   createProfile({
     memberUuid: 'member-005',
-    username: 'new_login_kickout',
     email: 'kickout@fix.com',
     name: 'Kickout User',
     sessionMode: 'new-login-kickout',
-    aliases: ['new_login_kickout'],
   }),
   createProfile({
     memberUuid: 'member-006',
-    username: 'taken_user',
     email: 'taken-user@fix.com',
     name: 'Taken User',
-    aliases: ['taken_user'],
   }),
 ].forEach(indexProfile);
 
@@ -299,11 +307,26 @@ const server = http.createServer(async (request, response) => {
     const identifier =
       typeof body.email === 'string'
         ? normalizeIdentifier(body.email)
-        : typeof body.username === 'string'
-          ? normalizeIdentifier(body.username)
-          : '';
+        : '';
     const password = typeof body.password === 'string' ? body.password : '';
     const profile = profilesByLogin.get(identifier);
+    const scriptedError = scriptedLoginErrors.get(identifier);
+
+    if (scriptedError) {
+      writeJson(
+        response,
+        scriptedError.status,
+        {
+          ...errorEnvelope(
+            scriptedError.code,
+            scriptedError.message,
+            scriptedError.detail,
+          ),
+          traceId: scriptedError.traceId,
+        },
+      );
+      return;
+    }
 
     if (!profile || password !== VALID_PASSWORD) {
       writeJson(
@@ -312,7 +335,7 @@ const server = http.createServer(async (request, response) => {
         errorEnvelope(
           'AUTH-001',
           'Credential mismatch',
-          'The supplied username or password is invalid.',
+          'The supplied email or password is invalid.',
         ),
       );
       return;
@@ -359,10 +382,10 @@ const server = http.createServer(async (request, response) => {
     if (existingProfile) {
       writeJson(
         response,
-        400,
+        409,
         errorEnvelope(
-          'BAD_REQUEST',
-          'member already exists',
+          'AUTH-017',
+          'Email already exists',
           'Duplicate email',
         ),
       );
@@ -371,10 +394,8 @@ const server = http.createServer(async (request, response) => {
 
     const profile = createProfile({
       memberUuid: `member-${crypto.randomUUID()}`,
-      username: resolveUsername(email),
       email,
       name,
-      aliases: [resolveUsername(email)],
     });
 
     indexProfile(profile);
