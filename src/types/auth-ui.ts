@@ -3,14 +3,13 @@ import type { RegisterRequest } from './auth';
 export type AuthMode = 'login' | 'register';
 
 export interface LoginFieldErrors {
-  username: boolean;
+  email: boolean;
   password: boolean;
 }
 
 export type LoginField = keyof LoginFieldErrors;
 
 export interface RegisterFieldErrors {
-  username: boolean;
   email: boolean;
   name: boolean;
   password: boolean;
@@ -38,12 +37,11 @@ export interface RegisterFormFeedback {
 export type FieldMessageTone = 'neutral' | 'success' | 'error';
 
 export const createLoginFieldErrors = (): LoginFieldErrors => ({
-  username: false,
+  email: false,
   password: false,
 });
 
 export const createRegisterFieldErrors = (): RegisterFieldErrors => ({
-  username: false,
   email: false,
   name: false,
   password: false,
