@@ -9,11 +9,13 @@ import type { AuthStatus } from '../store/auth-store';
 import type { Member } from '../types/auth';
 import type { LoginRequest, RegisterRequest } from '../types/auth';
 import type { AuthMutationResult } from '../auth/mobile-auth-service';
+import type { OrderApi } from '../api/order-api';
 
 import type { AuthNavigationState } from './auth-navigation';
 
 interface AppNavigatorProps {
   animationsDisabled: boolean;
+  orderApi: OrderApi;
   authStatus: AuthStatus;
   member: Member | null;
   reauthMessage: string | null;
@@ -70,6 +72,7 @@ const getTransitionOffset = (previousKey: string, nextKey: string): number => {
 
 export const AppNavigator = ({
   animationsDisabled,
+  orderApi,
   authStatus,
   member,
   reauthMessage,
@@ -143,6 +146,7 @@ export const AppNavigator = ({
       <AuthenticatedHomeScreen
         isRefreshingSession={isRefreshingSession}
         member={member}
+        orderApi={orderApi}
         onRefreshSession={onRefreshProtectedSession}
         sessionErrorMessage={protectedErrorMessage}
         welcomeVariant={navigationState.welcomeVariant}
