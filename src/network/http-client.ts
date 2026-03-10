@@ -147,12 +147,20 @@ export class HttpClient {
       const data = await parseBody(response);
 
       if (!response.ok) {
-        throw normalizeHttpError({ status: response.status, data });
+        throw normalizeHttpError({
+          status: response.status,
+          data,
+          headers: response.headers,
+        });
       }
 
       if (isApiResponseEnvelope(data)) {
         if (!data.success) {
-          throw normalizeHttpError({ status: response.status, data });
+          throw normalizeHttpError({
+            status: response.status,
+            data,
+            headers: response.headers,
+          });
         }
 
         return {
