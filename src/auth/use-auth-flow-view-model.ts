@@ -1,13 +1,20 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Linking } from 'react-native';
 
 import type { AppBootstrapRuntime } from '../bootstrap/app-bootstrap';
 import { authStore, useAuthStore } from '../store/auth-store';
-import type { LoginRequest, RegisterRequest } from '../types/auth';
+import type {
+  LoginRequest,
+  PasswordForgotRequest,
+  PasswordRecoveryChallengeRequest,
+  PasswordResetRequest,
+  RegisterRequest,
+} from '../types/auth';
 
 import {
   createAuthFlowViewModel,
 } from './auth-flow-view-model';
+import { extractPasswordResetTokenFromUrl } from './password-reset-handoff';
 import {
   createMobileAuthService,
   type AuthApi,
@@ -50,14 +57,41 @@ export const useAuthFlowViewModel = ({
   const reauthMessage = useAuthStore((state) => state.reauthMessage);
 
   useEffect(() => {
-    void viewModelRef.current?.bootstrap();
+    let cancelled = false;
 
-    const subscription = AppState.addEventListener('change', (nextState) => {
+    const initialize = async () => {
+      const initialUrlPromise = Linking.getInitialURL();
+
+      await viewModelRef.current?.bootstrap();
+
+      if (cancelled) {
+        return;
+      }
+
+      const token = extractPasswordResetTokenFromUrl(await initialUrlPromise);
+
+      if (token) {
+        viewModelRef.current?.ingestPasswordResetToken(token);
+      }
+    };
+
+    void initialize();
+
+    const appStateSubscription = AppState.addEventListener('change', (nextState) => {
       viewModelRef.current?.handleAppStateChange(nextState);
+    });
+    const linkingSubscription = Linking.addEventListener('url', ({ url }) => {
+      const token = extractPasswordResetTokenFromUrl(url);
+
+      if (token) {
+        viewModelRef.current?.ingestPasswordResetToken(token);
+      }
     });
 
     return () => {
-      subscription.remove();
+      cancelled = true;
+      appStateSubscription.remove();
+      linkingSubscription.remove();
     };
   }, []);
 
@@ -72,10 +106,22 @@ export const useAuthFlowViewModel = ({
     onOpenRegister: () => {
       viewModelRef.current?.openRegister();
     },
+    onOpenForgotPassword: () => {
+      viewModelRef.current?.openForgotPassword();
+    },
+    onOpenResetPassword: (token?: string) => {
+      viewModelRef.current?.openResetPassword(token);
+    },
     onLoginSubmit: (payload: LoginRequest) =>
       viewModelRef.current!.submitLogin(payload),
     onRegisterSubmit: (payload: RegisterRequest) =>
       viewModelRef.current!.submitRegister(payload),
+    onPasswordForgotSubmit: (payload: PasswordForgotRequest) =>
+      viewModelRef.current!.submitPasswordResetEmail(payload),
+    onPasswordChallengeSubmit: (payload: PasswordRecoveryChallengeRequest) =>
+      viewModelRef.current!.submitPasswordRecoveryChallenge(payload),
+    onPasswordResetSubmit: (payload: PasswordResetRequest) =>
+      viewModelRef.current!.submitPasswordReset(payload),
     onRefreshProtectedSession: () => {
       void viewModelRef.current?.refreshProtectedSession('manual');
     },

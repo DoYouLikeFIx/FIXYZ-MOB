@@ -3,7 +3,9 @@ import type { AppStateStatus } from 'react-native';
 import {
   createAuthNavigationState,
   enterAuthenticatedApp,
+  openForgotPasswordRoute,
   openLoginRoute,
+  openResetPasswordRoute,
   openRegisterRoute,
   requireReauthRoute,
   type AuthNavigationState,
@@ -11,6 +13,9 @@ import {
 import type { AuthState } from '../store/auth-store';
 import type {
   LoginRequest,
+  PasswordForgotRequest,
+  PasswordRecoveryChallengeRequest,
+  PasswordResetRequest,
   RegisterRequest,
 } from '../types/auth';
 
@@ -22,6 +27,9 @@ import {
 import type {
   AuthMutationResult,
   BootstrapResult,
+  PasswordForgotResult,
+  PasswordRecoveryChallengeResult,
+  PasswordResetResult,
   ProtectedRequestResult,
 } from './mobile-auth-service';
 
@@ -39,11 +47,18 @@ interface AuthServiceAdapter {
   bootstrap: () => Promise<BootstrapResult>;
   loginMember: (payload: LoginRequest) => Promise<AuthMutationResult>;
   registerMember: (payload: RegisterRequest) => Promise<AuthMutationResult>;
+  requestPasswordResetEmail: (payload: PasswordForgotRequest) => Promise<PasswordForgotResult>;
+  requestPasswordRecoveryChallenge: (
+    payload: PasswordRecoveryChallengeRequest,
+  ) => Promise<PasswordRecoveryChallengeResult>;
+  resetPassword: (payload: PasswordResetRequest) => Promise<PasswordResetResult>;
   refreshProtectedSession: () => Promise<ProtectedRequestResult>;
   revalidateSessionOnResume: () => Promise<ProtectedRequestResult>;
 }
 
 export interface AuthFlowViewState {
+  authBannerMessage: string | null;
+  authBannerTone: 'info' | 'error' | 'success';
   navigationState: AuthNavigationState;
   bootstrapErrorMessage: string | null;
   protectedErrorMessage: string | null;
@@ -60,11 +75,21 @@ interface CreateAuthFlowViewModelInput {
 const createDefaultViewState = (
   navigationState: AuthNavigationState,
 ): AuthFlowViewState => ({
+  authBannerMessage: null,
+  authBannerTone: 'info',
   navigationState,
   bootstrapErrorMessage: null,
   protectedErrorMessage: null,
   isRefreshingSession: false,
 });
+
+const shouldPreserveRecoveryRoute = (
+  navigationState: AuthNavigationState,
+) => navigationState.stack === 'auth'
+  && (
+    navigationState.authRoute === 'forgotPassword'
+    || navigationState.authRoute === 'resetPassword'
+  );
 
 export const createAuthFlowViewModel = ({
   authService,
@@ -99,6 +124,8 @@ export const createAuthFlowViewModel = ({
   const clearTransientErrors = () => {
     authStore.clearReauthMessage();
     setState({
+      authBannerMessage: null,
+      authBannerTone: 'info',
       bootstrapErrorMessage: null,
       protectedErrorMessage: null,
     });
@@ -151,11 +178,13 @@ export const createAuthFlowViewModel = ({
 
       setState((current) => ({
         ...current,
-        navigationState: result.recoveredSession
-          ? enterAuthenticatedApp(current.navigationState, {
-              source: 'login',
-            })
-          : openLoginRoute(current.navigationState),
+        navigationState: shouldPreserveRecoveryRoute(current.navigationState)
+          ? current.navigationState
+          : result.recoveredSession
+            ? enterAuthenticatedApp(current.navigationState, {
+                source: 'login',
+              })
+            : openLoginRoute(current.navigationState),
         bootstrapErrorMessage:
           result.recoveredSession || result.error === null || isReauthError(result.error)
             ? null
@@ -181,6 +210,30 @@ export const createAuthFlowViewModel = ({
       }));
     },
 
+    openForgotPassword() {
+      clearTransientErrors();
+      setState((current) => ({
+        ...current,
+        navigationState: openForgotPasswordRoute(current.navigationState),
+      }));
+    },
+
+    openResetPassword(token?: string) {
+      clearTransientErrors();
+      setState((current) => ({
+        ...current,
+        navigationState: openResetPasswordRoute(current.navigationState, token),
+      }));
+    },
+
+    ingestPasswordResetToken(token: string) {
+      clearTransientErrors();
+      setState((current) => ({
+        ...current,
+        navigationState: openResetPasswordRoute(current.navigationState, token),
+      }));
+    },
+
     async submitLogin(
       payload: LoginRequest,
     ): Promise<AuthMutationResult> {
@@ -194,6 +247,50 @@ export const createAuthFlowViewModel = ({
           navigationState: enterAuthenticatedApp(current.navigationState, {
             source: 'login',
           }),
+        }));
+      }
+
+      return result;
+    },
+
+    async submitPasswordResetEmail(
+      payload: PasswordForgotRequest,
+    ): Promise<PasswordForgotResult> {
+      clearTransientErrors();
+      return authService.requestPasswordResetEmail(payload);
+    },
+
+    async submitPasswordRecoveryChallenge(
+      payload: PasswordRecoveryChallengeRequest,
+    ): Promise<PasswordRecoveryChallengeResult> {
+      clearTransientErrors();
+      return authService.requestPasswordRecoveryChallenge(payload);
+    },
+
+    async submitPasswordReset(
+      payload: PasswordResetRequest,
+    ): Promise<PasswordResetResult> {
+      clearTransientErrors();
+      const result = await authService.resetPassword(payload);
+
+      if (result.success) {
+        setState((current) => ({
+          ...current,
+          authBannerMessage: '비밀번호가 변경되었습니다. 새 비밀번호로 로그인해 주세요.',
+          authBannerTone: 'success',
+          navigationState: openLoginRoute(current.navigationState),
+        }));
+
+        return result;
+      }
+
+      if (isReauthError(result.error)) {
+        authStore.requireReauth(getReauthMessage(result.error));
+        setState((current) => ({
+          ...current,
+          authBannerMessage: null,
+          authBannerTone: 'info',
+          navigationState: openLoginRoute(current.navigationState),
         }));
       }
 

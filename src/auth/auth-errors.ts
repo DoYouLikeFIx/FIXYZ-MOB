@@ -6,9 +6,13 @@ import {
 } from '../network/errors';
 import {
   createEmptyLoginFeedback,
+  createEmptyForgotPasswordFeedback,
   createEmptyRegisterFeedback,
+  createEmptyResetPasswordFeedback,
+  type ForgotPasswordFormFeedback,
   type LoginFormFeedback,
   type RegisterFormFeedback,
+  type ResetPasswordFormFeedback,
 } from '../types/auth-ui';
 
 const DEFAULT_AUTH_ERROR_MESSAGE =
@@ -22,6 +26,10 @@ type AuthErrorSemantic =
   | 'reauth-required'
   | 'withdrawn-account'
   | 'password-policy'
+  | 'password-reset-token-invalid'
+  | 'password-reset-token-consumed'
+  | 'password-reset-rate-limited'
+  | 'password-reset-same-password'
   | 'duplicate-email'
   | 'rate-limited'
   | 'validation'
@@ -36,6 +44,8 @@ type AuthRecoveryAction =
   | 'reauthenticate'
   | 'switch-account'
   | 'fix-password'
+  | 'request-password-reset'
+  | 'request-new-reset-link'
   | 'change-email'
   | 'check-input'
   | 'retry-register'
@@ -81,6 +91,26 @@ const AUTH_TEMPLATE_BY_CODE: Record<string, AuthErrorTemplate> = {
     semantic: 'password-policy',
     recoveryAction: 'fix-password',
     message: '비밀번호는 8자 이상이며 대문자, 숫자, 특수문자를 포함해야 합니다.',
+  },
+  'AUTH-012': {
+    semantic: 'password-reset-token-invalid',
+    recoveryAction: 'request-password-reset',
+    message: '재설정 링크가 유효하지 않거나 만료되었습니다. 비밀번호 재설정을 다시 요청해 주세요.',
+  },
+  'AUTH-013': {
+    semantic: 'password-reset-token-consumed',
+    recoveryAction: 'request-new-reset-link',
+    message: '이미 사용된 재설정 링크입니다. 새로운 재설정 링크를 요청해 주세요.',
+  },
+  'AUTH-014': {
+    semantic: 'password-reset-rate-limited',
+    recoveryAction: 'retry-request',
+    message: '비밀번호 재설정 요청이 너무 많습니다.',
+  },
+  'AUTH-015': {
+    semantic: 'password-reset-same-password',
+    recoveryAction: 'fix-password',
+    message: '현재 비밀번호와 다른 새 비밀번호를 입력해 주세요.',
   },
   'AUTH-017': {
     semantic: 'duplicate-email',
@@ -153,13 +183,19 @@ const canonicalizeContractCode = (code?: string) =>
 
 const toPresentation = (
   template: AuthErrorTemplate,
-  options?: { code?: string; traceId?: string },
+  options?: {
+    code?: string;
+    retryAfterSeconds?: number;
+    traceId?: string;
+  },
 ): AuthErrorPresentation => ({
   code: options?.code,
   semantic: template.semantic,
   recoveryAction: template.recoveryAction,
   message:
-    template.semantic === 'unknown' && options?.traceId
+    template.semantic === 'password-reset-rate-limited' && options?.retryAfterSeconds !== undefined
+      ? `${template.message} ${options.retryAfterSeconds}초 후 다시 시도해 주세요.`
+      : template.semantic === 'unknown' && options?.traceId
       ? `${template.message} ${SUPPORT_REFERENCE_LABEL}: ${options.traceId}`
       : template.message,
   traceId: options?.traceId,
@@ -177,10 +213,18 @@ export const resolveAuthErrorPresentation = (
   const rawCode = getErrorCode(error);
   const code = canonicalizeContractCode(rawCode);
   const message = getErrorMessage(error);
+  const retryAfterSeconds =
+    typeof error === 'object' && error !== null && 'retryAfterSeconds' in error
+      ? (error as Partial<NormalizedHttpError>).retryAfterSeconds
+      : undefined;
   const traceId = getTraceId(error);
 
   if (code && AUTH_TEMPLATE_BY_CODE[code]) {
-    return toPresentation(AUTH_TEMPLATE_BY_CODE[code], { code, traceId });
+    return toPresentation(AUTH_TEMPLATE_BY_CODE[code], {
+      code,
+      retryAfterSeconds,
+      traceId,
+    });
   }
 
   if (!code && message && TRANSPORT_MESSAGES.has(message)) {
@@ -230,6 +274,42 @@ export const getRegisterErrorFeedback = (
   if (presentation.semantic === 'password-policy') {
     feedback.fieldErrors.password = true;
     feedback.fieldMessages.password = presentation.message;
+    return feedback;
+  }
+
+  feedback.globalMessage = presentation.message;
+  return feedback;
+};
+
+export const getForgotPasswordErrorFeedback = (
+  error: unknown,
+): ForgotPasswordFormFeedback => {
+  const feedback = createEmptyForgotPasswordFeedback();
+  feedback.globalMessage = resolveAuthErrorPresentation(error).message;
+  return feedback;
+};
+
+export const getResetPasswordErrorFeedback = (
+  error: unknown,
+): ResetPasswordFormFeedback => {
+  const feedback = createEmptyResetPasswordFeedback();
+  const presentation = resolveAuthErrorPresentation(error);
+
+  if (
+    presentation.semantic === 'password-reset-token-invalid'
+    || presentation.semantic === 'password-reset-token-consumed'
+  ) {
+    feedback.fieldErrors.token = true;
+    feedback.fieldMessages.token = presentation.message;
+    return feedback;
+  }
+
+  if (
+    presentation.semantic === 'password-reset-same-password'
+    || presentation.semantic === 'password-policy'
+  ) {
+    feedback.fieldErrors.newPassword = true;
+    feedback.fieldMessages.newPassword = presentation.message;
     return feedback;
   }
 

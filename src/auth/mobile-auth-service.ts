@@ -4,6 +4,11 @@ import type { CsrfTokenManager } from '../network/csrf';
 import type {
   LoginRequest,
   Member,
+  PasswordForgotRequest,
+  PasswordForgotResponse,
+  PasswordRecoveryChallengeRequest,
+  PasswordRecoveryChallengeResponse,
+  PasswordResetRequest,
   RegisterRequest,
 } from '../types/auth';
 
@@ -48,6 +53,35 @@ export interface BootstrapResult {
   member: Member | null;
   error: unknown | null;
 }
+
+export type PasswordForgotResult =
+  | {
+      success: true;
+      response: PasswordForgotResponse;
+    }
+  | {
+      success: false;
+      error: unknown;
+    };
+
+export type PasswordRecoveryChallengeResult =
+  | {
+      success: true;
+      challenge: PasswordRecoveryChallengeResponse;
+    }
+  | {
+      success: false;
+      error: unknown;
+    };
+
+export type PasswordResetResult =
+  | {
+      success: true;
+    }
+  | {
+      success: false;
+      error: unknown;
+    };
 
 export const createMobileAuthService = ({
   authApi,
@@ -143,6 +177,59 @@ export const createMobileAuthService = ({
             status: 'error',
             error,
           };
+    }
+  },
+
+  async requestPasswordResetEmail(
+    payload: PasswordForgotRequest,
+  ): Promise<PasswordForgotResult> {
+    try {
+      const response = await authApi.requestPasswordResetEmail(payload);
+
+      return {
+        success: true,
+        response,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error,
+      };
+    }
+  },
+
+  async requestPasswordRecoveryChallenge(
+    payload: PasswordRecoveryChallengeRequest,
+  ): Promise<PasswordRecoveryChallengeResult> {
+    try {
+      const challenge = await authApi.requestPasswordRecoveryChallenge(payload);
+
+      return {
+        success: true,
+        challenge,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error,
+      };
+    }
+  },
+
+  async resetPassword(
+    payload: PasswordResetRequest,
+  ): Promise<PasswordResetResult> {
+    try {
+      await authApi.resetPassword(payload);
+
+      return {
+        success: true,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error,
+      };
     }
   },
 
