@@ -5,8 +5,8 @@ import {
   getResetPasswordState,
   validateResetPasswordForm,
 } from './form-validation';
-import type { PasswordResetResult } from './mobile-auth-service';
 import {
+  type PasswordResetResult,
   createEmptyResetPasswordFeedback,
   type ResetPasswordFormFeedback,
 } from '../types/auth-ui';

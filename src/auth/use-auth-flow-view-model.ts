@@ -1,8 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { AppState, Linking } from 'react-native';
 
-import type { AppBootstrapRuntime } from '../bootstrap/app-bootstrap';
-import { authStore, useAuthStore } from '../store/auth-store';
+import type { AuthState } from '../store/auth-store';
 import type {
   LoginRequest,
   PasswordForgotRequest,
@@ -12,35 +11,29 @@ import type {
 } from '../types/auth';
 
 import {
+  type AuthServiceAdapter,
+  type AuthStoreAdapter,
   createAuthFlowViewModel,
 } from './auth-flow-view-model';
 import { extractPasswordResetTokenFromUrl } from './password-reset-handoff';
-import {
-  createMobileAuthService,
-  type AuthApi,
-} from './mobile-auth-service';
-import type { CsrfTokenManager } from '../network/csrf';
 
 interface UseAuthFlowViewModelInput {
-  authApi: AuthApi;
-  csrfManager?: Pick<CsrfTokenManager, 'onForegroundResume'>;
-  appBootstrap?: AppBootstrapRuntime;
+  authService: AuthServiceAdapter;
+  authStore: AuthStoreAdapter & {
+    subscribe: (listener: () => void) => () => void;
+    getState: () => AuthState;
+  };
 }
 
 export const useAuthFlowViewModel = ({
-  authApi,
-  csrfManager,
-  appBootstrap,
+  authService,
+  authStore,
 }: UseAuthFlowViewModelInput) => {
   const viewModelRef = useRef<ReturnType<typeof createAuthFlowViewModel> | null>(null);
 
   if (viewModelRef.current === null) {
     viewModelRef.current = createAuthFlowViewModel({
-      authService: createMobileAuthService({
-        authApi,
-        csrfManager,
-        appBootstrap,
-      }),
+      authService,
       authStore,
       initialAppState: AppState.currentState,
     });
@@ -52,9 +45,11 @@ export const useAuthFlowViewModel = ({
     viewModelRef.current.getState,
   );
 
-  const authStatus = useAuthStore((state) => state.status);
-  const member = useAuthStore((state) => state.member);
-  const reauthMessage = useAuthStore((state) => state.reauthMessage);
+  const authState = useSyncExternalStore(
+    authStore.subscribe,
+    authStore.getState,
+    authStore.getState,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -96,9 +91,9 @@ export const useAuthFlowViewModel = ({
   }, []);
 
   return {
-    authStatus,
-    member,
-    reauthMessage,
+    authStatus: authState.status,
+    member: authState.member,
+    reauthMessage: authState.reauthMessage,
     ...viewState,
     onOpenLogin: () => {
       viewModelRef.current?.openLogin();

@@ -3,14 +3,19 @@ import { bootstrapAppSession } from '../bootstrap/app-bootstrap';
 import type { CsrfTokenManager } from '../network/csrf';
 import type {
   LoginRequest,
-  Member,
   PasswordForgotRequest,
-  PasswordForgotResponse,
   PasswordRecoveryChallengeRequest,
-  PasswordRecoveryChallengeResponse,
   PasswordResetRequest,
   RegisterRequest,
 } from '../types/auth';
+import type {
+  AuthMutationResult,
+  BootstrapResult,
+  PasswordForgotResult,
+  PasswordRecoveryChallengeResult,
+  PasswordResetResult,
+  ProtectedRequestResult,
+} from '../types/auth-ui';
 
 import type { AuthApi } from '../api/auth-api';
 
@@ -23,65 +28,6 @@ interface CreateMobileAuthServiceInput {
   csrfManager?: Pick<CsrfTokenManager, 'onForegroundResume'>;
   appBootstrap?: AppBootstrapRuntime;
 }
-
-export type AuthMutationResult =
-  | {
-      success: true;
-      member: Member;
-    }
-  | {
-      success: false;
-      error: unknown;
-    };
-
-export type ProtectedRequestResult =
-  | {
-      status: 'authenticated';
-      member: Member;
-    }
-  | {
-      status: 'reauth';
-      error: unknown;
-    }
-  | {
-      status: 'error';
-      error: unknown;
-    };
-
-export interface BootstrapResult {
-  recoveredSession: boolean;
-  member: Member | null;
-  error: unknown | null;
-}
-
-export type PasswordForgotResult =
-  | {
-      success: true;
-      response: PasswordForgotResponse;
-    }
-  | {
-      success: false;
-      error: unknown;
-    };
-
-export type PasswordRecoveryChallengeResult =
-  | {
-      success: true;
-      challenge: PasswordRecoveryChallengeResponse;
-    }
-  | {
-      success: false;
-      error: unknown;
-    };
-
-export type PasswordResetResult =
-  | {
-      success: true;
-    }
-  | {
-      success: false;
-      error: unknown;
-    };
 
 export const createMobileAuthService = ({
   authApi,

@@ -5,14 +5,12 @@ import {
 } from './auth-errors';
 import { validateForgotPasswordForm } from './form-validation';
 import type {
-  PasswordForgotResult,
-  PasswordRecoveryChallengeResult,
-} from './mobile-auth-service';
-import type {
   PasswordForgotRequest,
   PasswordRecoveryChallengeResponse,
 } from '../types/auth';
 import {
+  type PasswordForgotResult,
+  type PasswordRecoveryChallengeResult,
   createEmptyForgotPasswordFeedback,
   type ForgotPasswordFormFeedback,
 } from '../types/auth-ui';

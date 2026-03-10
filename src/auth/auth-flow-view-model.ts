@@ -18,12 +18,6 @@ import type {
   PasswordResetRequest,
   RegisterRequest,
 } from '../types/auth';
-
-import {
-  getAuthErrorMessage,
-  getReauthMessage,
-  isReauthError,
-} from './auth-errors';
 import type {
   AuthMutationResult,
   BootstrapResult,
@@ -31,11 +25,17 @@ import type {
   PasswordRecoveryChallengeResult,
   PasswordResetResult,
   ProtectedRequestResult,
-} from './mobile-auth-service';
+} from '../types/auth-ui';
+
+import {
+  getAuthErrorMessage,
+  getReauthMessage,
+  isReauthError,
+} from './auth-errors';
 
 type Listener = () => void;
 
-interface AuthStoreAdapter {
+export interface AuthStoreAdapter {
   getState: () => AuthState;
   initialize: (member: AuthState['member']) => void;
   login: (member: NonNullable<AuthState['member']>) => void;
@@ -43,7 +43,7 @@ interface AuthStoreAdapter {
   clearReauthMessage: () => void;
 }
 
-interface AuthServiceAdapter {
+export interface AuthServiceAdapter {
   bootstrap: () => Promise<BootstrapResult>;
   loginMember: (payload: LoginRequest) => Promise<AuthMutationResult>;
   registerMember: (payload: RegisterRequest) => Promise<AuthMutationResult>;
