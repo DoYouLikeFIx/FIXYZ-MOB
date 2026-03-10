@@ -36,6 +36,13 @@ Mobile foundation scaffold for Epic 0 Story 0.4.
 - Forbidden persistence: password, OTP, raw session cookie, raw CSRF token.
 - Conditional secure-storage only: device-bound key material / future bootstrap secret classes.
 
+## Email-first auth contract
+
+- Login uses `email + password`.
+- Register uses `email + name + password`.
+- The same email is also the password-recovery key for Story 1.7.
+- The login screen now includes inline recovery guidance so the user can verify which email will be used before submitting a reset request.
+
 ## CI Quality Gate
 
 Use `npm run ci-mobile` for install-time quality checks:
@@ -68,12 +75,19 @@ The login form also supports keyboard `Enter` submission, which the Maestro flow
 
 The mock auth server validates the CSRF cookie/header contract and drives Story 1.4 scenarios by credential:
 
-- `demo` -> successful login
+- `demo@fix.com` -> successful login
 - fresh register emails such as `new-success@fix.com` -> successful register + follow-up login
 - `taken-user@fix.com` -> duplicate email error on register
-- `reauth_refresh` -> successful login, then deterministic re-auth on protected refresh
-- `stale_resume` -> successful login, then stale-session rejection on app resume
-- `new_login_kickout` -> successful login, then forced re-auth after server-side invalidation by a newer login
+- `locked@fix.com` -> `AUTH-002` account locked
+- `rate@fix.com` -> `RATE-001` rate limited
+- `unknown@fix.com` -> unknown-code fallback with `문의 코드: corr-auth-999`
+- `reauth@fix.com` -> successful login, then deterministic re-auth on protected refresh
+- `stale@fix.com` -> successful login, then stale-session rejection on app resume
+- `kickout@fix.com` -> successful login, then forced re-auth after server-side invalidation by a newer login
+
+### Story 1.6 film flows
+
+The raw-film capture set for Story 1.6 uses `e2e/maestro/auth-film` against the same mock server credentials above so FE and MOB can demonstrate the same semantics with different UIs.
 
 ### Live Backend Auth Flows
 
@@ -81,10 +95,10 @@ Real backend verification flows live in `e2e/maestro/auth-live`.
 
 - Register against a live backend:
   - `export PATH="$PATH:$HOME/.maestro/bin"`
-  - `maestro test --udid <SIMULATOR_UDID> -e LIVE_API_BASE_URL=http://localhost:18080 -e LIVE_USERNAME=<unique_username> -e LIVE_EMAIL=<unique_email> -e LIVE_NAME='<display_name>' -e LIVE_PASSWORD=<password> e2e/maestro/auth-live/01-register-success-live-be.yaml`
+  - `maestro test --udid <SIMULATOR_UDID> -e LIVE_API_BASE_URL=http://localhost:18080 -e LIVE_EMAIL=<unique_email> -e LIVE_NAME='<display_name>' -e LIVE_PASSWORD=<password> e2e/maestro/auth-live/01-register-success-live-be.yaml`
 - Login against the same live backend account:
-  - `maestro test --udid <SIMULATOR_UDID> -e LIVE_API_BASE_URL=http://localhost:18080 -e LIVE_USERNAME=<same_username> -e LIVE_EMAIL=<same_email> -e LIVE_NAME='<same_display_name>' -e LIVE_PASSWORD=<same_password> e2e/maestro/auth-live/02-login-success-live-be.yaml`
+  - `maestro test --udid <SIMULATOR_UDID> -e LIVE_API_BASE_URL=http://localhost:18080 -e LIVE_EMAIL=<registered_email> -e LIVE_PASSWORD=<same_password> -e LIVE_NAME='<same_display_name>' e2e/maestro/auth-live/02-login-success-live-be.yaml`
 - Invalid-credentials check against the live backend:
-  - `maestro test --udid <SIMULATOR_UDID> -e LIVE_API_BASE_URL=http://localhost:18080 -e LIVE_EMAIL=<existing_email> -e LIVE_INVALID_PASSWORD=<wrong_password> e2e/maestro/auth-live/03-login-invalid-credentials-live-be.yaml`
+  - `maestro test --udid <SIMULATOR_UDID> -e LIVE_API_BASE_URL=http://localhost:18080 -e LIVE_EMAIL=<registered_email> -e LIVE_INVALID_PASSWORD=<wrong_password> e2e/maestro/auth-live/03-login-invalid-credentials-live-be.yaml`
 
 Run the live flows individually. `01-register-success-live-be.yaml` should run before `02-login-success-live-be.yaml` when you are validating a freshly created account, while `03-login-invalid-credentials-live-be.yaml` can run independently against any existing account email.
