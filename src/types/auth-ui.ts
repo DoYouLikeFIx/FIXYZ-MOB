@@ -1,4 +1,9 @@
-import type { RegisterRequest } from './auth';
+import type {
+  Member,
+  PasswordForgotResponse,
+  PasswordRecoveryChallengeResponse,
+  RegisterRequest,
+} from './auth';
 
 export type AuthMode = 'login' | 'register';
 
@@ -59,6 +64,65 @@ export interface ResetPasswordFormFeedback {
   fieldErrors: ResetPasswordFieldErrors;
   fieldMessages: Partial<Record<ResetPasswordField, string>>;
 }
+
+export type AuthMutationResult =
+  | {
+      success: true;
+      member: Member;
+    }
+  | {
+      success: false;
+      error: unknown;
+    };
+
+export type ProtectedRequestResult =
+  | {
+      status: 'authenticated';
+      member: Member;
+    }
+  | {
+      status: 'reauth';
+      error: unknown;
+    }
+  | {
+      status: 'error';
+      error: unknown;
+    };
+
+export interface BootstrapResult {
+  recoveredSession: boolean;
+  member: Member | null;
+  error: unknown | null;
+}
+
+export type PasswordForgotResult =
+  | {
+      success: true;
+      response: PasswordForgotResponse;
+    }
+  | {
+      success: false;
+      error: unknown;
+    };
+
+export type PasswordRecoveryChallengeResult =
+  | {
+      success: true;
+      challenge: PasswordRecoveryChallengeResponse;
+    }
+  | {
+      success: false;
+      error: unknown;
+    };
+
+export type PasswordResetResult =
+  | {
+      success: true;
+    }
+  | {
+      success: false;
+      error: unknown;
+    };
 
 export type FieldMessageTone = 'neutral' | 'success' | 'error';
 
