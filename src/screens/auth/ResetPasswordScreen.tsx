@@ -1,7 +1,7 @@
 import { Pressable, Text, View } from 'react-native';
 
 import type { PasswordResetRequest } from '../../types/auth';
-import type { PasswordResetResult } from '../../auth/mobile-auth-service';
+import type { PasswordResetResult } from '../../types/auth-ui';
 import { useResetPasswordViewModel } from '../../auth/use-reset-password-view-model';
 import { AuthField } from '../../components/auth/AuthField';
 import { AuthScaffold } from '../../components/auth/AuthScaffold';

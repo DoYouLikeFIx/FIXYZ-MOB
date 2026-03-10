@@ -7,7 +7,7 @@ import type {
 import type {
   PasswordForgotResult,
   PasswordRecoveryChallengeResult,
-} from '../../auth/mobile-auth-service';
+} from '../../types/auth-ui';
 import { useForgotPasswordViewModel } from '../../auth/use-forgot-password-view-model';
 import { AuthField } from '../../components/auth/AuthField';
 import { AuthScaffold } from '../../components/auth/AuthScaffold';
