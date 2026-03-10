@@ -324,6 +324,43 @@ export const authSharedStyles = StyleSheet.create({
     lineHeight: 18,
     color: palette.ink,
   },
+  inlineInfoActions: {
+    alignItems: 'flex-start',
+    marginTop: -2,
+  },
+  inlineInfoTrigger: {
+    paddingVertical: 4,
+  },
+  inlineInfoTriggerText: {
+    color: palette.accentDeep,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  inlineInfoCard: {
+    gap: 4,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(29, 78, 216, 0.16)',
+    backgroundColor: palette.infoSoft,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  inlineInfoTitle: {
+    color: palette.info,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  inlineInfoBody: {
+    color: palette.ink,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  inlineInfoDetail: {
+    color: palette.inkSoft,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
   stepFlowHeader: {
     gap: 6,
     paddingBottom: 2,
