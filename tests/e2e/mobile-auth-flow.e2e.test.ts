@@ -1,6 +1,7 @@
 import { createAuthApi } from '@/api/auth-api';
 import {
   getLoginErrorFeedback,
+  getRegisterErrorFeedback,
   resolveAuthErrorPresentation,
 } from '@/auth/auth-errors';
 import { createAuthFlowViewModel } from '@/auth/auth-flow-view-model';
@@ -95,7 +96,6 @@ const readCsrfToken = (payload: { csrfToken?: string; token?: string }) =>
 
 const memberFixture: Member = {
   memberUuid: 'member-001',
-  username: 'demo',
   email: 'demo@fix.com',
   name: 'Demo User',
   role: 'ROLE_USER',
@@ -237,7 +237,7 @@ describe('E2E tests: mobile auth workflow', () => {
     authStore.initialize(null);
 
     const result = await harness.viewModel.submitLogin({
-      username: 'demo',
+      email: 'demo@fix.com',
       password: 'Test1234!',
     });
 
@@ -262,7 +262,7 @@ describe('E2E tests: mobile auth workflow', () => {
       ),
     ).toHaveLength(2);
     expect(getFormBody(loginCall?.body)).toEqual({
-      email: 'demo',
+      email: 'demo@fix.com',
       password: 'Test1234!',
     });
 
@@ -316,7 +316,6 @@ describe('E2E tests: mobile auth workflow', () => {
       ) {
         return successResponse(200, {
           ...memberFixture,
-          username: 'new',
           email: 'new@fix.com',
           name: 'New User',
         });
@@ -328,7 +327,6 @@ describe('E2E tests: mobile auth workflow', () => {
     authStore.initialize(null);
 
     const result = await harness.viewModel.submitRegister({
-      username: 'new_user',
       email: 'new@fix.com',
       name: 'New User',
       password: 'Test1234!',
@@ -344,7 +342,6 @@ describe('E2E tests: mobile auth workflow', () => {
       status: 'authenticated',
       member: {
         ...memberFixture,
-        username: 'new',
         email: 'new@fix.com',
         name: 'New User',
       },
@@ -399,7 +396,7 @@ describe('E2E tests: mobile auth workflow', () => {
     authStore.initialize(null);
 
     const result = await harness.viewModel.submitLogin({
-      username: 'demo',
+      email: 'demo@fix.com',
       password: 'wrong-password',
     });
 
@@ -450,7 +447,7 @@ describe('E2E tests: mobile auth workflow', () => {
       authStore.initialize(null);
 
       const result = await harness.viewModel.submitLogin({
-        username: 'demo',
+        email: 'demo@fix.com',
         password: 'wrong-password',
       });
 
@@ -505,7 +502,7 @@ describe('E2E tests: mobile auth workflow', () => {
     authStore.initialize(null);
 
     const result = await harness.viewModel.submitLogin({
-      username: 'demo',
+      email: 'demo@fix.com',
       password: 'wrong-password',
     });
 
@@ -528,14 +525,14 @@ describe('E2E tests: mobile auth workflow', () => {
     });
   });
 
-  it('maps duplicate-username registration failures to the username field', async () => {
+  it('maps duplicate-email registration failures to the email field', async () => {
     const harness = createHarness((request) => {
       if (
         request.method === 'GET' &&
         getPathname(request.url) === '/api/v1/auth/csrf'
       ) {
         return successResponse(200, {
-          token: 'csrf-register-error',
+          token: 'csrf-register-email-error',
         });
       }
 
@@ -544,9 +541,9 @@ describe('E2E tests: mobile auth workflow', () => {
         getPathname(request.url) === '/api/v1/auth/register'
       ) {
         return errorResponse(
-          400,
-          'BAD_REQUEST',
-          'member already exists',
+          409,
+          'AUTH-017',
+          'Email already exists',
           'Duplicate email',
         );
       }
@@ -557,7 +554,6 @@ describe('E2E tests: mobile auth workflow', () => {
     authStore.initialize(null);
 
     const result = await harness.viewModel.submitRegister({
-      username: 'new_user',
       email: 'new@fix.com',
       name: 'New User',
       password: 'Test1234!',
@@ -565,6 +561,18 @@ describe('E2E tests: mobile auth workflow', () => {
 
     expect(result).toMatchObject({
       success: false,
+    });
+    expect(
+      getRegisterErrorFeedback(
+        (result as Extract<typeof result, { success: false }>).error,
+      ),
+    ).toMatchObject({
+      fieldErrors: {
+        email: true,
+      },
+      fieldMessages: {
+        email: '이미 가입된 이메일입니다. 다른 이메일을 입력해 주세요.',
+      },
     });
     expect(findCall(harness.calls, '/api/v1/auth/login', 'POST')).toBeUndefined();
   });

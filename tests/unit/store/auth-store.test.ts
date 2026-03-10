@@ -10,7 +10,6 @@ describe('mobile auth store', () => {
 
     authStore.initialize({
       memberUuid: 'member-001',
-      username: 'demo',
       email: 'demo@fix.com',
       name: 'Demo User',
       role: 'ROLE_USER',
@@ -20,7 +19,7 @@ describe('mobile auth store', () => {
     expect(authStore.getState()).toMatchObject({
       status: 'authenticated',
       member: {
-        username: 'demo',
+        email: 'demo@fix.com',
       },
       reauthMessage: null,
     });
@@ -29,7 +28,6 @@ describe('mobile auth store', () => {
   it('moves back to anonymous state when re-authentication is required', () => {
     authStore.login({
       memberUuid: 'member-001',
-      username: 'demo',
       email: 'demo@fix.com',
       name: 'Demo User',
       role: 'ROLE_USER',

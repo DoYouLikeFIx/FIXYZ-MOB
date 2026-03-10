@@ -10,7 +10,6 @@ import { createEmptyRegisterFeedback } from '@/types/auth-ui';
 describe('auth form validation', () => {
   it('reuses the shared register field validation for step navigation and submit validation', () => {
     const invalidValues = {
-      username: 'new_user',
       email: 'new@fix.com',
       name: '',
       password: 'Test1234!',
@@ -72,7 +71,6 @@ describe('auth form validation', () => {
       getRegisterKeyboardMessage(
         'password',
         {
-          username: 'new_user',
           email: 'new@fix.com',
           name: 'New User',
           password: 'short',
