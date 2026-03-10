@@ -15,6 +15,7 @@ if (!Number.isInteger(port) || port <= 0) {
 }
 
 const VALID_PASSWORD = 'Test1234!';
+let nextOrderId = 1;
 
 const normalizeIdentifier = (value) => value.trim().toLowerCase();
 
@@ -53,10 +54,13 @@ const createProfile = ({
   memberUuid,
   email,
   name,
+  accountId,
   sessionMode = 'valid',
+  orderScenario = 'success',
   aliases = [],
 }) => ({
   sessionMode,
+  orderScenario,
   aliases,
   member: {
     memberUuid,
@@ -64,6 +68,7 @@ const createProfile = ({
     name,
     role: 'ROLE_USER',
     totpEnrolled: false,
+    accountId,
   },
 });
 
@@ -88,29 +93,53 @@ const indexProfile = (profile) => {
     memberUuid: 'member-001',
     email: 'demo@fix.com',
     name: 'Demo User',
+    accountId: '1',
   }),
   createProfile({
     memberUuid: 'member-002',
     email: 'reauth@fix.com',
     name: 'Reauth Refresh',
+    accountId: '2',
     sessionMode: 'reauth',
   }),
   createProfile({
     memberUuid: 'member-003',
     email: 'stale@fix.com',
     name: 'Stale Resume',
+    accountId: '3',
     sessionMode: 'stale',
   }),
   createProfile({
     memberUuid: 'member-005',
     email: 'kickout@fix.com',
     name: 'Kickout User',
+    accountId: '5',
     sessionMode: 'new-login-kickout',
   }),
   createProfile({
     memberUuid: 'member-006',
     email: 'taken-user@fix.com',
     name: 'Taken User',
+    accountId: '6',
+  }),
+  createProfile({
+    memberUuid: 'member-007',
+    email: 'pending-order@fix.com',
+    name: 'Pending Order',
+    accountId: '7',
+    orderScenario: 'fep-002',
+  }),
+  createProfile({
+    memberUuid: 'member-008',
+    email: 'unknown-order@fix.com',
+    name: 'Unknown Order',
+    accountId: '8',
+    orderScenario: 'unknown-external',
+  }),
+  createProfile({
+    memberUuid: 'member-009',
+    email: 'no-account@fix.com',
+    name: 'No Account',
   }),
 ].forEach(indexProfile);
 
@@ -224,6 +253,129 @@ const errorEnvelope = (code, message, detail) => ({
     code,
     message,
     detail,
+    timestamp: new Date().toISOString(),
+  },
+});
+
+const ORDER_FIXTURE_EXPECTATIONS = {
+  success: {
+    quantity: 1,
+    price: 70_100,
+    side: 'BUY',
+    symbol: '005930',
+  },
+  'fep-002': {
+    quantity: 2,
+    price: 70_100,
+    side: 'BUY',
+    symbol: '005930',
+  },
+  'unknown-external': {
+    quantity: 1,
+    price: 70_100,
+    side: 'BUY',
+    symbol: '005930',
+  },
+};
+
+const parsePositiveWholeNumber = (value) => {
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return parsed;
+};
+
+const validateOrderRequest = ({ body, profile, request, response }) => {
+  const accountId = typeof body.accountId === 'string' ? body.accountId.trim() : '';
+  if (!profile.member.accountId || accountId !== profile.member.accountId) {
+    writeJson(
+      response,
+      403,
+      errorEnvelope(
+        'CHANNEL-006',
+        'Order ownership mismatch',
+        'The submitted accountId must match the authenticated member session.',
+      ),
+    );
+    return null;
+  }
+
+  const clOrdId = typeof body.clOrdId === 'string' ? body.clOrdId.trim() : '';
+  const headerClOrdId =
+    typeof request.headers['x-clordid'] === 'string'
+      ? request.headers['x-clordid'].trim()
+      : '';
+  if (!clOrdId || !headerClOrdId || clOrdId !== headerClOrdId) {
+    writeJson(
+      response,
+      422,
+      errorEnvelope(
+        'VALIDATION-001',
+        'Invalid order idempotency contract',
+        'The X-ClOrdID header must be present and match body.clOrdId exactly.',
+      ),
+    );
+    return null;
+  }
+
+  const quantity = parsePositiveWholeNumber(String(body.quantity ?? ''));
+  const price = parsePositiveWholeNumber(String(body.price ?? ''));
+  const symbol = typeof body.symbol === 'string' ? body.symbol.trim() : '';
+  const side = typeof body.side === 'string' ? body.side.trim() : '';
+  if (!quantity || !price || !symbol || !side) {
+    writeJson(
+      response,
+      422,
+      errorEnvelope(
+        'VALIDATION-001',
+        'Invalid order payload',
+        'The mock order endpoint requires accountId, clOrdId, symbol, side, quantity, and price.',
+      ),
+    );
+    return null;
+  }
+
+  const expected = ORDER_FIXTURE_EXPECTATIONS[profile.orderScenario] ?? ORDER_FIXTURE_EXPECTATIONS.success;
+  if (
+    quantity !== expected.quantity
+    || price !== expected.price
+    || symbol !== expected.symbol
+    || side !== expected.side
+  ) {
+    writeJson(
+      response,
+      422,
+      errorEnvelope(
+        'VALIDATION-001',
+        'Unexpected order fixture payload',
+        `The ${profile.orderScenario} persona expects ${expected.symbol} ${expected.side} ${expected.quantity} @ ${expected.price}.`,
+      ),
+    );
+    return null;
+  }
+
+  return {
+    clOrdId,
+    quantity,
+  };
+};
+
+const orderErrorEnvelope = (code, message, detail, options = {}) => ({
+  success: false,
+  data: null,
+  traceId: options.traceId,
+  error: {
+    code,
+    message,
+    detail,
+    operatorCode: options.operatorCode,
+    retryAfterSeconds: options.retryAfterSeconds,
     timestamp: new Date().toISOString(),
   },
 });
@@ -462,6 +614,92 @@ const server = http.createServer(async (request, response) => {
     }
 
     writeJson(response, 200, successEnvelope(profile.member));
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/v1/orders') {
+    if (!ensureCsrf(request, response, cookies)) {
+      return;
+    }
+
+    const sessionId = cookies.JSESSIONID;
+
+    if (!sessionId || !sessions.has(sessionId)) {
+      writeJson(
+        response,
+        401,
+        errorEnvelope(
+          'AUTH-003',
+          'Authentication required',
+          'A valid authenticated session cookie was not found.',
+        ),
+      );
+      return;
+    }
+
+    const body = await readMutationBody(request, response);
+
+    if (!body) {
+      return;
+    }
+
+    const profile = sessions.get(sessionId);
+    const validatedOrder = validateOrderRequest({
+      body,
+      profile,
+      request,
+      response,
+    });
+
+    if (!validatedOrder) {
+      return;
+    }
+
+    if (profile.orderScenario === 'fep-002') {
+      writeJson(
+        response,
+        504,
+        orderErrorEnvelope(
+          'FEP-002',
+          '주문이 아직 확정되지 않았습니다. 체결 완료로 간주하지 말고 알림이나 주문 상태를 확인해 주세요.',
+          'External order status is pending.',
+          {
+            operatorCode: 'TIMEOUT',
+            traceId: 'trace-fep-002',
+          },
+        ),
+      );
+      return;
+    }
+
+    if (profile.orderScenario === 'unknown-external') {
+      writeJson(
+        response,
+        503,
+        orderErrorEnvelope(
+          'FEP-999',
+          'Unknown external state',
+          'External broker state is unavailable.',
+          {
+            operatorCode: 'UNKNOWN_EXTERNAL_STATE',
+            traceId: 'trace-unknown-001',
+          },
+        ),
+      );
+      return;
+    }
+
+    writeJson(
+      response,
+      200,
+      successEnvelope({
+        orderId: nextOrderId++,
+        clOrdId: validatedOrder.clOrdId,
+        status: 'RECEIVED',
+        idempotent: false,
+        orderQuantity: validatedOrder.quantity,
+      }),
+    );
     return;
   }
 
