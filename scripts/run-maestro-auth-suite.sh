@@ -204,10 +204,28 @@ render_flow_target_if_needed() {
 }
 
 require_cmd curl
+require_cmd lsof
 require_cmd maestro
 require_cmd nc
 require_cmd rg
 require_cmd xcrun
+
+kill_processes_on_port() {
+  local port="$1"
+  local pids
+  pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+
+  if [[ -z "$pids" ]]; then
+    return 0
+  fi
+
+  for pid in $pids; do
+    kill "$pid" >/dev/null 2>&1 || true
+    sleep 1
+    kill -9 "$pid" >/dev/null 2>&1 || true
+    wait "$pid" >/dev/null 2>&1 || true
+  done
+}
 
 if [[ ! -d "$DEVELOPER_DIR" ]]; then
   echo "Xcode developer directory not found at $DEVELOPER_DIR" >&2
@@ -237,6 +255,8 @@ if ! nc -z 127.0.0.1 "$METRO_PORT" >/dev/null 2>&1; then
 fi
 
 if [[ "$use_mock_auth_server" -eq 1 ]]; then
+  kill_processes_on_port "$API_PORT"
+
   pushd "$ROOT_DIR" >/dev/null
   nohup node ./scripts/mock-auth-server.mjs --port "$API_PORT" >"$SERVER_LOG" 2>&1 &
   server_pid="$!"
@@ -254,4 +274,4 @@ open_deeplink_if_requested
 maestro test "$RESOLVED_FLOW_TARGET"
 popd >/dev/null
 
-echo "Maestro auth suite passed for ${APP_ID} on ${IOS_SIMULATOR_NAME}."
+echo "Maestro suite passed for ${FLOW_TARGET} on ${IOS_SIMULATOR_NAME}."

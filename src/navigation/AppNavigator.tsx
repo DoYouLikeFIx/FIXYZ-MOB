@@ -7,6 +7,7 @@ import { LoginScreen } from '../screens/auth/LoginScreen';
 import { RegisterScreen } from '../screens/auth/RegisterScreen';
 import { ResetPasswordScreen } from '../screens/auth/ResetPasswordScreen';
 import { AuthenticatedHomeScreen } from '../screens/app/AuthenticatedHomeScreen';
+import type { OrderApi } from '../api/order-api';
 import type { AuthStatus } from '../store/auth-store';
 import type { Member } from '../types/auth';
 import type {
@@ -27,6 +28,7 @@ import type { AuthNavigationState } from './auth-navigation';
 
 interface AppNavigatorProps {
   animationsDisabled: boolean;
+  orderApi: OrderApi;
   authStatus: AuthStatus;
   member: Member | null;
   reauthMessage: string | null;
@@ -96,6 +98,7 @@ const getTransitionOffset = (previousKey: string, nextKey: string): number => {
 
 export const AppNavigator = ({
   animationsDisabled,
+  orderApi,
   authStatus,
   member,
   reauthMessage,
@@ -176,6 +179,7 @@ export const AppNavigator = ({
       <AuthenticatedHomeScreen
         isRefreshingSession={isRefreshingSession}
         member={member}
+        orderApi={orderApi}
         onRefreshSession={onRefreshProtectedSession}
         sessionErrorMessage={protectedErrorMessage}
         welcomeVariant={navigationState.welcomeVariant}

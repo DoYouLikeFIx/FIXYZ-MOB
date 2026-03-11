@@ -2,8 +2,8 @@ import {
   DEFAULT_HEALTH_TIMEOUT_MS,
   type SessionCookiePolicy,
 } from '../config/environment';
-import { normalizeHttpError } from './errors';
 import type { CsrfTokenManager } from './csrf';
+import { normalizeHttpError } from './errors';
 import type {
   ApiResponseEnvelope,
   HttpClientResponse,
@@ -129,10 +129,11 @@ export class HttpClient {
         : typeof options.body === 'string'
           ? options.body
           : JSON.stringify(options.body);
-
     const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
 
-    const sendRequest = async (csrfRetried: boolean): Promise<HttpClientResponse<T>> => {
+    const sendRequest = async (
+      csrfRetried: boolean,
+    ): Promise<HttpClientResponse<T>> => {
       const requestHeaders = this.csrfManager
         ? await this.csrfManager.injectHeader(method, headers)
         : headers;

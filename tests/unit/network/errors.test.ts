@@ -13,17 +13,24 @@ describe('network error normalization', () => {
         success: false,
         data: null,
         error: {
-          code: 'CORE-002',
-          message: 'Insufficient position',
-          detail: 'Insufficient quantity for requested order',
+          code: 'FEP-001',
+          message: '주문 서비스를 잠시 사용할 수 없습니다',
+          detail: '거래소 연결이 일시적으로 불안정합니다. 주문이 접수되지 않았을 수 있습니다.',
+          operatorCode: 'CIRCUIT_OPEN',
+          retryAfterSeconds: 10,
           timestamp: '2026-03-02T00:00:00Z',
         },
       },
+      headers: new Headers({
+        'Retry-After': '10',
+      }),
     });
 
-    expect(normalized.code).toBe('CORE-002');
-    expect(normalized.message).toBe('Insufficient position');
+    expect(normalized.code).toBe('FEP-001');
+    expect(normalized.message).toBe('주문 서비스를 잠시 사용할 수 없습니다');
     expect(normalized.status).toBe(422);
+    expect(normalized.operatorCode).toBe('CIRCUIT_OPEN');
+    expect(normalized.retryAfterSeconds).toBe(10);
   });
 
   it('parses direct spring security and exception-handler error payloads', () => {

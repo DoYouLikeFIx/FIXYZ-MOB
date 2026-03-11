@@ -59,6 +59,7 @@ Manual simulator/device smoke evidence is required in PR for AC1.
 Story 1.4 now includes Maestro-based iOS simulator coverage for the real mobile UI flow.
 
 - Command: `npm run e2e:maestro:auth`
+- Order boundary command: `npm run e2e:maestro:order`
 - Tooling:
   - Maestro CLI in `$HOME/.maestro/bin`
   - Xcode app installed at `/Applications/Xcode.app`
@@ -67,7 +68,7 @@ Story 1.4 now includes Maestro-based iOS simulator coverage for the real mobile 
   1. starts Metro on `8088` if it is not already running
   2. starts a local mock auth server on `127.0.0.1:18080`
   3. builds/launches the iOS simulator app
-  4. runs the Maestro flows in `e2e/maestro/auth`
+  4. runs the Maestro flows in `e2e/maestro/auth` or `e2e/maestro/order`
 
 The app reads Maestro launch arguments through `react-native-launch-arguments`, so the suite can point the auth runtime at the mock server without needing port `8080` to be free.
 
@@ -86,7 +87,19 @@ The mock auth server validates the CSRF cookie/header contract and drives Story 
 - `reauth@fix.com` -> successful login, then deterministic re-auth on protected refresh
 - `stale@fix.com` -> successful login, then stale-session rejection on app resume
 - `kickout@fix.com` -> successful login, then forced re-auth after server-side invalidation by a newer login
+- `pending-order@fix.com` -> successful login, then `/api/v1/orders` returns `FEP-002` pending-confirmation guidance
+- `unknown-order@fix.com` -> successful login, then `/api/v1/orders` returns safe unknown external fallback guidance
+- `no-account@fix.com` -> successful login without a linked order account, so the order boundary stays gated
 - `valid-reset-token` -> successful password reset for local handoff automation
+
+### Story 3.6 order flows
+
+The order-boundary Maestro suite lives in `e2e/maestro/order`.
+
+- `01-order-success.yaml` -> successful order submission shows inline received feedback
+- `02-order-fep-pending.yaml` -> `FEP-002` shows wait-for-update guidance and support reference
+- `03-order-unknown-fallback.yaml` -> unknown external state shows safe fallback guidance and support reference
+- `04-order-unavailable-without-account.yaml` -> authenticated user without a linked order account sees the gated order boundary instead of submit controls
 
 ### Story 1.6 film flows
 

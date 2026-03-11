@@ -20,28 +20,75 @@ interface DirectApiErrorPayload {
   message?: string;
   path?: string;
   correlationId?: string;
+  operatorCode?: string;
+  retryAfterSeconds?: unknown;
+  userMessageKey?: string;
   timestamp?: string;
 }
 
-const buildNormalizedError = (
+const parseRetryAfterSeconds = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return Math.ceil(value);
+  }
+
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const asNumber = Number(trimmed);
+
+  if (Number.isFinite(asNumber) && asNumber >= 0) {
+    return Math.ceil(asNumber);
+  }
+
+  const asDate = Date.parse(trimmed);
+
+  if (Number.isNaN(asDate)) {
+    return undefined;
+  }
+
+  return Math.max(0, Math.ceil((asDate - Date.now()) / 1000));
+};
+
+const getHeaderValue = (headers: Headers | undefined, key: string) =>
+  headers?.get(key) ?? headers?.get(key.toLowerCase()) ?? undefined;
+
+const resolveRetryAfterSeconds = (
+  value: unknown,
+  headers: Headers | undefined,
+) =>
+  parseRetryAfterSeconds(value)
+  ?? parseRetryAfterSeconds(getHeaderValue(headers, 'Retry-After'));
+
+export const createNormalizedHttpError = (
   message: string,
   options?: {
     code?: string;
     detail?: string;
+    operatorCode?: string;
+    retryAfterSeconds?: number;
     status?: number;
     retriable?: boolean;
-    retryAfterSeconds?: number;
     traceId?: string;
+    userMessageKey?: string;
   },
 ): NormalizedHttpError => {
   const normalized = new Error(message) as NormalizedHttpError;
   normalized.name = 'MobHttpClientError';
   normalized.code = options?.code;
   normalized.detail = options?.detail;
+  normalized.operatorCode = options?.operatorCode;
+  normalized.retryAfterSeconds = options?.retryAfterSeconds;
   normalized.status = options?.status;
   normalized.retriable = options?.retriable;
-  normalized.retryAfterSeconds = options?.retryAfterSeconds;
   normalized.traceId = options?.traceId;
+  normalized.userMessageKey = options?.userMessageKey;
 
   return normalized;
 };
@@ -77,75 +124,63 @@ const isDirectApiErrorPayload = (
   );
 };
 
-const parseRetryAfterSeconds = (value: string | null) => {
-  if (!value) {
-    return undefined;
-  }
-
-  const asNumber = Number(value);
-
-  if (Number.isFinite(asNumber) && asNumber >= 0) {
-    return Math.ceil(asNumber);
-  }
-
-  const asDate = Date.parse(value);
-
-  if (Number.isNaN(asDate)) {
-    return undefined;
-  }
-
-  return Math.max(0, Math.ceil((asDate - Date.now()) / 1000));
-};
-
 export const normalizeHttpError = (
   input: NormalizeHttpErrorInput,
 ): NormalizedHttpError => {
-  const retryAfterSeconds = parseRetryAfterSeconds(
-    input.headers?.get('Retry-After') ?? null,
-  );
+  const retryAfterSeconds = resolveRetryAfterSeconds(undefined, input.headers);
 
   if (input.timeout) {
-    return buildNormalizedError(TIMEOUT_ERROR_MESSAGE, {
+    return createNormalizedHttpError(TIMEOUT_ERROR_MESSAGE, {
       status: input.status,
       retriable: true,
     });
   }
 
   if (input.network) {
-    return buildNormalizedError(NETWORK_ERROR_MESSAGE, {
+    return createNormalizedHttpError(NETWORK_ERROR_MESSAGE, {
       status: input.status,
       retriable: true,
     });
   }
 
   if (isApiResponseEnvelope(input.data) && input.data.error) {
-    return buildNormalizedError(
+    return createNormalizedHttpError(
       input.data.error.message || DEFAULT_SERVER_ERROR_MESSAGE,
       {
         code: input.data.error.code,
         detail: input.data.error.detail,
-        retryAfterSeconds,
+        operatorCode: input.data.error.operatorCode ?? undefined,
+        retryAfterSeconds: resolveRetryAfterSeconds(
+          input.data.error.retryAfterSeconds,
+          input.headers,
+        ),
         status: input.status,
         traceId: input.data.traceId,
+        userMessageKey: input.data.error.userMessageKey ?? undefined,
       },
     );
   }
 
   if (isDirectApiErrorPayload(input.data)) {
-    return buildNormalizedError(
+    return createNormalizedHttpError(
       input.data.message || DEFAULT_SERVER_ERROR_MESSAGE,
       {
         code: input.data.code,
         detail: input.data.path,
-        retryAfterSeconds,
+        operatorCode: input.data.operatorCode,
+        retryAfterSeconds: resolveRetryAfterSeconds(
+          input.data.retryAfterSeconds,
+          input.headers,
+        ),
         status: input.status,
         traceId: input.data.correlationId,
+        userMessageKey: input.data.userMessageKey,
       },
     );
   }
 
-  return buildNormalizedError(DEFAULT_SERVER_ERROR_MESSAGE, {
-    retryAfterSeconds,
+  return createNormalizedHttpError(DEFAULT_SERVER_ERROR_MESSAGE, {
     status: input.status,
+    retryAfterSeconds,
   });
 };

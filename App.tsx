@@ -28,6 +28,7 @@ const App = () => {
   return (
     <AppNavigator
       animationsDisabled={animationsDisabledRef.current}
+      orderApi={runtimeRef.current.orderApi}
       {...authFlow}
     />
   );
