@@ -8,9 +8,9 @@ import {
   validateRegisterForm,
   validateRegisterField,
 } from './form-validation';
-import type { AuthMutationResult } from './mobile-auth-service';
 import type { RegisterRequest } from '../types/auth';
 import {
+  type AuthMutationResult,
   createEmptyRegisterFeedback,
   type RegisterField,
   type RegisterFormFeedback,

@@ -110,4 +110,94 @@ describe('auth api', () => {
     );
     expect(csrfManager.onLoginSuccess).not.toHaveBeenCalled();
   });
+
+  it('submits the forgot-password payload as JSON', async () => {
+    client.post.mockResolvedValue({
+      statusCode: 202,
+      body: {
+        accepted: true,
+        message: 'If the account is eligible, a reset email will be sent.',
+        recovery: {
+          challengeEndpoint: '/api/v1/auth/password/forgot/challenge',
+          challengeMayBeRequired: true,
+        },
+      },
+    });
+
+    const authApi = createAuthApi({ client, csrfManager });
+
+    await expect(
+      authApi.requestPasswordResetEmail({
+        email: 'demo@fix.com',
+      }),
+    ).resolves.toEqual({
+      accepted: true,
+      message: 'If the account is eligible, a reset email will be sent.',
+      recovery: {
+        challengeEndpoint: '/api/v1/auth/password/forgot/challenge',
+        challengeMayBeRequired: true,
+      },
+    });
+
+    expect(client.post).toHaveBeenCalledWith(
+      '/api/v1/auth/password/forgot',
+      {
+        email: 'demo@fix.com',
+      },
+    );
+  });
+
+  it('bootstraps a password-recovery challenge as JSON', async () => {
+    client.post.mockResolvedValue({
+      statusCode: 200,
+      body: {
+        challengeToken: 'challenge-token',
+        challengeType: 'captcha',
+        challengeTtlSeconds: 300,
+      },
+    });
+
+    const authApi = createAuthApi({ client, csrfManager });
+
+    await expect(
+      authApi.requestPasswordRecoveryChallenge({
+        email: 'demo@fix.com',
+      }),
+    ).resolves.toEqual({
+      challengeToken: 'challenge-token',
+      challengeType: 'captcha',
+      challengeTtlSeconds: 300,
+    });
+
+    expect(client.post).toHaveBeenCalledWith(
+      '/api/v1/auth/password/forgot/challenge',
+      {
+        email: 'demo@fix.com',
+      },
+    );
+  });
+
+  it('submits the password-reset payload as JSON', async () => {
+    client.post.mockResolvedValue({
+      statusCode: 204,
+      body: null,
+    });
+
+    const authApi = createAuthApi({ client, csrfManager });
+
+    await expect(
+      authApi.resetPassword({
+        token: 'reset-token',
+        newPassword: 'Test1234!',
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(client.post).toHaveBeenCalledWith(
+      '/api/v1/auth/password/reset',
+      {
+        token: 'reset-token',
+        newPassword: 'Test1234!',
+      },
+    );
+  });
 });

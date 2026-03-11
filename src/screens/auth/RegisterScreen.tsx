@@ -14,7 +14,7 @@ import {
 import {
   type RegisterField,
 } from '../../types/auth-ui';
-import type { AuthMutationResult } from '../../auth/mobile-auth-service';
+import type { AuthMutationResult } from '../../types/auth-ui';
 import type { RegisterRequest } from '../../types/auth';
 import { REGISTER_EMAIL_USAGE_HINT } from '../../auth/auth-copy';
 import {

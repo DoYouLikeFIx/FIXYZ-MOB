@@ -2,13 +2,26 @@ import { Animated, Easing, StyleSheet } from 'react-native';
 import { useLayoutEffect, useRef } from 'react';
 
 import { BootScreen } from '../screens/auth/BootScreen';
+import { ForgotPasswordScreen } from '../screens/auth/ForgotPasswordScreen';
 import { LoginScreen } from '../screens/auth/LoginScreen';
 import { RegisterScreen } from '../screens/auth/RegisterScreen';
+import { ResetPasswordScreen } from '../screens/auth/ResetPasswordScreen';
 import { AuthenticatedHomeScreen } from '../screens/app/AuthenticatedHomeScreen';
 import type { AuthStatus } from '../store/auth-store';
 import type { Member } from '../types/auth';
-import type { LoginRequest, RegisterRequest } from '../types/auth';
-import type { AuthMutationResult } from '../auth/mobile-auth-service';
+import type {
+  LoginRequest,
+  PasswordForgotRequest,
+  PasswordRecoveryChallengeRequest,
+  PasswordResetRequest,
+  RegisterRequest,
+} from '../types/auth';
+import type {
+  AuthMutationResult,
+  PasswordForgotResult,
+  PasswordRecoveryChallengeResult,
+  PasswordResetResult,
+} from '../types/auth-ui';
 
 import type { AuthNavigationState } from './auth-navigation';
 
@@ -18,6 +31,8 @@ interface AppNavigatorProps {
   member: Member | null;
   reauthMessage: string | null;
   navigationState: AuthNavigationState;
+  authBannerMessage: string | null;
+  authBannerTone: 'info' | 'error' | 'success';
   bootstrapErrorMessage: string | null;
   protectedErrorMessage: string | null;
   isRefreshingSession: boolean;
@@ -25,6 +40,13 @@ interface AppNavigatorProps {
   onRegisterSubmit: (payload: RegisterRequest) => Promise<AuthMutationResult>;
   onOpenLogin: () => void;
   onOpenRegister: () => void;
+  onOpenForgotPassword: () => void;
+  onOpenResetPassword: (token?: string) => void;
+  onPasswordForgotSubmit: (payload: PasswordForgotRequest) => Promise<PasswordForgotResult>;
+  onPasswordChallengeSubmit: (
+    payload: PasswordRecoveryChallengeRequest,
+  ) => Promise<PasswordRecoveryChallengeResult>;
+  onPasswordResetSubmit: (payload: PasswordResetRequest) => Promise<PasswordResetResult>;
   onRefreshProtectedSession: () => void;
 }
 
@@ -57,6 +79,10 @@ const getTransitionOffset = (previousKey: string, nextKey: string): number => {
     return -34;
   }
 
+  if (previousKey.startsWith('auth:') && nextKey.startsWith('auth:')) {
+    return nextKey === 'auth:login' ? -24 : 24;
+  }
+
   if (nextKey.startsWith('app:')) {
     return 20;
   }
@@ -74,6 +100,8 @@ export const AppNavigator = ({
   member,
   reauthMessage,
   navigationState,
+  authBannerMessage,
+  authBannerTone,
   bootstrapErrorMessage,
   protectedErrorMessage,
   isRefreshingSession,
@@ -81,6 +109,11 @@ export const AppNavigator = ({
   onRegisterSubmit,
   onOpenLogin,
   onOpenRegister,
+  onOpenForgotPassword,
+  onOpenResetPassword,
+  onPasswordForgotSubmit,
+  onPasswordChallengeSubmit,
+  onPasswordResetSubmit,
   onRefreshProtectedSession,
 }: AppNavigatorProps) => {
   const routeKey = getRouteKey(authStatus, navigationState, member);
@@ -155,11 +188,37 @@ export const AppNavigator = ({
         onSubmit={onRegisterSubmit}
       />
     );
+  } else if (navigationState.authRoute === 'forgotPassword') {
+    screen = (
+      <ForgotPasswordScreen
+        onLoginPress={onOpenLogin}
+        onRegisterPress={onOpenRegister}
+        onResetPasswordPress={onOpenResetPassword}
+        onSubmit={onPasswordForgotSubmit}
+        onSubmitChallenge={onPasswordChallengeSubmit}
+      />
+    );
+  } else if (navigationState.authRoute === 'resetPassword') {
+    screen = (
+      <ResetPasswordScreen
+        initialToken={navigationState.resetPasswordToken ?? undefined}
+        onForgotPasswordPress={onOpenForgotPassword}
+        onLoginPress={onOpenLogin}
+        onSubmit={onPasswordResetSubmit}
+      />
+    );
   } else {
     screen = (
       <LoginScreen
-        bannerMessage={reauthMessage ?? bootstrapErrorMessage}
-        bannerTone={reauthMessage ? 'info' : 'error'}
+        bannerMessage={reauthMessage ?? authBannerMessage ?? bootstrapErrorMessage}
+        bannerTone={
+          reauthMessage
+            ? 'info'
+            : authBannerMessage
+              ? authBannerTone
+              : 'error'
+        }
+        onForgotPasswordPress={onOpenForgotPassword}
         onLoginPress={onOpenLogin}
         onRegisterPress={onOpenRegister}
         onSubmit={onLoginSubmit}

@@ -5,12 +5,16 @@ import {
 import type { LoginRequest, RegisterRequest } from '../types/auth';
 import {
   createEmptyLoginFeedback,
+  createEmptyForgotPasswordFeedback,
   createEmptyRegisterFeedback,
+  createEmptyResetPasswordFeedback,
   type FieldMessageTone,
+  type ForgotPasswordFormFeedback,
   type LoginFormFeedback,
   type RegisterField,
   type RegisterFormFeedback,
   type RegisterFormValues,
+  type ResetPasswordFormFeedback,
 } from '../types/auth-ui';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -67,6 +71,12 @@ export interface ConfirmPasswordState {
   tone: FieldMessageTone;
 }
 
+export interface ResetPasswordState {
+  isValid: boolean;
+  message: string;
+  tone: Exclude<FieldMessageTone, 'error'>;
+}
+
 export const getConfirmPasswordState = (
   values: Pick<RegisterFormValues, 'password' | 'confirmPassword'>,
 ): ConfirmPasswordState => {
@@ -82,6 +92,19 @@ export const getConfirmPasswordState = (
         : '비밀번호 확인이 일치하지 않습니다.'
       : '비밀번호 확인을 입력해 주세요.',
     tone: isDirty ? (isValid ? 'success' : 'error') : 'neutral',
+  };
+};
+
+export const getResetPasswordState = (password: string): ResetPasswordState => {
+  const checks = getPasswordPolicyChecks(password);
+  const isValid = isPasswordPolicySatisfied(checks);
+
+  return {
+    isValid,
+    message: isValid
+      ? '사용 가능한 비밀번호 형식입니다.'
+      : PASSWORD_POLICY_GUIDANCE,
+    tone: isValid ? 'success' : 'neutral',
   };
 };
 
@@ -250,5 +273,127 @@ export const getRegisterKeyboardMessage = (
   return {
     message: defaultDescription,
     tone: 'neutral',
+  };
+};
+
+interface ValidatedForgotPasswordResult {
+  valid: true;
+  payload: {
+    email: string;
+    challengeToken?: string;
+    challengeAnswer?: string;
+  };
+  feedback: ForgotPasswordFormFeedback;
+}
+
+interface InvalidForgotPasswordResult {
+  valid: false;
+  feedback: ForgotPasswordFormFeedback;
+}
+
+export const validateForgotPasswordForm = (
+  values: {
+    email: string;
+    challengeToken?: string;
+    challengeAnswer?: string;
+  },
+): ValidatedForgotPasswordResult | InvalidForgotPasswordResult => {
+  const email = trimValue(values.email);
+  const feedback = createEmptyForgotPasswordFeedback();
+  const emailValidationMessage = getEmailValidationMessage(values.email);
+
+  if (emailValidationMessage) {
+    feedback.fieldErrors.email = true;
+    feedback.fieldMessages.email = emailValidationMessage;
+
+    return {
+      valid: false,
+      feedback,
+    };
+  }
+
+  if (values.challengeToken && !trimValue(values.challengeAnswer ?? '')) {
+    feedback.fieldErrors.challengeAnswer = true;
+    feedback.fieldMessages.challengeAnswer = '보안 확인 응답을 입력해 주세요.';
+
+    return {
+      valid: false,
+      feedback,
+    };
+  }
+
+  return {
+    valid: true,
+    payload: {
+      email,
+      challengeAnswer: values.challengeToken
+        ? trimValue(values.challengeAnswer ?? '')
+        : undefined,
+      challengeToken: values.challengeToken,
+    },
+    feedback,
+  };
+};
+
+interface ValidatedResetPasswordResult {
+  valid: true;
+  payload: {
+    token: string;
+    newPassword: string;
+  };
+  feedback: ResetPasswordFormFeedback;
+}
+
+interface InvalidResetPasswordResult {
+  valid: false;
+  feedback: ResetPasswordFormFeedback;
+}
+
+export const validateResetPasswordForm = (
+  values: {
+    token: string;
+    newPassword: string;
+  },
+): ValidatedResetPasswordResult | InvalidResetPasswordResult => {
+  const token = trimValue(values.token);
+  const feedback = createEmptyResetPasswordFeedback();
+
+  if (!token) {
+    feedback.fieldErrors.token = true;
+    feedback.fieldMessages.token = '재설정 토큰을 입력해 주세요.';
+
+    return {
+      valid: false,
+      feedback,
+    };
+  }
+
+  if (!values.newPassword) {
+    feedback.fieldErrors.newPassword = true;
+    feedback.fieldMessages.newPassword = '새 비밀번호를 입력해 주세요.';
+
+    return {
+      valid: false,
+      feedback,
+    };
+  }
+
+  if (!getResetPasswordState(values.newPassword).isValid) {
+    feedback.fieldErrors.newPassword = true;
+    feedback.fieldMessages.newPassword = PASSWORD_POLICY_ERROR;
+
+    return {
+      valid: false,
+      feedback,
+    };
+  }
+
+  return {
+    valid: true,
+    payload: {
+      token,
+      newPassword: values.newPassword,
+    },
+    feedback,
   };
 };

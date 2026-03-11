@@ -17,6 +17,7 @@ export interface NormalizedHttpError extends Error {
   status?: number;
   detail?: string;
   retriable?: boolean;
+  retryAfterSeconds?: number;
   traceId?: string;
 }
 

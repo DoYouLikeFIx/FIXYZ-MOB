@@ -34,6 +34,9 @@ type AuthServiceStub = {
   bootstrap: ReturnType<typeof vi.fn>;
   loginMember: ReturnType<typeof vi.fn>;
   registerMember: ReturnType<typeof vi.fn>;
+  requestPasswordResetEmail: ReturnType<typeof vi.fn>;
+  requestPasswordRecoveryChallenge: ReturnType<typeof vi.fn>;
+  resetPassword: ReturnType<typeof vi.fn>;
   refreshProtectedSession: ReturnType<typeof vi.fn>;
   revalidateSessionOnResume: ReturnType<typeof vi.fn>;
 };
@@ -42,6 +45,9 @@ const createServiceStub = (): AuthServiceStub => ({
   bootstrap: vi.fn(),
   loginMember: vi.fn(),
   registerMember: vi.fn(),
+  requestPasswordResetEmail: vi.fn(),
+  requestPasswordRecoveryChallenge: vi.fn(),
+  resetPassword: vi.fn(),
   refreshProtectedSession: vi.fn(),
   revalidateSessionOnResume: vi.fn(),
 });
@@ -75,6 +81,58 @@ describe('auth flow view model', () => {
     expect(viewModel.getState().navigationState).toMatchObject({
       stack: 'app',
       welcomeVariant: 'login',
+    });
+  });
+
+  it('preserves a reset-password handoff while anonymous bootstrap settles', async () => {
+    authService.bootstrap.mockResolvedValue({
+      recoveredSession: false,
+      member: null,
+      error: createHttpError({
+        code: 'AUTH-003',
+        status: 401,
+        message: 'Authentication required',
+      }),
+    });
+
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+    });
+
+    viewModel.ingestPasswordResetToken('link-token');
+    await viewModel.bootstrap();
+
+    expect(authStore.getState().status).toBe('anonymous');
+    expect(viewModel.getState().navigationState).toMatchObject({
+      authRoute: 'resetPassword',
+      resetPasswordToken: 'link-token',
+    });
+  });
+
+  it('does not clobber a reset-password handoff when bootstrap recovers a session', async () => {
+    authService.bootstrap.mockResolvedValue({
+      recoveredSession: true,
+      member: memberFixture,
+      error: null,
+    });
+
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+    });
+
+    viewModel.ingestPasswordResetToken('link-token');
+    await viewModel.bootstrap();
+
+    expect(authStore.getState()).toMatchObject({
+      status: 'authenticated',
+      member: memberFixture,
+    });
+    expect(viewModel.getState().navigationState).toMatchObject({
+      stack: 'auth',
+      authRoute: 'resetPassword',
+      resetPasswordToken: 'link-token',
     });
   });
 
@@ -173,5 +231,87 @@ describe('auth flow view model', () => {
     await Promise.resolve();
 
     expect(authService.revalidateSessionOnResume).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens recovery routes and returns to login with a success banner after reset', async () => {
+    authService.resetPassword.mockResolvedValue({
+      success: true,
+    });
+
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+    });
+
+    viewModel.openForgotPassword();
+    expect(viewModel.getState().navigationState.authRoute).toBe('forgotPassword');
+
+    viewModel.openResetPassword('handoff-token');
+    expect(viewModel.getState().navigationState).toMatchObject({
+      authRoute: 'resetPassword',
+      resetPasswordToken: 'handoff-token',
+    });
+
+    await viewModel.submitPasswordReset({
+      token: 'reset-token',
+      newPassword: 'Test1234!',
+    });
+
+    expect(viewModel.getState()).toMatchObject({
+      authBannerMessage: '비밀번호가 변경되었습니다. 새 비밀번호로 로그인해 주세요.',
+      authBannerTone: 'success',
+      navigationState: {
+        authRoute: 'login',
+      },
+    });
+  });
+
+  it('routes reset AUTH-016 failures back to login with reauth guidance', async () => {
+    authService.resetPassword.mockResolvedValue({
+      success: false,
+      error: createHttpError({
+        code: 'AUTH-016',
+        status: 401,
+        message: 'Session invalidated by another login',
+      }),
+    });
+
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+    });
+
+    viewModel.openResetPassword('handoff-token');
+
+    const result = await viewModel.submitPasswordReset({
+      token: 'handoff-token',
+      newPassword: 'Test1234!',
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.objectContaining({
+        code: 'AUTH-016',
+      }),
+    });
+    expect(authStore.getState().reauthMessage).toBe('세션이 만료되었습니다. 다시 로그인해 주세요.');
+    expect(viewModel.getState().navigationState).toMatchObject({
+      authRoute: 'login',
+      resetPasswordToken: null,
+    });
+  });
+
+  it('ingests a reset-token handoff into the dedicated reset route', () => {
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+    });
+
+    viewModel.ingestPasswordResetToken('link-token');
+
+    expect(viewModel.getState().navigationState).toMatchObject({
+      authRoute: 'resetPassword',
+      resetPasswordToken: 'link-token',
+    });
   });
 });

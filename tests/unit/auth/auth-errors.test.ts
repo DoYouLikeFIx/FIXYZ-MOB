@@ -21,6 +21,7 @@ const createHttpError = (
   error.status = overrides.status;
   error.detail = overrides.detail;
   error.retriable = overrides.retriable;
+  error.retryAfterSeconds = overrides.retryAfterSeconds;
   error.traceId = overrides.traceId;
 
   return error;
@@ -114,6 +115,44 @@ describe('mobile auth error presentation', () => {
       getLoginErrorFeedback(createHttpError({ message: NETWORK_ERROR_MESSAGE })),
     ).toMatchObject({
       globalMessage: NETWORK_ERROR_MESSAGE,
+    });
+  });
+
+  it('maps password-recovery codes to deterministic reset guidance', () => {
+    expect(
+      resolveAuthErrorPresentation(createHttpError({ code: 'AUTH-012', status: 401 })),
+    ).toMatchObject({
+      semantic: 'password-reset-token-invalid',
+      message: '재설정 링크가 유효하지 않거나 만료되었습니다. 비밀번호 재설정을 다시 요청해 주세요.',
+    });
+
+    expect(
+      resolveAuthErrorPresentation(createHttpError({ code: 'AUTH-013', status: 409 })),
+    ).toMatchObject({
+      semantic: 'password-reset-token-consumed',
+      message: '이미 사용된 재설정 링크입니다. 새로운 재설정 링크를 요청해 주세요.',
+    });
+
+    expect(
+      resolveAuthErrorPresentation(createHttpError({ code: 'AUTH-015', status: 422 })),
+    ).toMatchObject({
+      semantic: 'password-reset-same-password',
+      message: '현재 비밀번호와 다른 새 비밀번호를 입력해 주세요.',
+    });
+  });
+
+  it('includes Retry-After guidance for password-recovery rate limits', () => {
+    expect(
+      resolveAuthErrorPresentation(
+        createHttpError({
+          code: 'AUTH-014',
+          retryAfterSeconds: 90,
+          status: 429,
+        }),
+      ),
+    ).toMatchObject({
+      semantic: 'password-reset-rate-limited',
+      message: '비밀번호 재설정 요청이 너무 많습니다. 90초 후 다시 시도해 주세요.',
     });
   });
 });

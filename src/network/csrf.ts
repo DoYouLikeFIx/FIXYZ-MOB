@@ -53,6 +53,19 @@ export class CsrfTokenManager {
     await this.refreshToken();
   }
 
+  async forceRefresh(): Promise<{ headerName: string; token: string }> {
+    const token = await this.refreshToken();
+
+    if (!token) {
+      throw new MissingCsrfTokenError();
+    }
+
+    return {
+      headerName: this.csrfHeaderName,
+      token,
+    };
+  }
+
   async injectHeader(
     method: string,
     headers: Record<string, string>,
