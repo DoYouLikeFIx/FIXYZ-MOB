@@ -2,9 +2,9 @@ import { useState } from 'react';
 
 import { getLoginErrorFeedback } from './auth-errors';
 import { validateLoginForm } from './form-validation';
-import type { AuthMutationResult } from './mobile-auth-service';
 import type { LoginRequest } from '../types/auth';
 import {
+  type AuthMutationResult,
   createEmptyLoginFeedback,
   type LoginField,
   type LoginFormFeedback,

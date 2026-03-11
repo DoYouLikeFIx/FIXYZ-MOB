@@ -1,9 +1,12 @@
 import {
   getConfirmPasswordState,
   getPasswordPolicyState,
+  getResetPasswordState,
   getRegisterKeyboardMessage,
+  validateForgotPasswordForm,
   validateRegisterField,
   validateRegisterForm,
+  validateResetPasswordForm,
 } from '@/auth/form-validation';
 import { createEmptyRegisterFeedback } from '@/types/auth-ui';
 
@@ -82,6 +85,58 @@ describe('auth form validation', () => {
     ).toEqual({
       message: '비밀번호 정책을 모두 충족해 주세요.',
       tone: 'error',
+    });
+  });
+
+  it('validates forgot-password email and optional challenge answers', () => {
+    expect(
+      validateForgotPasswordForm({
+        email: 'bad-email',
+      }),
+    ).toMatchObject({
+      valid: false,
+      feedback: {
+        fieldMessages: {
+          email: '올바른 이메일 형식을 입력해 주세요.',
+        },
+      },
+    });
+
+    expect(
+      validateForgotPasswordForm({
+        email: 'demo@fix.com',
+        challengeToken: 'challenge-token',
+        challengeAnswer: '',
+      }),
+    ).toMatchObject({
+      valid: false,
+      feedback: {
+        fieldMessages: {
+          challengeAnswer: '보안 확인 응답을 입력해 주세요.',
+        },
+      },
+    });
+  });
+
+  it('validates reset-password token and password policy', () => {
+    expect(
+      validateResetPasswordForm({
+        token: '',
+        newPassword: 'Test1234!',
+      }),
+    ).toMatchObject({
+      valid: false,
+      feedback: {
+        fieldMessages: {
+          token: '재설정 토큰을 입력해 주세요.',
+        },
+      },
+    });
+
+    expect(getResetPasswordState('short')).toEqual({
+      isValid: false,
+      message: '8자 이상, 대문자, 숫자, 특수문자를 포함해 주세요.',
+      tone: 'neutral',
     });
   });
 });

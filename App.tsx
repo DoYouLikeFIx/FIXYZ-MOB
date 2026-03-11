@@ -5,29 +5,24 @@ import {
 import { createMobileAuthRuntime } from './src/auth/create-mobile-auth-runtime';
 import { useAuthFlowViewModel } from './src/auth/use-auth-flow-view-model';
 import {
+  authStore,
+} from './src/store/auth-store';
+import {
   isMotionDisabled,
-  shouldEnforceStrictCsrfBootstrap,
 } from './src/config/runtime-options';
 import { AppNavigator } from './src/navigation/AppNavigator';
 
 const App = () => {
   const runtimeRef = useRef<ReturnType<typeof createMobileAuthRuntime> | null>(null);
   const animationsDisabledRef = useRef(isMotionDisabled());
-  const strictCsrfBootstrapRef = useRef(shouldEnforceStrictCsrfBootstrap());
 
   if (runtimeRef.current === null) {
     runtimeRef.current = createMobileAuthRuntime();
   }
 
   const authFlow = useAuthFlowViewModel({
-    authApi: runtimeRef.current.authApi,
-    csrfManager: runtimeRef.current.csrfManager,
-    appBootstrap: {
-      baseUrl: runtimeRef.current.baseUrl,
-      client: runtimeRef.current.client,
-      csrfManager: runtimeRef.current.csrfManager,
-      strictCsrfBootstrap: strictCsrfBootstrapRef.current,
-    },
+    authService: runtimeRef.current.authService,
+    authStore,
   });
 
   return (

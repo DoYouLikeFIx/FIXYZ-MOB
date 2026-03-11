@@ -1,39 +1,39 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Linking } from 'react-native';
 
-import type { AppBootstrapRuntime } from '../bootstrap/app-bootstrap';
-import { authStore, useAuthStore } from '../store/auth-store';
-import type { LoginRequest, RegisterRequest } from '../types/auth';
+import type { AuthState } from '../store/auth-store';
+import type {
+  LoginRequest,
+  PasswordForgotRequest,
+  PasswordRecoveryChallengeRequest,
+  PasswordResetRequest,
+  RegisterRequest,
+} from '../types/auth';
 
 import {
+  type AuthServiceAdapter,
+  type AuthStoreAdapter,
   createAuthFlowViewModel,
 } from './auth-flow-view-model';
-import {
-  createMobileAuthService,
-  type AuthApi,
-} from './mobile-auth-service';
-import type { CsrfTokenManager } from '../network/csrf';
+import { extractPasswordResetTokenFromUrl } from './password-reset-handoff';
 
 interface UseAuthFlowViewModelInput {
-  authApi: AuthApi;
-  csrfManager?: Pick<CsrfTokenManager, 'onForegroundResume'>;
-  appBootstrap?: AppBootstrapRuntime;
+  authService: AuthServiceAdapter;
+  authStore: AuthStoreAdapter & {
+    subscribe: (listener: () => void) => () => void;
+    getState: () => AuthState;
+  };
 }
 
 export const useAuthFlowViewModel = ({
-  authApi,
-  csrfManager,
-  appBootstrap,
+  authService,
+  authStore,
 }: UseAuthFlowViewModelInput) => {
   const viewModelRef = useRef<ReturnType<typeof createAuthFlowViewModel> | null>(null);
 
   if (viewModelRef.current === null) {
     viewModelRef.current = createAuthFlowViewModel({
-      authService: createMobileAuthService({
-        authApi,
-        csrfManager,
-        appBootstrap,
-      }),
+      authService,
       authStore,
       initialAppState: AppState.currentState,
     });
@@ -45,26 +45,55 @@ export const useAuthFlowViewModel = ({
     viewModelRef.current.getState,
   );
 
-  const authStatus = useAuthStore((state) => state.status);
-  const member = useAuthStore((state) => state.member);
-  const reauthMessage = useAuthStore((state) => state.reauthMessage);
+  const authState = useSyncExternalStore(
+    authStore.subscribe,
+    authStore.getState,
+    authStore.getState,
+  );
 
   useEffect(() => {
-    void viewModelRef.current?.bootstrap();
+    let cancelled = false;
 
-    const subscription = AppState.addEventListener('change', (nextState) => {
+    const initialize = async () => {
+      const initialUrlPromise = Linking.getInitialURL();
+
+      await viewModelRef.current?.bootstrap();
+
+      if (cancelled) {
+        return;
+      }
+
+      const token = extractPasswordResetTokenFromUrl(await initialUrlPromise);
+
+      if (token) {
+        viewModelRef.current?.ingestPasswordResetToken(token);
+      }
+    };
+
+    void initialize();
+
+    const appStateSubscription = AppState.addEventListener('change', (nextState) => {
       viewModelRef.current?.handleAppStateChange(nextState);
+    });
+    const linkingSubscription = Linking.addEventListener('url', ({ url }) => {
+      const token = extractPasswordResetTokenFromUrl(url);
+
+      if (token) {
+        viewModelRef.current?.ingestPasswordResetToken(token);
+      }
     });
 
     return () => {
-      subscription.remove();
+      cancelled = true;
+      appStateSubscription.remove();
+      linkingSubscription.remove();
     };
   }, []);
 
   return {
-    authStatus,
-    member,
-    reauthMessage,
+    authStatus: authState.status,
+    member: authState.member,
+    reauthMessage: authState.reauthMessage,
     ...viewState,
     onOpenLogin: () => {
       viewModelRef.current?.openLogin();
@@ -72,10 +101,22 @@ export const useAuthFlowViewModel = ({
     onOpenRegister: () => {
       viewModelRef.current?.openRegister();
     },
+    onOpenForgotPassword: () => {
+      viewModelRef.current?.openForgotPassword();
+    },
+    onOpenResetPassword: (token?: string) => {
+      viewModelRef.current?.openResetPassword(token);
+    },
     onLoginSubmit: (payload: LoginRequest) =>
       viewModelRef.current!.submitLogin(payload),
     onRegisterSubmit: (payload: RegisterRequest) =>
       viewModelRef.current!.submitRegister(payload),
+    onPasswordForgotSubmit: (payload: PasswordForgotRequest) =>
+      viewModelRef.current!.submitPasswordResetEmail(payload),
+    onPasswordChallengeSubmit: (payload: PasswordRecoveryChallengeRequest) =>
+      viewModelRef.current!.submitPasswordRecoveryChallenge(payload),
+    onPasswordResetSubmit: (payload: PasswordResetRequest) =>
+      viewModelRef.current!.submitPasswordReset(payload),
     onRefreshProtectedSession: () => {
       void viewModelRef.current?.refreshProtectedSession('manual');
     },

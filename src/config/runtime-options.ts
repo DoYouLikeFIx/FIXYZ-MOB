@@ -2,10 +2,13 @@ import { LaunchArguments } from 'react-native-launch-arguments';
 
 import type { RuntimeTarget } from './environment';
 
+declare const __DEV__: boolean;
+
 export interface MobileLaunchArguments {
   mobApiBaseUrl?: string;
   mobRuntimeTarget?: RuntimeTarget;
-  mobDisableAnimations?: boolean;
+  mobDisableAnimations?: boolean | string;
+  mobQaPlaintextPasswords?: boolean | string;
 }
 
 let cachedArguments: MobileLaunchArguments | null = null;
@@ -33,6 +36,14 @@ const toBoolean = (value: string | undefined): boolean | undefined => {
   return undefined;
 };
 
+const isDevelopmentRuntime = (): boolean => {
+  if (typeof __DEV__ !== 'undefined') {
+    return __DEV__;
+  }
+
+  return process.env.NODE_ENV !== 'production';
+};
+
 export const getMobileLaunchArguments = (): MobileLaunchArguments => {
   if (cachedArguments) {
     return cachedArguments;
@@ -56,8 +67,25 @@ export const resolveRuntimeTarget = (): RuntimeTarget => {
 export const resolveRuntimeUrlOverride = (): string | undefined =>
   getMobileLaunchArguments().mobApiBaseUrl ?? process.env.MOB_API_BASE_URL;
 
-export const isMotionDisabled = (): boolean =>
-  getMobileLaunchArguments().mobDisableAnimations === true;
+export const isMotionDisabled = (): boolean => {
+  const { mobDisableAnimations } = getMobileLaunchArguments();
+
+  return mobDisableAnimations === true
+    || toBoolean(
+      typeof mobDisableAnimations === 'string' ? mobDisableAnimations : undefined,
+    ) === true;
+};
+
+export const shouldUseQaPlaintextPasswords = (): boolean => {
+  const { mobQaPlaintextPasswords } = getMobileLaunchArguments();
+
+  return isDevelopmentRuntime() && (
+    mobQaPlaintextPasswords === true
+    || toBoolean(
+      typeof mobQaPlaintextPasswords === 'string' ? mobQaPlaintextPasswords : undefined,
+    ) === true
+  );
+};
 
 export const shouldEnforceStrictCsrfBootstrap = (): boolean => {
   const override = toBoolean(process.env.MOB_STRICT_CSRF_BOOTSTRAP);

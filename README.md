@@ -74,6 +74,8 @@ The app reads Maestro launch arguments through `react-native-launch-arguments`, 
 
 The login form also supports keyboard `Enter` submission, which the Maestro flows use to avoid brittle button taps while the iOS password manager is presenting or dismissing system UI.
 
+Password-reset handoff now uses the app-owned custom scheme `fixyz://reset-password?token=<token>`. The JS auth shell consumes both cold-start and in-app `Linking` events, while iOS/Android native configuration registers the scheme with the current app shell.
+
 The mock auth server validates the CSRF cookie/header contract and drives Story 1.4 scenarios by credential:
 
 - `demo@fix.com` -> successful login
@@ -88,6 +90,7 @@ The mock auth server validates the CSRF cookie/header contract and drives Story 
 - `pending-order@fix.com` -> successful login, then `/api/v1/orders` returns `FEP-002` pending-confirmation guidance
 - `unknown-order@fix.com` -> successful login, then `/api/v1/orders` returns safe unknown external fallback guidance
 - `no-account@fix.com` -> successful login without a linked order account, so the order boundary stays gated
+- `valid-reset-token` -> successful password reset for local handoff automation
 
 ### Story 3.6 order flows
 
@@ -106,12 +109,32 @@ The raw-film capture set for Story 1.6 uses `e2e/maestro/auth-film` against the 
 
 Real backend verification flows live in `e2e/maestro/auth-live`.
 
+`scripts/run-maestro-auth-suite.sh` now handles `auth-live` launch-argument rendering automatically, so the live flows can be executed through the checked-in runner without a manual `envsubst` step. The runner also skips the local mock auth server when the target lives under `e2e/maestro/auth-live`.
+
 - Register against a live backend:
   - `export PATH="$PATH:$HOME/.maestro/bin"`
-  - `maestro test --udid <SIMULATOR_UDID> -e LIVE_API_BASE_URL=http://localhost:18080 -e LIVE_EMAIL=<unique_email> -e LIVE_NAME='<display_name>' -e LIVE_PASSWORD=<password> e2e/maestro/auth-live/01-register-success-live-be.yaml`
+  - `LIVE_API_BASE_URL=http://localhost:18080 LIVE_EMAIL=<unique_email> LIVE_NAME='<display_name>' LIVE_PASSWORD=<password> DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/01-register-success-live-be.yaml`
 - Login against the same live backend account:
-  - `maestro test --udid <SIMULATOR_UDID> -e LIVE_API_BASE_URL=http://localhost:18080 -e LIVE_EMAIL=<registered_email> -e LIVE_PASSWORD=<same_password> -e LIVE_NAME='<same_display_name>' e2e/maestro/auth-live/02-login-success-live-be.yaml`
+  - `LIVE_API_BASE_URL=http://localhost:18080 LIVE_EMAIL=<registered_email> LIVE_PASSWORD=<same_password> LIVE_NAME='<same_display_name>' DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/02-login-success-live-be.yaml`
 - Invalid-credentials check against the live backend:
-  - `maestro test --udid <SIMULATOR_UDID> -e LIVE_API_BASE_URL=http://localhost:18080 -e LIVE_EMAIL=<registered_email> -e LIVE_INVALID_PASSWORD=<wrong_password> e2e/maestro/auth-live/03-login-invalid-credentials-live-be.yaml`
+  - `LIVE_API_BASE_URL=http://localhost:18080 LIVE_EMAIL=<registered_email> LIVE_INVALID_PASSWORD=<wrong_password> DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/03-login-invalid-credentials-live-be.yaml`
+- Forgot-password request against the live backend:
+  - `LIVE_API_BASE_URL=http://localhost:18080 LIVE_EMAIL=<registered_or_unknown_email> DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/04-password-recovery-request-live-be.yaml`
+- Invalid reset-token guidance against the live backend:
+  - `LIVE_API_BASE_URL=http://localhost:18080 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/05-password-reset-invalid-token-live-be.yaml`
+- Forgot-password challenge bootstrap against the live backend:
+  - `LIVE_API_BASE_URL=http://localhost:18080 LIVE_EMAIL=<registered_or_unknown_email> DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/06-password-recovery-challenge-live-be.yaml`
+- Reset-success handoff against the live backend:
+  - `MOB_MAESTRO_OPEN_URL='fixyz://reset-password?token=<live_reset_token>' LIVE_API_BASE_URL=http://localhost:18080 LIVE_RESET_PASSWORD=<new_password> DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/07-password-reset-success-live-be.yaml`
 
-Run the live flows individually. `01-register-success-live-be.yaml` should run before `02-login-success-live-be.yaml` when you are validating a freshly created account, while `03-login-invalid-credentials-live-be.yaml` can run independently against any existing account email.
+Run the live flows individually. `01-register-success-live-be.yaml` should run before `02-login-success-live-be.yaml` when you are validating a freshly created account, while `03-login-invalid-credentials-live-be.yaml`, `04-password-recovery-request-live-be.yaml`, `05-password-reset-invalid-token-live-be.yaml`, and `06-password-recovery-challenge-live-be.yaml` can run independently once `LIVE_API_BASE_URL` is reachable. `07-password-reset-success-live-be.yaml` additionally requires a real recovery token supplied through `MOB_MAESTRO_OPEN_URL`.
+
+### Deep-Link Handoff Flow
+
+Use the checked-in runner plus `MOB_MAESTRO_OPEN_URL` to verify the supported password-reset handoff on the iOS simulator:
+
+- `MOB_MAESTRO_OPEN_URL='fixyz://reset-password?token=valid-reset-token' DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth/11-password-reset-deeplink-handoff.yaml`
+
+This flow re-launches the simulator app with the same QA launch arguments that the local reset flows use, opens the native deep link after the auth shell is ready, then asserts that the reset screen can complete successfully without manually typing the token.
+
+`mobQaPlaintextPasswords` is now honored only in `__DEV__` builds, so the plaintext password field mode remains limited to simulator/dev automation and cannot leak into production app behavior.

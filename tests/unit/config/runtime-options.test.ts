@@ -14,6 +14,7 @@ import {
   resolveRuntimeTarget,
   resolveRuntimeUrlOverride,
   shouldEnforceStrictCsrfBootstrap,
+  shouldUseQaPlaintextPasswords,
 } from '@/config/runtime-options';
 
 describe('runtime options', () => {
@@ -64,12 +65,14 @@ describe('runtime options', () => {
       mobRuntimeTarget: 'android-emulator',
       mobApiBaseUrl: 'http://launch-override:8080',
       mobDisableAnimations: true,
+      mobQaPlaintextPasswords: true,
     });
     resetMobileLaunchArgumentsCache();
 
     expect(resolveRuntimeTarget()).toBe('android-emulator');
     expect(resolveRuntimeUrlOverride()).toBe('http://launch-override:8080');
     expect(isMotionDisabled()).toBe(true);
+    expect(shouldUseQaPlaintextPasswords()).toBe(true);
   });
 
   it('falls back to safe defaults when launch arguments are unavailable', () => {
@@ -81,6 +84,7 @@ describe('runtime options', () => {
     expect(resolveRuntimeTarget()).toBe('ios-simulator');
     expect(resolveRuntimeUrlOverride()).toBeUndefined();
     expect(isMotionDisabled()).toBe(false);
+    expect(shouldUseQaPlaintextPasswords()).toBe(false);
   });
 
   it('resolves strict csrf bootstrap from env override first and production second', () => {

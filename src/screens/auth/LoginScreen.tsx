@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
 import type { LoginRequest } from '../../types/auth';
-import type { AuthMutationResult } from '../../auth/mobile-auth-service';
+import type { AuthMutationResult } from '../../types/auth-ui';
 import { buildPasswordRecoveryGuidance } from '../../auth/auth-copy';
 import { useLoginViewModel } from '../../auth/use-login-view-model';
 import { AuthField } from '../../components/auth/AuthField';
@@ -11,7 +11,8 @@ import { authSharedStyles as styles } from '../../components/auth/auth-styles';
 
 interface LoginScreenProps {
   bannerMessage?: string | null;
-  bannerTone?: 'info' | 'error';
+  bannerTone?: 'info' | 'error' | 'success';
+  onForgotPasswordPress: () => void;
   onSubmit: (payload: LoginRequest) => Promise<AuthMutationResult>;
   onRegisterPress: () => void;
   onLoginPress: () => void;
@@ -20,6 +21,7 @@ interface LoginScreenProps {
 export const LoginScreen = ({
   bannerMessage,
   bannerTone,
+  onForgotPasswordPress,
   onSubmit,
   onRegisterPress,
   onLoginPress,
@@ -88,6 +90,16 @@ export const LoginScreen = ({
         </View>
       ) : null}
       <View style={styles.inlineInfoActions}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onForgotPasswordPress}
+          style={styles.inlineInfoTrigger}
+          testID="login-open-password-recovery"
+        >
+          <Text style={styles.inlineInfoTriggerText}>
+            비밀번호 재설정 요청
+          </Text>
+        </Pressable>
         <Pressable
           accessibilityRole="button"
           onPress={() => {

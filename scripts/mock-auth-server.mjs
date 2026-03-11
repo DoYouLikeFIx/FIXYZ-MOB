@@ -74,6 +74,10 @@ const createProfile = ({
 
 const profilesByLogin = new Map();
 const profilesByEmail = new Map();
+const recoveryChallenges = new Map();
+const terminalForgot403Emails = new Set(['csrf-terminal@fix.com']);
+const terminalChallenge403Emails = new Set(['challenge-csrf@fix.com']);
+const terminalReset403Tokens = new Set(['csrf-terminal-token']);
 
 const indexProfile = (profile) => {
   const keys = new Set([
@@ -389,6 +393,14 @@ const writeJson = (response, statusCode, payload, headers = {}) => {
   response.end(JSON.stringify(payload));
 };
 
+const writeForbidden = (response) => {
+  response.writeHead(403, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  response.end('Forbidden');
+};
+
 const ensureCsrf = (request, response, cookies) => {
   const csrfCookie = cookies['XSRF-TOKEN'];
   const csrfHeader = request.headers['x-xsrf-token'];
@@ -414,6 +426,15 @@ const issueSession = (profile) => {
   sessions.set(sessionId, profile);
   return sessionId;
 };
+
+const createPasswordRecoveryPayload = () => ({
+  accepted: true,
+  message: 'If the account is eligible, a reset email will be sent.',
+  recovery: {
+    challengeEndpoint: '/api/v1/auth/password/forgot/challenge',
+    challengeMayBeRequired: true,
+  },
+});
 
 const makeCookie = (name, value) =>
   `${name}=${value}; Path=/; SameSite=Lax`;
@@ -553,6 +574,181 @@ const server = http.createServer(async (request, response) => {
     indexProfile(profile);
 
     writeJson(response, 201, successEnvelope(profile.member));
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/v1/auth/password/forgot/challenge') {
+    if (!ensureCsrf(request, response, cookies)) {
+      return;
+    }
+
+    const body = await readMutationBody(request, response);
+
+    if (!body) {
+      return;
+    }
+
+    const email =
+      typeof body.email === 'string'
+        ? normalizeIdentifier(body.email)
+        : '';
+
+    if (!email) {
+      writeJson(
+        response,
+        400,
+        errorEnvelope(
+          'VALIDATION-001',
+          'Invalid recovery payload',
+          'Email is required to bootstrap a password recovery challenge.',
+        ),
+      );
+      return;
+    }
+
+    if (terminalChallenge403Emails.has(email)) {
+      writeForbidden(response);
+      return;
+    }
+
+    const challengeToken = `challenge-${crypto.randomUUID()}`;
+    recoveryChallenges.set(challengeToken, email);
+
+    writeJson(response, 200, successEnvelope({
+      challengeToken,
+      challengeType: 'proof-of-work',
+      challengeTtlSeconds: 300,
+    }));
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/v1/auth/password/forgot') {
+    if (!ensureCsrf(request, response, cookies)) {
+      return;
+    }
+
+    const body = await readMutationBody(request, response);
+
+    if (!body) {
+      return;
+    }
+
+    const email =
+      typeof body.email === 'string'
+        ? normalizeIdentifier(body.email)
+        : '';
+
+    if (!email) {
+      writeJson(
+        response,
+        400,
+        errorEnvelope(
+          'VALIDATION-001',
+          'Invalid recovery payload',
+          'Email is required to request password recovery.',
+        ),
+      );
+      return;
+    }
+
+    if (terminalForgot403Emails.has(email)) {
+      writeForbidden(response);
+      return;
+    }
+
+    const challengeToken =
+      typeof body.challengeToken === 'string' ? body.challengeToken : '';
+    const challengeAnswer =
+      typeof body.challengeAnswer === 'string' ? body.challengeAnswer.trim() : '';
+
+    if (challengeToken || challengeAnswer) {
+      const expectedEmail = recoveryChallenges.get(challengeToken);
+
+      if (
+        !expectedEmail
+        || expectedEmail !== email
+        || (challengeAnswer !== 'verified' && challengeAnswer !== 'ready')
+      ) {
+        writeJson(
+          response,
+          401,
+          errorEnvelope(
+            'AUTH-012',
+            'reset token invalid or expired',
+            'The password recovery challenge token is invalid, expired, or already consumed.',
+          ),
+        );
+        return;
+      }
+
+      recoveryChallenges.delete(challengeToken);
+    }
+
+    writeJson(response, 202, successEnvelope(createPasswordRecoveryPayload()));
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/v1/auth/password/reset') {
+    if (!ensureCsrf(request, response, cookies)) {
+      return;
+    }
+
+    const body = await readMutationBody(request, response);
+
+    if (!body) {
+      return;
+    }
+
+    const token = typeof body.token === 'string' ? body.token.trim() : '';
+    const newPassword =
+      typeof body.newPassword === 'string' ? body.newPassword : '';
+
+    if (!token || !newPassword) {
+      writeJson(
+        response,
+        400,
+        errorEnvelope(
+          'VALIDATION-001',
+          'Invalid reset payload',
+          'Reset token and new password are required.',
+        ),
+      );
+      return;
+    }
+
+    if (terminalReset403Tokens.has(token)) {
+      writeForbidden(response);
+      return;
+    }
+
+    if (token === 'same-password-token') {
+      writeJson(
+        response,
+        422,
+        errorEnvelope(
+          'AUTH-015',
+          'new password equals current password',
+          'The new password must differ from the current password.',
+        ),
+      );
+      return;
+    }
+
+    if (token !== 'valid-reset-token') {
+      writeJson(
+        response,
+        401,
+        errorEnvelope(
+          'AUTH-012',
+          'reset token invalid or expired',
+          'The supplied token is invalid or expired.',
+        ),
+      );
+      return;
+    }
+
+    response.writeHead(204);
+    response.end();
     return;
   }
 

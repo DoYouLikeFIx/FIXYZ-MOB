@@ -2,8 +2,8 @@ import {
   DEFAULT_HEALTH_TIMEOUT_MS,
   type SessionCookiePolicy,
 } from '../config/environment';
-import { normalizeHttpError } from './errors';
 import type { CsrfTokenManager } from './csrf';
+import { normalizeHttpError } from './errors';
 import type {
   ApiResponseEnvelope,
   HttpClientResponse,
@@ -49,6 +49,8 @@ const isApiResponseEnvelope = (
     Object.hasOwn(candidate, 'error')
   );
 };
+
+const SAFE_METHODS = new Set<HttpMethod>(['GET', 'HEAD', 'OPTIONS']);
 
 const parseBody = async (response: Response): Promise<unknown> => {
   const text = await response.text();
@@ -120,72 +122,89 @@ export class HttpClient {
       headers['Content-Type'] = 'application/json';
     }
 
-    const finalHeaders = this.csrfManager
-      ? await this.csrfManager.injectHeader(method, headers)
-      : headers;
-
     const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
     const requestBody: RequestInit['body'] =
       options.body === undefined
         ? undefined
         : typeof options.body === 'string'
           ? options.body
           : JSON.stringify(options.body);
+    const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
 
-    try {
-      const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
-      const response = await this.fetchFn(url, {
-        method,
-        headers: finalHeaders,
-        body: requestBody,
-        credentials: 'include',
-        signal: controller.signal,
-      });
+    const sendRequest = async (
+      csrfRetried: boolean,
+    ): Promise<HttpClientResponse<T>> => {
+      const requestHeaders = this.csrfManager
+        ? await this.csrfManager.injectHeader(method, headers)
+        : headers;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-      const data = await parseBody(response);
-
-      if (!response.ok) {
-        throw normalizeHttpError({
-          status: response.status,
-          data,
-          headers: response.headers,
+      try {
+        const response = await this.fetchFn(url, {
+          method,
+          headers: requestHeaders,
+          body: requestBody,
+          credentials: 'include',
+          signal: controller.signal,
         });
-      }
 
-      if (isApiResponseEnvelope(data)) {
-        if (!data.success) {
+        if (
+          response.status === 403
+          && !csrfRetried
+          && this.csrfManager
+          && !SAFE_METHODS.has(method)
+        ) {
+          await this.csrfManager.forceRefresh();
+
+          return sendRequest(true);
+        }
+
+        const data = await parseBody(response);
+
+        if (!response.ok) {
           throw normalizeHttpError({
-            status: response.status,
             data,
             headers: response.headers,
+            status: response.status,
           });
+        }
+
+        if (isApiResponseEnvelope(data)) {
+          if (!data.success) {
+            throw normalizeHttpError({
+              data,
+              headers: response.headers,
+              status: response.status,
+            });
+          }
+
+          return {
+            statusCode: response.status,
+            body: data.data as T,
+          };
         }
 
         return {
           statusCode: response.status,
-          body: data.data as T,
+          body: data as T,
         };
-      }
+      } catch (error: unknown) {
+        if (isNormalizedHttpError(error)) {
+          throw error;
+        }
 
-      return {
-        statusCode: response.status,
-        body: data as T,
-      };
-    } catch (error: unknown) {
-      if (isNormalizedHttpError(error)) {
-        throw error;
-      }
+        if (error instanceof Error && error.name === 'AbortError') {
+          throw normalizeHttpError({ timeout: true });
+        }
 
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw normalizeHttpError({ timeout: true });
+        throw normalizeHttpError({ network: true });
+      } finally {
+        clearTimeout(timer);
       }
+    };
 
-      throw normalizeHttpError({ network: true });
-    } finally {
-      clearTimeout(timer);
-    }
+    return sendRequest(false);
   }
 }
 

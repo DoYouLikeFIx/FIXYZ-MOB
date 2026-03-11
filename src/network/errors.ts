@@ -8,9 +8,9 @@ export const TIMEOUT_ERROR_MESSAGE =
   'Request timed out. Please try again.';
 
 interface NormalizeHttpErrorInput {
+  headers?: Headers;
   status?: number;
   data?: unknown;
-  headers?: Headers;
   timeout?: boolean;
   network?: boolean;
 }
@@ -21,25 +21,50 @@ interface DirectApiErrorPayload {
   path?: string;
   correlationId?: string;
   operatorCode?: string;
-  retryAfterSeconds?: number;
+  retryAfterSeconds?: unknown;
   userMessageKey?: string;
   timestamp?: string;
 }
 
 const parseRetryAfterSeconds = (value: unknown) => {
-  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
-    return Math.round(value);
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return Math.ceil(value);
   }
 
-  if (typeof value === 'string' && /^\d+$/.test(value)) {
-    return Number.parseInt(value, 10);
+  if (typeof value !== 'string') {
+    return undefined;
   }
 
-  return undefined;
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const asNumber = Number(trimmed);
+
+  if (Number.isFinite(asNumber) && asNumber >= 0) {
+    return Math.ceil(asNumber);
+  }
+
+  const asDate = Date.parse(trimmed);
+
+  if (Number.isNaN(asDate)) {
+    return undefined;
+  }
+
+  return Math.max(0, Math.ceil((asDate - Date.now()) / 1000));
 };
 
 const getHeaderValue = (headers: Headers | undefined, key: string) =>
   headers?.get(key) ?? headers?.get(key.toLowerCase()) ?? undefined;
+
+const resolveRetryAfterSeconds = (
+  value: unknown,
+  headers: Headers | undefined,
+) =>
+  parseRetryAfterSeconds(value)
+  ?? parseRetryAfterSeconds(getHeaderValue(headers, 'Retry-After'));
 
 export const createNormalizedHttpError = (
   message: string,
@@ -102,6 +127,8 @@ const isDirectApiErrorPayload = (
 export const normalizeHttpError = (
   input: NormalizeHttpErrorInput,
 ): NormalizedHttpError => {
+  const retryAfterSeconds = resolveRetryAfterSeconds(undefined, input.headers);
+
   if (input.timeout) {
     return createNormalizedHttpError(TIMEOUT_ERROR_MESSAGE, {
       status: input.status,
@@ -123,9 +150,10 @@ export const normalizeHttpError = (
         code: input.data.error.code,
         detail: input.data.error.detail,
         operatorCode: input.data.error.operatorCode ?? undefined,
-        retryAfterSeconds:
-          parseRetryAfterSeconds(input.data.error.retryAfterSeconds)
-          ?? parseRetryAfterSeconds(getHeaderValue(input.headers, 'Retry-After')),
+        retryAfterSeconds: resolveRetryAfterSeconds(
+          input.data.error.retryAfterSeconds,
+          input.headers,
+        ),
         status: input.status,
         traceId: input.data.traceId,
         userMessageKey: input.data.error.userMessageKey ?? undefined,
@@ -140,9 +168,10 @@ export const normalizeHttpError = (
         code: input.data.code,
         detail: input.data.path,
         operatorCode: input.data.operatorCode,
-        retryAfterSeconds:
-          parseRetryAfterSeconds(input.data.retryAfterSeconds)
-          ?? parseRetryAfterSeconds(getHeaderValue(input.headers, 'Retry-After')),
+        retryAfterSeconds: resolveRetryAfterSeconds(
+          input.data.retryAfterSeconds,
+          input.headers,
+        ),
         status: input.status,
         traceId: input.data.correlationId,
         userMessageKey: input.data.userMessageKey,
@@ -152,6 +181,6 @@ export const normalizeHttpError = (
 
   return createNormalizedHttpError(DEFAULT_SERVER_ERROR_MESSAGE, {
     status: input.status,
-    retryAfterSeconds: parseRetryAfterSeconds(getHeaderValue(input.headers, 'Retry-After')),
+    retryAfterSeconds,
   });
 };
