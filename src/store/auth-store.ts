@@ -23,9 +23,7 @@ class AuthStore {
 
   private readonly listeners = new Set<Listener>();
 
-  getState(): AuthState {
-    return this.state;
-  }
+  getState = (): AuthState => this.state;
 
   subscribe = (listener: Listener) => {
     this.listeners.add(listener);

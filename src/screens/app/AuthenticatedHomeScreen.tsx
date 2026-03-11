@@ -1,6 +1,15 @@
-import { Pressable, SafeAreaView, ScrollView, Text, View } from 'react-native';
+import {
+  Pressable,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 
+import type { AccountApi } from '../../api/account-api';
 import type { OrderApi } from '../../api/order-api';
+import { useAccountDashboardViewModel } from '../../account/use-account-dashboard-view-model';
 import { palette } from '../../components/auth/auth-styles';
 import { ExternalOrderRecoverySection } from '../../components/order/ExternalOrderRecoverySection';
 import { hasExternalOrderAccountId } from '../../order/external-order-recovery';
@@ -8,6 +17,7 @@ import { useExternalOrderViewModel } from '../../order/use-external-order-view-m
 import type { Member } from '../../types/auth';
 
 interface AuthenticatedHomeScreenProps {
+  accountApi: AccountApi;
   member: Member;
   orderApi: OrderApi;
   welcomeVariant: 'login' | 'register' | null;
@@ -17,6 +27,7 @@ interface AuthenticatedHomeScreenProps {
 }
 
 export const AuthenticatedHomeScreen = ({
+  accountApi,
   member,
   orderApi,
   welcomeVariant,
@@ -25,6 +36,10 @@ export const AuthenticatedHomeScreen = ({
   onRefreshSession,
 }: AuthenticatedHomeScreenProps) => {
   const hasOrderAccount = hasExternalOrderAccountId(member.accountId);
+  const accountDashboard = useAccountDashboardViewModel({
+    accountApi,
+    accountId: member.accountId,
+  });
   const externalOrderViewModel = useExternalOrderViewModel({
     accountId: member.accountId,
     orderApi,
@@ -39,6 +54,13 @@ export const AuthenticatedHomeScreen = ({
           paddingVertical: 18,
           gap: 18,
         }}
+        refreshControl={(
+          <RefreshControl
+            refreshing={accountDashboard.isRefreshing}
+            onRefresh={accountDashboard.refresh}
+            testID="mobile-history-refresh-control"
+          />
+        )}
       >
         <View
           style={{
@@ -161,6 +183,692 @@ export const AuthenticatedHomeScreen = ({
             </Text>
           </View>
         ) : null}
+
+        <View
+          style={{
+            borderRadius: 26,
+            backgroundColor: '#FFFFFF',
+            paddingHorizontal: 18,
+            paddingVertical: 18,
+            gap: 16,
+            shadowColor: '#0F172A',
+            shadowOpacity: 0.08,
+            shadowRadius: 16,
+            shadowOffset: { width: 0, height: 12 },
+            elevation: 7,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 17,
+              fontWeight: '800',
+              color: palette.ink,
+            }}
+          >
+            계좌 대시보드
+          </Text>
+          <View
+            style={{
+              borderRadius: 18,
+              backgroundColor: '#FFF6EE',
+              paddingHorizontal: 14,
+              paddingVertical: 14,
+              gap: 6,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: '700',
+                color: palette.accentDeep,
+                letterSpacing: 0.4,
+              }}
+            >
+              대표 계좌
+            </Text>
+            <Text
+              style={{
+                fontSize: 20,
+                lineHeight: 26,
+                fontWeight: '800',
+                color: palette.ink,
+              }}
+              testID="mobile-masked-account"
+            >
+              {accountDashboard.maskedAccountNumber}
+            </Text>
+          </View>
+
+          <View
+            style={{
+              gap: 10,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: '700',
+                color: palette.inkSoft,
+              }}
+            >
+              백엔드가 반환한 보유 종목 리스트를 그대로 사용해 대표 종목을 구성합니다.
+            </Text>
+
+            {!accountDashboard.hasLinkedAccount ? (
+              <Text
+                style={{
+                  fontSize: 12,
+                  lineHeight: 18,
+                  color: palette.inkSoft,
+                }}
+                testID="mobile-symbol-unavailable"
+              >
+                연결된 계좌가 없어 보유 종목 리스트를 불러올 수 없습니다.
+              </Text>
+            ) : null}
+
+            {accountDashboard.hasLinkedAccount && accountDashboard.symbolOptions.length > 0 ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  flexWrap: 'wrap',
+                  gap: 10,
+                }}
+              >
+                {accountDashboard.symbolOptions.map((symbol) => {
+                  const isSelected = accountDashboard.selectedSymbol === symbol;
+
+                  return (
+                    <Pressable
+                      key={symbol}
+                      onPress={() => accountDashboard.setSelectedSymbol(symbol)}
+                      style={{
+                        minHeight: 42,
+                        borderRadius: 14,
+                        justifyContent: 'center',
+                        paddingHorizontal: 14,
+                        backgroundColor: isSelected ? '#E8F1FD' : '#FFF6EE',
+                        borderWidth: 1,
+                        borderColor: isSelected ? '#B7D3F7' : '#F0E5DA',
+                      }}
+                      testID={`mobile-symbol-${symbol}`}
+                    >
+                      <Text
+                        style={{
+                          color: palette.ink,
+                          fontWeight: '800',
+                        }}
+                      >
+                        {symbol}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+
+            {accountDashboard.hasLinkedAccount
+            && !accountDashboard.positionLoading
+            && accountDashboard.symbolOptionsError ? (
+              <View
+                style={{
+                  borderRadius: 18,
+                  backgroundColor: palette.dangerSoft,
+                  paddingHorizontal: 14,
+                  paddingVertical: 14,
+                  gap: 6,
+                }}
+                testID="mobile-symbol-error"
+              >
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: '800',
+                    color: palette.danger,
+                  }}
+                >
+                  보유 종목 리스트를 불러오지 못했습니다
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 14,
+                    lineHeight: 20,
+                    color: palette.ink,
+                  }}
+                >
+                  {accountDashboard.symbolOptionsError.message}
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 13,
+                    lineHeight: 19,
+                    color: palette.inkSoft,
+                  }}
+                >
+                  {accountDashboard.symbolOptionsError.nextStep}
+                </Text>
+                <Pressable
+                  onPress={accountDashboard.retryPosition}
+                  style={{
+                    minHeight: 44,
+                    borderRadius: 14,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: '#FFFFFF',
+                  }}
+                  testID="mobile-symbol-retry"
+                >
+                  <Text
+                    style={{
+                      color: palette.ink,
+                      fontWeight: '800',
+                    }}
+                  >
+                    다시 시도
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+
+            {accountDashboard.hasLinkedAccount
+            && !accountDashboard.positionLoading
+            && !accountDashboard.symbolOptionsError
+            && accountDashboard.symbolOptions.length === 0 ? (
+              <Text
+                style={{
+                  fontSize: 12,
+                  lineHeight: 18,
+                  color: palette.inkSoft,
+                }}
+                testID="mobile-symbol-empty"
+              >
+                아직 보유 중인 종목이 없습니다.
+              </Text>
+            ) : null}
+
+            {accountDashboard.selectedSymbol ? (
+              <Text
+                style={{
+                  fontSize: 12,
+                  lineHeight: 18,
+                  color: palette.inkSoft,
+                }}
+              >
+                현재 조회 종목 {accountDashboard.selectedSymbol}
+              </Text>
+            ) : null}
+          </View>
+
+          {accountDashboard.positionLoading ? (
+            <Text
+              style={{
+                fontSize: 14,
+                lineHeight: 20,
+                color: palette.inkSoft,
+              }}
+              testID="mobile-dashboard-loading"
+            >
+              계좌 요약을 불러오는 중입니다.
+            </Text>
+          ) : null}
+
+          {!accountDashboard.positionLoading && accountDashboard.positionError ? (
+            <View
+              style={{
+                borderRadius: 18,
+                backgroundColor: palette.dangerSoft,
+                paddingHorizontal: 14,
+                paddingVertical: 14,
+                gap: 6,
+              }}
+              testID="mobile-dashboard-error"
+            >
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: '800',
+                  color: palette.danger,
+                }}
+              >
+                계좌 요약을 불러오지 못했습니다
+              </Text>
+              <Text
+                style={{
+                  fontSize: 14,
+                  lineHeight: 20,
+                  color: palette.ink,
+                }}
+              >
+                {accountDashboard.positionError.message}
+              </Text>
+              <Text
+                style={{
+                  fontSize: 13,
+                  lineHeight: 19,
+                  color: palette.inkSoft,
+                }}
+              >
+                {accountDashboard.positionError.nextStep}
+              </Text>
+              <Pressable
+                onPress={accountDashboard.retryPosition}
+                style={{
+                  minHeight: 44,
+                  borderRadius: 14,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: '#FFFFFF',
+                }}
+                testID="mobile-dashboard-retry"
+              >
+                <Text
+                  style={{
+                    color: palette.ink,
+                    fontWeight: '800',
+                  }}
+                >
+                  다시 시도
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {!accountDashboard.positionLoading
+          && !accountDashboard.positionError
+          && !accountDashboard.hasLinkedAccount ? (
+            <View
+              style={{
+                borderRadius: 18,
+                backgroundColor: '#FFF6EE',
+                paddingHorizontal: 14,
+                paddingVertical: 14,
+                gap: 6,
+              }}
+              testID="mobile-dashboard-unavailable"
+            >
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: '800',
+                  color: palette.accentDeep,
+                }}
+              >
+                계좌 요약을 조회할 수 없습니다
+              </Text>
+              <Text
+                style={{
+                  fontSize: 14,
+                  lineHeight: 20,
+                  color: palette.ink,
+                }}
+              >
+                연결된 계좌가 없어 계좌 요약을 불러올 수 없습니다.
+              </Text>
+            </View>
+          ) : null}
+
+          {!accountDashboard.positionLoading
+          && !accountDashboard.positionError
+          && accountDashboard.hasLinkedAccount
+          && accountDashboard.position ? (
+            <View
+              style={{
+                gap: 10,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontWeight: '700',
+                    color: palette.inkSoft,
+                  }}
+                >
+                  예수금
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 24,
+                    fontWeight: '800',
+                    color: palette.ink,
+                  }}
+                  testID="mobile-dashboard-balance"
+                >
+                  {new Intl.NumberFormat('ko-KR', {
+                    style: 'currency',
+                    currency: 'KRW',
+                    maximumFractionDigits: 0,
+                  }).format(accountDashboard.position.balance)}
+                </Text>
+              </View>
+
+              {[
+                ['가용 수량', `${accountDashboard.position.availableQuantity}주`],
+                ['보유 수량', `${accountDashboard.position.quantity}주`],
+                ...(accountDashboard.position.symbol
+                  ? [['조회 종목', accountDashboard.position.symbol] as const]
+                  : []),
+              ].map(([label, value]) => (
+                <View
+                  key={label}
+                  style={{
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    paddingBottom: 10,
+                    borderBottomWidth: 1,
+                    borderBottomColor: '#F0E5DA',
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: '700',
+                      color: palette.inkSoft,
+                    }}
+                  >
+                    {label}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: '700',
+                      color: palette.ink,
+                    }}
+                  >
+                    {value}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {!accountDashboard.positionLoading
+          && !accountDashboard.positionError
+          && accountDashboard.hasLinkedAccount
+          && !accountDashboard.position ? (
+            <View
+              style={{
+                borderRadius: 18,
+                backgroundColor: '#FFF6EE',
+                paddingHorizontal: 14,
+                paddingVertical: 14,
+                gap: 6,
+              }}
+              testID="mobile-dashboard-empty"
+            >
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: '800',
+                  color: palette.accentDeep,
+                }}
+              >
+                계좌 요약을 표시할 수 없습니다
+              </Text>
+              <Text
+                style={{
+                fontSize: 14,
+                lineHeight: 20,
+                color: palette.ink,
+              }}
+            >
+                아직 보유 중인 종목이 없어 계좌 요약을 표시할 수 없습니다.
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        <View
+          style={{
+            borderRadius: 26,
+            backgroundColor: '#FFFFFF',
+            paddingHorizontal: 18,
+            paddingVertical: 18,
+            gap: 16,
+            shadowColor: '#0F172A',
+            shadowOpacity: 0.08,
+            shadowRadius: 16,
+            shadowOffset: { width: 0, height: 12 },
+            elevation: 7,
+          }}
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <View>
+              <Text
+                style={{
+                  fontSize: 17,
+                  fontWeight: '800',
+                  color: palette.ink,
+                }}
+              >
+                최근 주문 이력
+              </Text>
+              <Text
+                style={{
+                  fontSize: 13,
+                  lineHeight: 19,
+                  color: palette.inkSoft,
+                  marginTop: 4,
+                }}
+              >
+                최신 5건을 서버 기준으로 다시 불러옵니다.
+              </Text>
+            </View>
+            <Text
+              style={{
+                fontSize: 13,
+                fontWeight: '700',
+                color: palette.inkSoft,
+              }}
+            >
+              {accountDashboard.historyTotalElements}건
+            </Text>
+          </View>
+
+          {accountDashboard.historyLoading ? (
+            <Text
+              style={{
+                fontSize: 14,
+                lineHeight: 20,
+                color: palette.inkSoft,
+              }}
+              testID="mobile-history-loading"
+            >
+              주문 내역을 조회하는 중입니다.
+            </Text>
+          ) : null}
+
+          {!accountDashboard.historyLoading && !accountDashboard.hasLinkedAccount ? (
+            <View
+              style={{
+                borderRadius: 18,
+                backgroundColor: '#FFF6EE',
+                paddingHorizontal: 14,
+                paddingVertical: 14,
+                gap: 6,
+              }}
+              testID="mobile-history-unavailable"
+            >
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: '800',
+                  color: palette.accentDeep,
+                }}
+              >
+                주문 내역을 조회할 수 없습니다
+              </Text>
+              <Text
+                style={{
+                  fontSize: 14,
+                  lineHeight: 20,
+                  color: palette.ink,
+                }}
+              >
+                연결된 계좌가 없어 주문 내역을 조회할 수 없습니다.
+              </Text>
+            </View>
+          ) : null}
+
+          {!accountDashboard.historyLoading
+          && accountDashboard.hasLinkedAccount
+          && accountDashboard.historyError ? (
+            <View
+              style={{
+                borderRadius: 18,
+                backgroundColor: palette.dangerSoft,
+                paddingHorizontal: 14,
+                paddingVertical: 14,
+                gap: 6,
+              }}
+              testID="mobile-history-error"
+            >
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: '800',
+                  color: palette.danger,
+                }}
+              >
+                주문 내역을 불러오지 못했습니다
+              </Text>
+              <Text
+                style={{
+                  fontSize: 14,
+                  lineHeight: 20,
+                  color: palette.ink,
+                }}
+              >
+                {accountDashboard.historyError.message}
+              </Text>
+              <Text
+                style={{
+                  fontSize: 13,
+                  lineHeight: 19,
+                  color: palette.inkSoft,
+                }}
+              >
+                {accountDashboard.historyError.nextStep}
+              </Text>
+              <Pressable
+                onPress={accountDashboard.retryHistory}
+                style={{
+                  minHeight: 44,
+                  borderRadius: 14,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: '#FFFFFF',
+                }}
+                testID="mobile-history-retry"
+              >
+                <Text
+                  style={{
+                    color: palette.ink,
+                    fontWeight: '800',
+                  }}
+                >
+                  다시 시도
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {!accountDashboard.historyLoading
+          && accountDashboard.hasLinkedAccount
+          && !accountDashboard.historyError
+          && accountDashboard.historyItems.length === 0 ? (
+            <Text
+              style={{
+                fontSize: 14,
+                lineHeight: 20,
+                color: palette.inkSoft,
+              }}
+              testID="mobile-history-empty"
+            >
+              아직 주문 내역이 없습니다.
+            </Text>
+          ) : null}
+
+          {!accountDashboard.historyLoading
+          && accountDashboard.hasLinkedAccount
+          && !accountDashboard.historyError
+          && accountDashboard.historyItems.length > 0 ? (
+            <View
+              style={{
+                gap: 10,
+              }}
+              testID="mobile-history-list"
+            >
+              {accountDashboard.historyItems.map((item) => (
+                <View
+                  key={item.clOrdId}
+                  style={{
+                    borderRadius: 18,
+                    backgroundColor: '#F7F3EF',
+                    paddingHorizontal: 14,
+                    paddingVertical: 14,
+                    gap: 4,
+                  }}
+                  testID={`mobile-history-row-${item.clOrdId}`}
+                >
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: '800',
+                      color: palette.ink,
+                    }}
+                  >
+                    {item.symbolName} · {item.side}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      lineHeight: 19,
+                      color: palette.inkSoft,
+                    }}
+                  >
+                    {item.symbol} / {item.qty}주 / {item.status}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      lineHeight: 19,
+                      color: palette.inkSoft,
+                    }}
+                  >
+                    {new Intl.NumberFormat('ko-KR', {
+                      style: 'currency',
+                      currency: 'KRW',
+                      maximumFractionDigits: 0,
+                    }).format(item.totalAmount)}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      lineHeight: 18,
+                      color: palette.inkSoft,
+                    }}
+                  >
+                    주문 ID {item.clOrdId}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </View>
 
         <View
           style={{

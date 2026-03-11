@@ -42,4 +42,14 @@ describe('mobile auth store', () => {
       reauthMessage: '세션이 만료되었습니다. 다시 로그인해 주세요.',
     });
   });
+
+  it('returns the same snapshot when getState is used as a detached callback', () => {
+    const getSnapshot = authStore.getState;
+
+    expect(getSnapshot()).toMatchObject({
+      status: 'checking',
+      member: null,
+      reauthMessage: null,
+    });
+  });
 });
