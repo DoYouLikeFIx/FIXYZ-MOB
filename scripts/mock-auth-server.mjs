@@ -1041,7 +1041,7 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  const accountMatch = url.pathname.match(/^\/api\/v1\/accounts\/([^/]+)\/(summary|positions\/list|orders)$/);
+  const accountMatch = url.pathname.match(/^\/api\/v1\/accounts\/([^/]+)\/(summary|positions|positions\/list|orders)$/);
 
   if (method === 'GET' && accountMatch) {
     const profile = readAuthenticatedProfile(cookies, response);
@@ -1068,6 +1068,37 @@ const server = http.createServer(async (request, response) => {
 
     if (resource === 'summary') {
       writeJson(response, 200, successEnvelope(fixture.summary));
+      return;
+    }
+
+    if (resource === 'positions') {
+      const symbol = url.searchParams.get('symbol')?.trim();
+
+      if (!symbol) {
+        writeJson(
+          response,
+          400,
+          errorEnvelope(
+            'CHANNEL-004',
+            'Missing symbol parameter',
+            'The mock account position endpoint requires a symbol query parameter.',
+          ),
+        );
+        return;
+      }
+
+      const matchedPosition = fixture.positions.find((position) => position.symbol === symbol);
+
+      writeJson(
+        response,
+        200,
+        successEnvelope(
+          matchedPosition ?? {
+            ...fixture.summary,
+            symbol,
+          },
+        ),
+      );
       return;
     }
 
