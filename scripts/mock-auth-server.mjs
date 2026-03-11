@@ -282,6 +282,243 @@ const ORDER_FIXTURE_EXPECTATIONS = {
   },
 };
 
+const PORTFOLIO_AS_OF = '2026-03-11T09:10:00Z';
+
+const createPortfolioFixture = (accountId) => {
+  const numericAccountId = Number.parseInt(accountId, 10);
+  const memberId = Number.isSafeInteger(numericAccountId) ? numericAccountId : 1;
+  const positions = [
+    {
+      accountId: numericAccountId,
+      memberId,
+      symbol: '005930',
+      quantity: 120,
+      availableQuantity: 20,
+      availableQty: 20,
+      balance: 100_000_000,
+      availableBalance: 100_000_000,
+      currency: 'KRW',
+      asOf: PORTFOLIO_AS_OF,
+    },
+    {
+      accountId: numericAccountId,
+      memberId,
+      symbol: '000660',
+      quantity: 15,
+      availableQuantity: 7,
+      availableQty: 7,
+      balance: 98_500_000,
+      availableBalance: 98_500_000,
+      currency: 'KRW',
+      asOf: PORTFOLIO_AS_OF,
+    },
+  ];
+
+  const orderHistory = [
+    {
+      symbol: '005930',
+      symbolName: '삼성전자',
+      side: 'BUY',
+      qty: 3,
+      unitPrice: 70_100,
+      totalAmount: 210_300,
+      status: 'FILLED',
+      clOrdId: 'cl-portfolio-001',
+      createdAt: '2026-03-11T09:00:00Z',
+    },
+    {
+      symbol: '000660',
+      symbolName: 'SK하이닉스',
+      side: 'SELL',
+      qty: 2,
+      unitPrice: 120_000,
+      totalAmount: 240_000,
+      status: 'CANCELED',
+      clOrdId: 'cl-portfolio-002',
+      createdAt: '2026-03-11T08:50:00Z',
+    },
+    {
+      symbol: '005930',
+      symbolName: '삼성전자',
+      side: 'BUY',
+      qty: 1,
+      unitPrice: 70_300,
+      totalAmount: 70_300,
+      status: 'FILLED',
+      clOrdId: 'cl-portfolio-003',
+      createdAt: '2026-03-11T08:40:00Z',
+    },
+    {
+      symbol: '000660',
+      symbolName: 'SK하이닉스',
+      side: 'BUY',
+      qty: 4,
+      unitPrice: 119_500,
+      totalAmount: 478_000,
+      status: 'FILLED',
+      clOrdId: 'cl-portfolio-004',
+      createdAt: '2026-03-11T08:30:00Z',
+    },
+    {
+      symbol: '035420',
+      symbolName: 'NAVER',
+      side: 'SELL',
+      qty: 1,
+      unitPrice: 220_000,
+      totalAmount: 220_000,
+      status: 'REJECTED',
+      clOrdId: 'cl-portfolio-005',
+      createdAt: '2026-03-11T08:20:00Z',
+    },
+    {
+      symbol: '005930',
+      symbolName: '삼성전자',
+      side: 'SELL',
+      qty: 2,
+      unitPrice: 70_600,
+      totalAmount: 141_200,
+      status: 'FILLED',
+      clOrdId: 'cl-portfolio-006',
+      createdAt: '2026-03-11T08:10:00Z',
+    },
+    {
+      symbol: '000660',
+      symbolName: 'SK하이닉스',
+      side: 'BUY',
+      qty: 2,
+      unitPrice: 121_000,
+      totalAmount: 242_000,
+      status: 'FILLED',
+      clOrdId: 'cl-portfolio-007',
+      createdAt: '2026-03-11T08:00:00Z',
+    },
+    {
+      symbol: '005930',
+      symbolName: '삼성전자',
+      side: 'BUY',
+      qty: 5,
+      unitPrice: 69_900,
+      totalAmount: 349_500,
+      status: 'FILLED',
+      clOrdId: 'cl-portfolio-008',
+      createdAt: '2026-03-11T07:50:00Z',
+    },
+    {
+      symbol: '000660',
+      symbolName: 'SK하이닉스',
+      side: 'SELL',
+      qty: 1,
+      unitPrice: 118_000,
+      totalAmount: 118_000,
+      status: 'FILLED',
+      clOrdId: 'cl-portfolio-009',
+      createdAt: '2026-03-11T07:40:00Z',
+    },
+    {
+      symbol: '005930',
+      symbolName: '삼성전자',
+      side: 'BUY',
+      qty: 2,
+      unitPrice: 70_050,
+      totalAmount: 140_100,
+      status: 'FILLED',
+      clOrdId: 'cl-portfolio-010',
+      createdAt: '2026-03-11T07:30:00Z',
+    },
+    {
+      symbol: '000660',
+      symbolName: 'SK하이닉스',
+      side: 'BUY',
+      qty: 3,
+      unitPrice: 119_000,
+      totalAmount: 357_000,
+      status: 'FILLED',
+      clOrdId: 'cl-portfolio-011',
+      createdAt: '2026-03-11T07:20:00Z',
+    },
+    {
+      symbol: '005930',
+      symbolName: '삼성전자',
+      side: 'SELL',
+      qty: 1,
+      unitPrice: 70_800,
+      totalAmount: 70_800,
+      status: 'FILLED',
+      clOrdId: 'cl-portfolio-012',
+      createdAt: '2026-03-11T07:10:00Z',
+    },
+  ];
+
+  return {
+    summary: {
+      accountId: numericAccountId,
+      memberId,
+      symbol: '',
+      quantity: 0,
+      availableQuantity: 0,
+      availableQty: 0,
+      balance: 100_000_000,
+      availableBalance: 100_000_000,
+      currency: 'KRW',
+      asOf: PORTFOLIO_AS_OF,
+    },
+    positions,
+    orderHistory,
+  };
+};
+
+const getPortfolioFixture = (accountId) => createPortfolioFixture(accountId);
+
+const readAuthenticatedProfile = (cookies, response) => {
+  const sessionId = cookies.JSESSIONID;
+
+  if (!sessionId || !sessions.has(sessionId)) {
+    writeJson(
+      response,
+      401,
+      errorEnvelope(
+        'AUTH-003',
+        'Authentication required',
+        'A valid authenticated session cookie was not found.',
+      ),
+    );
+    return null;
+  }
+
+  return sessions.get(sessionId);
+};
+
+const parsePositiveIntegerOrDefault = (value, fallback) => {
+  const parsed = parsePositiveWholeNumber(String(value ?? ''));
+  return parsed ?? fallback;
+};
+
+const parseNonNegativeIntegerOrDefault = (value, fallback) => {
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isSafeInteger(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+
+  return fallback;
+};
+
+const createHistoryPage = (items, page, size) => {
+  const totalElements = items.length;
+  const totalPages = totalElements === 0 ? 0 : Math.ceil(totalElements / size);
+  const safePage = totalPages === 0 ? 0 : Math.min(page, totalPages - 1);
+  const start = safePage * size;
+
+  return {
+    content: items.slice(start, start + size),
+    totalElements,
+    totalPages,
+    number: safePage,
+    size,
+  };
+};
+
 const parsePositiveWholeNumber = (value) => {
   if (typeof value !== 'string' || !/^\d+$/.test(value)) {
     return null;
@@ -403,7 +640,9 @@ const writeForbidden = (response) => {
 
 const ensureCsrf = (request, response, cookies) => {
   const csrfCookie = cookies['XSRF-TOKEN'];
-  const csrfHeader = request.headers['x-xsrf-token'];
+  const csrfHeader =
+    request.headers['x-xsrf-token']
+    ?? request.headers['x-csrf-token'];
 
   if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader) {
     writeJson(
@@ -753,22 +992,11 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (method === 'GET' && url.pathname === '/api/v1/auth/session') {
-    const sessionId = cookies.JSESSIONID;
+    const profile = readAuthenticatedProfile(cookies, response);
 
-    if (!sessionId || !sessions.has(sessionId)) {
-      writeJson(
-        response,
-        401,
-        errorEnvelope(
-          'AUTH-003',
-          'Authentication required',
-          'A valid authenticated session cookie was not found.',
-        ),
-      );
+    if (!profile) {
       return;
     }
-
-    const profile = sessions.get(sessionId);
 
     if (profile.sessionMode === 'reauth') {
       writeJson(
@@ -813,23 +1041,60 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  const accountMatch = url.pathname.match(/^\/api\/v1\/accounts\/([^/]+)\/(summary|positions\/list|orders)$/);
+
+  if (method === 'GET' && accountMatch) {
+    const profile = readAuthenticatedProfile(cookies, response);
+
+    if (!profile) {
+      return;
+    }
+
+    const [, requestedAccountId, resource] = accountMatch;
+    if (!profile.member.accountId || requestedAccountId !== profile.member.accountId) {
+      writeJson(
+        response,
+        403,
+        errorEnvelope(
+          'CHANNEL-006',
+          'Account ownership mismatch',
+          'The requested accountId must match the authenticated member session.',
+        ),
+      );
+      return;
+    }
+
+    const fixture = getPortfolioFixture(requestedAccountId);
+
+    if (resource === 'summary') {
+      writeJson(response, 200, successEnvelope(fixture.summary));
+      return;
+    }
+
+    if (resource === 'positions/list') {
+      writeJson(response, 200, successEnvelope(fixture.positions));
+      return;
+    }
+
+    const page = parseNonNegativeIntegerOrDefault(url.searchParams.get('page'), 0);
+    const size = parsePositiveIntegerOrDefault(url.searchParams.get('size'), 10);
+
+    writeJson(
+      response,
+      200,
+      successEnvelope(createHistoryPage(fixture.orderHistory, page, size)),
+    );
+    return;
+  }
+
   if (method === 'POST' && url.pathname === '/api/v1/orders') {
     if (!ensureCsrf(request, response, cookies)) {
       return;
     }
 
-    const sessionId = cookies.JSESSIONID;
+    const profile = readAuthenticatedProfile(cookies, response);
 
-    if (!sessionId || !sessions.has(sessionId)) {
-      writeJson(
-        response,
-        401,
-        errorEnvelope(
-          'AUTH-003',
-          'Authentication required',
-          'A valid authenticated session cookie was not found.',
-        ),
-      );
+    if (!profile) {
       return;
     }
 
@@ -839,7 +1104,6 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
-    const profile = sessions.get(sessionId);
     const validatedOrder = validateOrderRequest({
       body,
       profile,
