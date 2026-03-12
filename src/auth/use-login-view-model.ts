@@ -4,14 +4,14 @@ import { getLoginErrorFeedback } from './auth-errors';
 import { validateLoginForm } from './form-validation';
 import type { LoginRequest } from '../types/auth';
 import {
-  type AuthMutationResult,
   createEmptyLoginFeedback,
+  type FormSubmissionResult,
   type LoginField,
   type LoginFormFeedback,
 } from '../types/auth-ui';
 
 interface LoginViewModelInput {
-  submit: (payload: LoginRequest) => Promise<AuthMutationResult>;
+  submit: (payload: LoginRequest) => Promise<FormSubmissionResult>;
 }
 
 export const useLoginViewModel = ({ submit }: LoginViewModelInput) => {

@@ -2,19 +2,26 @@ import type { AppBootstrapRuntime } from '../bootstrap/app-bootstrap';
 import { bootstrapAppSession } from '../bootstrap/app-bootstrap';
 import type { CsrfTokenManager } from '../network/csrf';
 import type {
+  LoginChallenge,
   LoginRequest,
   PasswordForgotRequest,
   PasswordRecoveryChallengeRequest,
   PasswordResetRequest,
   RegisterRequest,
+  TotpEnrollmentBootstrap,
+  TotpEnrollmentConfirmationRequest,
+  TotpEnrollmentRequest,
+  TotpVerificationRequest,
 } from '../types/auth';
 import type {
   AuthMutationResult,
   BootstrapResult,
+  LoginPhaseResult,
   PasswordForgotResult,
   PasswordRecoveryChallengeResult,
   PasswordResetResult,
   ProtectedRequestResult,
+  TotpEnrollmentBootstrapResult,
 } from '../types/auth-ui';
 
 import type { AuthApi } from '../api/auth-api';
@@ -64,11 +71,29 @@ export const createMobileAuthService = ({
     }
   },
 
-  async loginMember(
+  async startLoginFlow(
     values: LoginRequest,
+  ): Promise<LoginPhaseResult> {
+    try {
+      const challenge = await authApi.startLoginFlow(values);
+
+      return {
+        success: true,
+        challenge,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error,
+      };
+    }
+  },
+
+  async verifyLoginOtp(
+    payload: TotpVerificationRequest,
   ): Promise<AuthMutationResult> {
     try {
-      const member = await authApi.loginMember(values);
+      const member = await authApi.verifyLoginOtp(payload);
 
       return {
         success: true,
@@ -86,12 +111,43 @@ export const createMobileAuthService = ({
     values: RegisterRequest,
   ): Promise<AuthMutationResult> {
     try {
-      await authApi.registerMember(values);
+      const member = await authApi.registerMember(values);
 
-      const member = await authApi.loginMember({
-        email: values.email,
-        password: values.password,
-      });
+      return {
+        success: true,
+        member,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error,
+      };
+    }
+  },
+
+  async beginTotpEnrollment(
+    payload: TotpEnrollmentRequest,
+  ): Promise<TotpEnrollmentBootstrapResult> {
+    try {
+      const enrollment = await authApi.beginTotpEnrollment(payload);
+
+      return {
+        success: true,
+        enrollment,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error,
+      };
+    }
+  },
+
+  async confirmTotpEnrollment(
+    payload: TotpEnrollmentConfirmationRequest,
+  ): Promise<AuthMutationResult> {
+    try {
+      const member = await authApi.confirmTotpEnrollment(payload);
 
       return {
         success: true,
