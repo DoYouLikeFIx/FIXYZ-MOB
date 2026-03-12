@@ -4,13 +4,20 @@ import { useLayoutEffect, useRef } from 'react';
 import { BootScreen } from '../screens/auth/BootScreen';
 import { ForgotPasswordScreen } from '../screens/auth/ForgotPasswordScreen';
 import { LoginScreen } from '../screens/auth/LoginScreen';
+import { LoginMfaScreen } from '../screens/auth/LoginMfaScreen';
 import { RegisterScreen } from '../screens/auth/RegisterScreen';
 import { ResetPasswordScreen } from '../screens/auth/ResetPasswordScreen';
+import { TotpEnrollmentScreen } from '../screens/auth/TotpEnrollmentScreen';
 import { AuthenticatedHomeScreen } from '../screens/app/AuthenticatedHomeScreen';
 import type { AccountApi } from '../api/account-api';
 import type { OrderApi } from '../api/order-api';
 import type { AuthStatus } from '../store/auth-store';
-import type { Member } from '../types/auth';
+import type {
+  LoginChallenge,
+  Member,
+  TotpEnrollmentConfirmationRequest,
+  TotpVerificationRequest,
+} from '../types/auth';
 import type {
   LoginRequest,
   PasswordForgotRequest,
@@ -19,10 +26,11 @@ import type {
   RegisterRequest,
 } from '../types/auth';
 import type {
-  AuthMutationResult,
+  FormSubmissionResult,
   PasswordForgotResult,
   PasswordRecoveryChallengeResult,
   PasswordResetResult,
+  TotpEnrollmentBootstrapResult,
 } from '../types/auth-ui';
 
 import type { AuthNavigationState } from './auth-navigation';
@@ -40,12 +48,19 @@ interface AppNavigatorProps {
   bootstrapErrorMessage: string | null;
   protectedErrorMessage: string | null;
   isRefreshingSession: boolean;
-  onLoginSubmit: (payload: LoginRequest) => Promise<AuthMutationResult>;
-  onRegisterSubmit: (payload: RegisterRequest) => Promise<AuthMutationResult>;
+  pendingMfa: LoginChallenge | null;
+  onLoginSubmit: (payload: LoginRequest) => Promise<FormSubmissionResult>;
+  onLoginMfaSubmit: (payload: TotpVerificationRequest) => Promise<FormSubmissionResult>;
+  onRegisterSubmit: (payload: RegisterRequest) => Promise<FormSubmissionResult>;
   onOpenLogin: () => void;
   onOpenRegister: () => void;
   onOpenForgotPassword: () => void;
   onOpenResetPassword: (token?: string) => void;
+  onResetPendingMfa: () => void;
+  onLoadTotpEnrollment: () => Promise<TotpEnrollmentBootstrapResult>;
+  onSubmitTotpEnrollment: (
+    payload: TotpEnrollmentConfirmationRequest,
+  ) => Promise<FormSubmissionResult>;
   onPasswordForgotSubmit: (payload: PasswordForgotRequest) => Promise<PasswordForgotResult>;
   onPasswordChallengeSubmit: (
     payload: PasswordRecoveryChallengeRequest,
@@ -58,6 +73,7 @@ const getRouteKey = (
   authStatus: AuthStatus,
   navigationState: AuthNavigationState,
   member: Member | null,
+  pendingMfa: LoginChallenge | null,
 ): string => {
   if (authStatus === 'checking') {
     return 'boot';
@@ -67,24 +83,33 @@ const getRouteKey = (
     return `app:${navigationState.protectedRoute}:${navigationState.welcomeVariant ?? 'idle'}`;
   }
 
-  return `auth:${navigationState.authRoute}`;
+  return `auth:${navigationState.authRoute}:${pendingMfa?.nextAction ?? 'idle'}`;
 };
 
 const getTransitionOffset = (previousKey: string, nextKey: string): number => {
+  const isAuthRouteKey = (routeKey: string, authRoute: string) =>
+    routeKey.startsWith(`auth:${authRoute}:`);
+
   if (previousKey === nextKey) {
     return 0;
   }
 
-  if (previousKey === 'auth:login' && nextKey === 'auth:register') {
+  if (
+    isAuthRouteKey(previousKey, 'login')
+    && isAuthRouteKey(nextKey, 'register')
+  ) {
     return 34;
   }
 
-  if (previousKey === 'auth:register' && nextKey === 'auth:login') {
+  if (
+    isAuthRouteKey(previousKey, 'register')
+    && isAuthRouteKey(nextKey, 'login')
+  ) {
     return -34;
   }
 
   if (previousKey.startsWith('auth:') && nextKey.startsWith('auth:')) {
-    return nextKey === 'auth:login' ? -24 : 24;
+    return isAuthRouteKey(nextKey, 'login') ? -24 : 24;
   }
 
   if (nextKey.startsWith('app:')) {
@@ -111,18 +136,23 @@ export const AppNavigator = ({
   bootstrapErrorMessage,
   protectedErrorMessage,
   isRefreshingSession,
+  pendingMfa,
   onLoginSubmit,
+  onLoginMfaSubmit,
   onRegisterSubmit,
   onOpenLogin,
   onOpenRegister,
   onOpenForgotPassword,
   onOpenResetPassword,
+  onResetPendingMfa,
+  onLoadTotpEnrollment,
+  onSubmitTotpEnrollment,
   onPasswordForgotSubmit,
   onPasswordChallengeSubmit,
   onPasswordResetSubmit,
   onRefreshProtectedSession,
 }: AppNavigatorProps) => {
-  const routeKey = getRouteKey(authStatus, navigationState, member);
+  const routeKey = getRouteKey(authStatus, navigationState, member, pendingMfa);
   const previousRouteKeyRef = useRef(routeKey);
   const opacity = useRef(new Animated.Value(1)).current;
   const translateX = useRef(new Animated.Value(0)).current;
@@ -196,6 +226,28 @@ export const AppNavigator = ({
         onSubmit={onRegisterSubmit}
       />
     );
+  } else if (
+    navigationState.authRoute === 'login' &&
+    pendingMfa?.nextAction === 'VERIFY_TOTP'
+  ) {
+    screen = (
+      <LoginMfaScreen
+        bannerMessage={reauthMessage ?? authBannerMessage ?? bootstrapErrorMessage}
+        bannerTone={
+          reauthMessage
+            ? 'info'
+            : authBannerMessage
+              ? authBannerTone
+              : 'error'
+        }
+        challenge={pendingMfa}
+        onForgotPasswordPress={onOpenForgotPassword}
+        onLoginPress={onOpenLogin}
+        onRegisterPress={onOpenRegister}
+        onRestartLogin={onResetPendingMfa}
+        onSubmit={onLoginMfaSubmit}
+      />
+    );
   } else if (navigationState.authRoute === 'forgotPassword') {
     screen = (
       <ForgotPasswordScreen
@@ -213,6 +265,28 @@ export const AppNavigator = ({
         onForgotPasswordPress={onOpenForgotPassword}
         onLoginPress={onOpenLogin}
         onSubmit={onPasswordResetSubmit}
+      />
+    );
+  } else if (
+    navigationState.authRoute === 'totpEnroll' &&
+    pendingMfa?.nextAction === 'ENROLL_TOTP'
+  ) {
+    screen = (
+      <TotpEnrollmentScreen
+        bannerMessage={reauthMessage ?? authBannerMessage ?? bootstrapErrorMessage}
+        bannerTone={
+          reauthMessage
+            ? 'info'
+            : authBannerMessage
+              ? authBannerTone
+              : 'error'
+        }
+        challenge={pendingMfa}
+        onLoadEnrollment={onLoadTotpEnrollment}
+        onLoginPress={onOpenLogin}
+        onRegisterPress={onOpenRegister}
+        onRestartLogin={onResetPendingMfa}
+        onSubmit={onSubmitTotpEnrollment}
       />
     );
   } else {

@@ -4,6 +4,7 @@ export interface ApiErrorPayload {
   detail: string;
   operatorCode?: string | null;
   retryAfterSeconds?: number | null;
+  enrollUrl?: string | null;
   userMessageKey?: string | null;
   timestamp: string;
 }
@@ -21,6 +22,7 @@ export interface NormalizedHttpError extends Error {
   detail?: string;
   operatorCode?: string;
   retryAfterSeconds?: number;
+  enrollUrl?: string;
   userMessageKey?: string;
   retriable?: boolean;
   traceId?: string;

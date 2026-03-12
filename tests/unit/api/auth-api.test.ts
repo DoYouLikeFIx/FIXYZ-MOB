@@ -37,28 +37,30 @@ describe('auth api', () => {
     expect(client.get).toHaveBeenCalledWith('/api/v1/auth/session');
   });
 
-  it('logs in a member and refreshes csrf bootstrap state for subsequent protected calls', async () => {
+  it('starts the password-only login challenge contract', async () => {
     client.post.mockResolvedValue({
       statusCode: 200,
       body: {
-        memberId: 1,
-        email: 'demo@fix.com',
-        name: 'Demo User',
+        loginToken: 'login-token',
+        nextAction: 'VERIFY_TOTP',
+        totpEnrolled: true,
+        expiresAt: '2026-03-12T10:00:00Z',
       },
-    });
-    client.get.mockResolvedValue({
-      statusCode: 200,
-      body: memberFixture,
     });
 
     const authApi = createAuthApi({ client, csrfManager });
 
     await expect(
-      authApi.loginMember({
+      authApi.startLoginFlow({
         email: 'demo@fix.com',
         password: 'Test1234!',
       }),
-    ).resolves.toEqual(memberFixture);
+    ).resolves.toEqual({
+      loginToken: 'login-token',
+      nextAction: 'VERIFY_TOTP',
+      totpEnrolled: true,
+      expiresAt: '2026-03-12T10:00:00Z',
+    });
 
     expect(client.post).toHaveBeenCalledWith(
       '/api/v1/auth/login',
@@ -69,8 +71,7 @@ describe('auth api', () => {
         },
       },
     );
-    expect(client.get).toHaveBeenCalledWith('/api/v1/auth/session');
-    expect(csrfManager.onLoginSuccess).toHaveBeenCalledTimes(1);
+    expect(csrfManager.onLoginSuccess).not.toHaveBeenCalled();
   });
 
   it('registers a member without forcing an immediate csrf refresh before follow-up login', async () => {
@@ -109,6 +110,114 @@ describe('auth api', () => {
       },
     );
     expect(csrfManager.onLoginSuccess).not.toHaveBeenCalled();
+  });
+
+  it('verifies the submitted OTP and refreshes csrf bootstrap state for subsequent protected calls', async () => {
+    client.post.mockResolvedValue({
+      statusCode: 200,
+      body: {
+        memberId: 1,
+        email: 'demo@fix.com',
+        name: 'Demo User',
+        totpEnrolled: true,
+      },
+    });
+
+    const authApi = createAuthApi({ client, csrfManager });
+
+    await expect(
+      authApi.verifyLoginOtp({
+        loginToken: 'login-token',
+        otpCode: '123456',
+      }),
+    ).resolves.toEqual({
+      memberUuid: '1',
+      email: 'demo@fix.com',
+      name: 'Demo User',
+      role: 'ROLE_USER',
+      totpEnrolled: true,
+      accountId: undefined,
+    });
+
+    expect(client.post).toHaveBeenCalledWith(
+      '/api/v1/auth/otp/verify',
+      {
+        loginToken: 'login-token',
+        otpCode: '123456',
+      },
+    );
+    expect(csrfManager.onLoginSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('bootstraps TOTP enrollment with the pending login token', async () => {
+    client.post.mockResolvedValue({
+      statusCode: 200,
+      body: {
+        qrUri: 'otpauth://totp/FIX:demo@fix.com?secret=ABC123',
+        manualEntryKey: 'ABC123',
+        enrollmentToken: 'enrollment-token',
+        expiresAt: '2026-03-12T10:05:00Z',
+      },
+    });
+
+    const authApi = createAuthApi({ client, csrfManager });
+
+    await expect(
+      authApi.beginTotpEnrollment({
+        loginToken: 'login-token',
+      }),
+    ).resolves.toEqual({
+      qrUri: 'otpauth://totp/FIX:demo@fix.com?secret=ABC123',
+      manualEntryKey: 'ABC123',
+      enrollmentToken: 'enrollment-token',
+      expiresAt: '2026-03-12T10:05:00Z',
+    });
+
+    expect(client.post).toHaveBeenCalledWith(
+      '/api/v1/members/me/totp/enroll',
+      {
+        loginToken: 'login-token',
+      },
+    );
+  });
+
+  it('confirms TOTP enrollment and refreshes csrf bootstrap state for the new session', async () => {
+    client.post.mockResolvedValue({
+      statusCode: 200,
+      body: {
+        memberId: 1,
+        email: 'demo@fix.com',
+        name: 'Demo User',
+        totpEnrolled: true,
+      },
+    });
+
+    const authApi = createAuthApi({ client, csrfManager });
+
+    await expect(
+      authApi.confirmTotpEnrollment({
+        loginToken: 'login-token',
+        enrollmentToken: 'enrollment-token',
+        otpCode: '123456',
+      }),
+    ).resolves.toEqual({
+      memberUuid: '1',
+      email: 'demo@fix.com',
+      name: 'Demo User',
+      role: 'ROLE_USER',
+      totpEnrolled: true,
+      accountId: undefined,
+    });
+
+    expect(client.post).toHaveBeenCalledWith(
+      '/api/v1/members/me/totp/confirm',
+      {
+        loginToken: 'login-token',
+        enrollmentToken: 'enrollment-token',
+        otpCode: '123456',
+      },
+    );
+    expect(csrfManager.onLoginSuccess).toHaveBeenCalledTimes(1);
   });
 
   it('submits the forgot-password payload as JSON', async () => {

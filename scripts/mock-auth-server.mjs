@@ -58,16 +58,19 @@ const createProfile = ({
   sessionMode = 'valid',
   orderScenario = 'success',
   aliases = [],
+  mfaScenario = 'none',
+  totpEnrolled = false,
 }) => ({
   sessionMode,
   orderScenario,
   aliases,
+  mfaScenario,
   member: {
     memberUuid,
     email,
     name,
     role: 'ROLE_USER',
-    totpEnrolled: false,
+    totpEnrolled,
     accountId,
   },
 });
@@ -145,9 +148,27 @@ const indexProfile = (profile) => {
     email: 'no-account@fix.com',
     name: 'No Account',
   }),
+  createProfile({
+    memberUuid: 'member-010',
+    email: 'mfa-enroll@fix.com',
+    name: 'MFA Enroll Demo',
+    accountId: '10',
+    mfaScenario: 'enroll',
+    totpEnrolled: false,
+  }),
+  createProfile({
+    memberUuid: 'member-011',
+    email: 'mfa-verify@fix.com',
+    name: 'MFA Verify Demo',
+    accountId: '11',
+    mfaScenario: 'verify',
+    totpEnrolled: true,
+  }),
 ].forEach(indexProfile);
 
 const sessions = new Map();
+const pendingLoginChallenges = new Map();
+const pendingTotpEnrollments = new Map();
 
 class InvalidRequestBodyError extends Error {
   constructor(message) {
@@ -666,6 +687,41 @@ const issueSession = (profile) => {
   return sessionId;
 };
 
+const MFA_CODE = '123456';
+
+const issueLoginChallenge = (profile, nextAction) => {
+  const loginToken = `login-${crypto.randomUUID()}`;
+  pendingLoginChallenges.set(loginToken, {
+    profile,
+    nextAction,
+  });
+
+  return {
+    loginToken,
+    nextAction,
+    totpEnrolled: profile.member.totpEnrolled,
+    expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    enrollUrl: nextAction === 'ENROLL_TOTP' ? '/settings/totp/enroll' : undefined,
+  };
+};
+
+const issueTotpEnrollment = (profile, loginToken) => {
+  const enrollmentToken = `enrollment-${crypto.randomUUID()}`;
+  const secret = 'JBSWY3DPEHPK3PXP';
+
+  pendingTotpEnrollments.set(enrollmentToken, {
+    profile,
+    loginToken,
+  });
+
+  return {
+    enrollmentToken,
+    qrUri: `otpauth://totp/FIXYZ:${encodeURIComponent(profile.member.email)}?secret=${secret}&issuer=FIXYZ&period=30&digits=6`,
+    manualEntryKey: 'JBSW Y3DP EHPK 3PXP',
+    expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+  };
+};
+
 const createPasswordRecoveryPayload = () => ({
   accepted: true,
   message: 'If the account is eligible, a reset email will be sent.',
@@ -753,9 +809,162 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (profile.mfaScenario === 'enroll') {
+      writeJson(response, 200, successEnvelope(issueLoginChallenge(profile, 'ENROLL_TOTP')));
+      return;
+    }
+
+    if (profile.mfaScenario === 'verify') {
+      writeJson(response, 200, successEnvelope(issueLoginChallenge(profile, 'VERIFY_TOTP')));
+      return;
+    }
+
     const sessionId = issueSession(profile);
 
     writeJson(response, 200, successEnvelope(profile.member), {
+      'Set-Cookie': makeCookie('JSESSIONID', sessionId),
+    });
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/v1/auth/otp/verify') {
+    if (!ensureCsrf(request, response, cookies)) {
+      return;
+    }
+
+    const body = await readMutationBody(request, response);
+
+    if (!body) {
+      return;
+    }
+
+    const loginToken = typeof body.loginToken === 'string' ? body.loginToken.trim() : '';
+    const otpCode = typeof body.otpCode === 'string' ? body.otpCode.trim() : '';
+    const challenge = pendingLoginChallenges.get(loginToken);
+
+    if (!challenge || challenge.nextAction !== 'VERIFY_TOTP') {
+      writeJson(
+        response,
+        401,
+        errorEnvelope(
+          'AUTH-018',
+          'Login MFA challenge expired',
+          'The login MFA challenge is invalid or has already been consumed.',
+        ),
+      );
+      return;
+    }
+
+    if (otpCode !== MFA_CODE) {
+      writeJson(
+        response,
+        401,
+        errorEnvelope(
+          'AUTH-010',
+          'Invalid MFA code',
+          'The provided Google Authenticator code did not match the current time window.',
+        ),
+      );
+      return;
+    }
+
+    pendingLoginChallenges.delete(loginToken);
+
+    const sessionId = issueSession(challenge.profile);
+    writeJson(response, 200, successEnvelope(challenge.profile.member), {
+      'Set-Cookie': makeCookie('JSESSIONID', sessionId),
+    });
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/v1/members/me/totp/enroll') {
+    if (!ensureCsrf(request, response, cookies)) {
+      return;
+    }
+
+    const body = await readMutationBody(request, response);
+
+    if (!body) {
+      return;
+    }
+
+    const loginToken = typeof body.loginToken === 'string' ? body.loginToken.trim() : '';
+    const challenge = pendingLoginChallenges.get(loginToken);
+
+    if (!challenge || challenge.nextAction !== 'ENROLL_TOTP') {
+      writeJson(
+        response,
+        401,
+        errorEnvelope(
+          'AUTH-018',
+          'Enrollment challenge expired',
+          'The TOTP enrollment bootstrap request requires a valid pending login challenge.',
+        ),
+      );
+      return;
+    }
+
+    writeJson(response, 200, successEnvelope(issueTotpEnrollment(challenge.profile, loginToken)));
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/v1/members/me/totp/confirm') {
+    if (!ensureCsrf(request, response, cookies)) {
+      return;
+    }
+
+    const body = await readMutationBody(request, response);
+
+    if (!body) {
+      return;
+    }
+
+    const loginToken = typeof body.loginToken === 'string' ? body.loginToken.trim() : '';
+    const enrollmentToken =
+      typeof body.enrollmentToken === 'string' ? body.enrollmentToken.trim() : '';
+    const otpCode = typeof body.otpCode === 'string' ? body.otpCode.trim() : '';
+    const challenge = pendingLoginChallenges.get(loginToken);
+    const enrollment = pendingTotpEnrollments.get(enrollmentToken);
+
+    if (
+      !challenge
+      || challenge.nextAction !== 'ENROLL_TOTP'
+      || !enrollment
+      || enrollment.loginToken !== loginToken
+      || enrollment.profile !== challenge.profile
+    ) {
+      writeJson(
+        response,
+        401,
+        errorEnvelope(
+          'AUTH-018',
+          'Enrollment confirmation expired',
+          'The TOTP enrollment confirmation requires valid login and enrollment tokens.',
+        ),
+      );
+      return;
+    }
+
+    if (otpCode !== MFA_CODE) {
+      writeJson(
+        response,
+        401,
+        errorEnvelope(
+          'AUTH-010',
+          'Invalid MFA code',
+          'The provided Google Authenticator code did not match the current time window.',
+        ),
+      );
+      return;
+    }
+
+    pendingLoginChallenges.delete(loginToken);
+    pendingTotpEnrollments.delete(enrollmentToken);
+    challenge.profile.member.totpEnrolled = true;
+    challenge.profile.mfaScenario = 'verify';
+
+    const sessionId = issueSession(challenge.profile);
+    writeJson(response, 200, successEnvelope(challenge.profile.member), {
       'Set-Cookie': makeCookie('JSESSIONID', sessionId),
     });
     return;
@@ -808,6 +1017,7 @@ const server = http.createServer(async (request, response) => {
       memberUuid: `member-${crypto.randomUUID()}`,
       email,
       name,
+      mfaScenario: 'enroll',
     });
 
     indexProfile(profile);

@@ -8,6 +8,8 @@ import type {
   PasswordRecoveryChallengeRequest,
   PasswordResetRequest,
   RegisterRequest,
+  TotpEnrollmentConfirmationRequest,
+  TotpVerificationRequest,
 } from '../types/auth';
 
 import {
@@ -109,8 +111,17 @@ export const useAuthFlowViewModel = ({
     },
     onLoginSubmit: (payload: LoginRequest) =>
       viewModelRef.current!.submitLogin(payload),
+    onLoginMfaSubmit: (payload: TotpVerificationRequest) =>
+      viewModelRef.current!.submitLoginMfa(payload),
     onRegisterSubmit: (payload: RegisterRequest) =>
       viewModelRef.current!.submitRegister(payload),
+    onResetPendingMfa: () => {
+      viewModelRef.current?.resetPendingMfa();
+    },
+    onLoadTotpEnrollment: () =>
+      viewModelRef.current!.loadTotpEnrollment(),
+    onSubmitTotpEnrollment: (payload: TotpEnrollmentConfirmationRequest) =>
+      viewModelRef.current!.submitTotpEnrollmentConfirmation(payload),
     onPasswordForgotSubmit: (payload: PasswordForgotRequest) =>
       viewModelRef.current!.submitPasswordResetEmail(payload),
     onPasswordChallengeSubmit: (payload: PasswordRecoveryChallengeRequest) =>

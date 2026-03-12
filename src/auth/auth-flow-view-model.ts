@@ -7,33 +7,45 @@ import {
   openLoginRoute,
   openResetPasswordRoute,
   openRegisterRoute,
+  openTotpEnrollRoute,
   requireReauthRoute,
   type AuthNavigationState,
 } from '../navigation/auth-navigation';
 import type { AuthState } from '../store/auth-store';
 import type {
+  LoginChallenge,
   LoginRequest,
   PasswordForgotRequest,
   PasswordRecoveryChallengeRequest,
   PasswordResetRequest,
   RegisterRequest,
+  TotpEnrollmentConfirmationRequest,
+  TotpEnrollmentRequest,
+  TotpVerificationRequest,
 } from '../types/auth';
 import type {
   AuthMutationResult,
   BootstrapResult,
+  FormSubmissionResult,
   PasswordForgotResult,
   PasswordRecoveryChallengeResult,
   PasswordResetResult,
   ProtectedRequestResult,
+  TotpEnrollmentBootstrapResult,
 } from '../types/auth-ui';
 
 import {
   getAuthErrorMessage,
   getReauthMessage,
   isReauthError,
+  resolveMfaErrorPresentation,
 } from './auth-errors';
 
 type Listener = () => void;
+type PendingMfaSource = 'login' | 'register';
+interface PendingMfaState extends LoginChallenge {
+  source: PendingMfaSource;
+}
 
 export interface AuthStoreAdapter {
   getState: () => AuthState;
@@ -45,7 +57,14 @@ export interface AuthStoreAdapter {
 
 export interface AuthServiceAdapter {
   bootstrap: () => Promise<BootstrapResult>;
-  loginMember: (payload: LoginRequest) => Promise<AuthMutationResult>;
+  startLoginFlow: (payload: LoginRequest) => Promise<{ success: true; challenge: LoginChallenge } | { success: false; error: unknown }>;
+  verifyLoginOtp: (payload: TotpVerificationRequest) => Promise<AuthMutationResult>;
+  beginTotpEnrollment: (
+    payload: TotpEnrollmentRequest,
+  ) => Promise<TotpEnrollmentBootstrapResult>;
+  confirmTotpEnrollment: (
+    payload: TotpEnrollmentConfirmationRequest,
+  ) => Promise<AuthMutationResult>;
   registerMember: (payload: RegisterRequest) => Promise<AuthMutationResult>;
   requestPasswordResetEmail: (payload: PasswordForgotRequest) => Promise<PasswordForgotResult>;
   requestPasswordRecoveryChallenge: (
@@ -60,6 +79,7 @@ export interface AuthFlowViewState {
   authBannerMessage: string | null;
   authBannerTone: 'info' | 'error' | 'success';
   navigationState: AuthNavigationState;
+  pendingMfa: PendingMfaState | null;
   bootstrapErrorMessage: string | null;
   protectedErrorMessage: string | null;
   isRefreshingSession: boolean;
@@ -78,6 +98,7 @@ const createDefaultViewState = (
   authBannerMessage: null,
   authBannerTone: 'info',
   navigationState,
+  pendingMfa: null,
   bootstrapErrorMessage: null,
   protectedErrorMessage: null,
   isRefreshingSession: false,
@@ -131,6 +152,13 @@ export const createAuthFlowViewModel = ({
     });
   };
 
+  const openPendingMfaRoute = (
+    navigationState: AuthNavigationState,
+    challenge: LoginChallenge,
+  ) => challenge.nextAction === 'ENROLL_TOTP'
+    ? openTotpEnrollRoute(navigationState)
+    : openLoginRoute(navigationState);
+
   const applyProtectedRequestResult = (
     result: ProtectedRequestResult,
   ) => {
@@ -138,6 +166,7 @@ export const createAuthFlowViewModel = ({
       authStore.login(result.member);
       setState((current) => ({
         ...current,
+        pendingMfa: null,
         navigationState: enterAuthenticatedApp(current.navigationState),
         protectedErrorMessage: null,
       }));
@@ -149,6 +178,7 @@ export const createAuthFlowViewModel = ({
       authStore.requireReauth(getReauthMessage(result.error));
       setState((current) => ({
         ...current,
+        pendingMfa: null,
         navigationState: requireReauthRoute(current.navigationState),
         protectedErrorMessage: null,
       }));
@@ -185,6 +215,7 @@ export const createAuthFlowViewModel = ({
                 source: 'login',
               })
             : openLoginRoute(current.navigationState),
+        pendingMfa: null,
         bootstrapErrorMessage:
           result.recoveredSession || result.error === null || isReauthError(result.error)
             ? null
@@ -198,6 +229,7 @@ export const createAuthFlowViewModel = ({
       clearTransientErrors();
       setState((current) => ({
         ...current,
+        pendingMfa: null,
         navigationState: openLoginRoute(current.navigationState),
       }));
     },
@@ -206,6 +238,7 @@ export const createAuthFlowViewModel = ({
       clearTransientErrors();
       setState((current) => ({
         ...current,
+        pendingMfa: null,
         navigationState: openRegisterRoute(current.navigationState),
       }));
     },
@@ -214,6 +247,7 @@ export const createAuthFlowViewModel = ({
       clearTransientErrors();
       setState((current) => ({
         ...current,
+        pendingMfa: null,
         navigationState: openForgotPasswordRoute(current.navigationState),
       }));
     },
@@ -222,6 +256,7 @@ export const createAuthFlowViewModel = ({
       clearTransientErrors();
       setState((current) => ({
         ...current,
+        pendingMfa: null,
         navigationState: openResetPasswordRoute(current.navigationState, token),
       }));
     },
@@ -230,27 +265,183 @@ export const createAuthFlowViewModel = ({
       clearTransientErrors();
       setState((current) => ({
         ...current,
+        pendingMfa: null,
         navigationState: openResetPasswordRoute(current.navigationState, token),
       }));
     },
 
     async submitLogin(
       payload: LoginRequest,
-    ): Promise<AuthMutationResult> {
+    ): Promise<FormSubmissionResult> {
       clearTransientErrors();
-      const result = await authService.loginMember(payload);
+      const result = await authService.startLoginFlow(payload);
+
+      if (result.success) {
+        setState((current) => ({
+          ...current,
+          pendingMfa: {
+            ...result.challenge,
+            source: 'login',
+          },
+          navigationState: openPendingMfaRoute(current.navigationState, result.challenge),
+        }));
+
+        return {
+          success: true,
+        };
+      }
+
+      return {
+        success: false,
+        error: result.error,
+      };
+    },
+
+    resetPendingMfa() {
+      clearTransientErrors();
+      setState((current) => ({
+        ...current,
+        pendingMfa: null,
+        navigationState: openLoginRoute(current.navigationState),
+      }));
+    },
+
+    async submitLoginMfa(
+      payload: TotpVerificationRequest,
+    ): Promise<FormSubmissionResult> {
+      clearTransientErrors();
+      const result = await authService.verifyLoginOtp(payload);
 
       if (result.success) {
         authStore.login(result.member);
         setState((current) => ({
           ...current,
+          pendingMfa: null,
           navigationState: enterAuthenticatedApp(current.navigationState, {
             source: 'login',
           }),
         }));
+
+        return {
+          success: true,
+        };
+      }
+
+      const presentation = resolveMfaErrorPresentation(result.error);
+
+      if (presentation.navigateToEnroll && state.pendingMfa) {
+        setState((current) => ({
+          ...current,
+          pendingMfa: current.pendingMfa
+            ? {
+                ...current.pendingMfa,
+                nextAction: 'ENROLL_TOTP',
+              }
+            : null,
+          navigationState: openTotpEnrollRoute(current.navigationState),
+        }));
+
+        return {
+          success: true,
+        };
+      }
+
+      if (presentation.restartLogin) {
+        authStore.requireReauth(presentation.message);
+        setState((current) => ({
+          ...current,
+          pendingMfa: null,
+          authBannerMessage: presentation.message,
+          authBannerTone: 'info',
+          navigationState: openLoginRoute(current.navigationState),
+        }));
+
+        return {
+          success: true,
+        };
+      }
+
+      return {
+        success: false,
+        error: result.error,
+      };
+    },
+
+    async loadTotpEnrollment(): Promise<TotpEnrollmentBootstrapResult> {
+      clearTransientErrors();
+
+      if (!state.pendingMfa) {
+        return {
+          success: false,
+          error: new Error('No pending MFA enrollment state is available.'),
+        };
+      }
+
+      const result = await authService.beginTotpEnrollment({
+        loginToken: state.pendingMfa.loginToken,
+      });
+
+      if (!result.success) {
+        const presentation = resolveMfaErrorPresentation(result.error);
+
+        if (presentation.restartLogin) {
+          authStore.requireReauth(presentation.message);
+          setState((current) => ({
+            ...current,
+            pendingMfa: null,
+            authBannerMessage: presentation.message,
+            authBannerTone: 'info',
+            navigationState: openLoginRoute(current.navigationState),
+          }));
+        }
       }
 
       return result;
+    },
+
+    async submitTotpEnrollmentConfirmation(
+      payload: TotpEnrollmentConfirmationRequest,
+    ): Promise<FormSubmissionResult> {
+      clearTransientErrors();
+      const result = await authService.confirmTotpEnrollment(payload);
+      const mfaSource = state.pendingMfa?.source ?? 'login';
+
+      if (result.success) {
+        authStore.login(result.member);
+        setState((current) => ({
+          ...current,
+          pendingMfa: null,
+          navigationState: enterAuthenticatedApp(current.navigationState, {
+            source: mfaSource,
+          }),
+        }));
+
+        return {
+          success: true,
+        };
+      }
+
+      const presentation = resolveMfaErrorPresentation(result.error);
+
+      if (presentation.restartLogin) {
+        authStore.requireReauth(presentation.message);
+        setState((current) => ({
+          ...current,
+          pendingMfa: null,
+          authBannerMessage: presentation.message,
+          authBannerTone: 'info',
+          navigationState: openLoginRoute(current.navigationState),
+        }));
+
+        return {
+          success: true,
+        };
+      }
+
+      return {
+        success: false,
+        error: result.error,
+      };
     },
 
     async submitPasswordResetEmail(
@@ -299,21 +490,41 @@ export const createAuthFlowViewModel = ({
 
     async submitRegister(
       payload: RegisterRequest,
-    ): Promise<AuthMutationResult> {
+    ): Promise<FormSubmissionResult> {
       clearTransientErrors();
-      const result = await authService.registerMember(payload);
+      const registrationResult = await authService.registerMember(payload);
 
-      if (result.success) {
-        authStore.login(result.member);
-        setState((current) => ({
-          ...current,
-          navigationState: enterAuthenticatedApp(current.navigationState, {
-            source: 'register',
-          }),
-        }));
+      if (!registrationResult.success) {
+        return {
+          success: false,
+          error: registrationResult.error,
+        };
       }
 
-      return result;
+      const loginResult = await authService.startLoginFlow({
+        email: payload.email,
+        password: payload.password,
+      });
+
+      if (loginResult.success) {
+        setState((current) => ({
+          ...current,
+          pendingMfa: {
+            ...loginResult.challenge,
+            source: 'register',
+          },
+          navigationState: openPendingMfaRoute(current.navigationState, loginResult.challenge),
+        }));
+
+        return {
+          success: true,
+        };
+      }
+
+      return {
+        success: false,
+        error: loginResult.error,
+      };
     },
 
     async refreshProtectedSession(

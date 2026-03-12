@@ -1,8 +1,10 @@
 import type {
+  LoginChallenge,
   Member,
   PasswordForgotResponse,
   PasswordRecoveryChallengeResponse,
   RegisterRequest,
+  TotpEnrollmentBootstrap,
 } from './auth';
 
 export type AuthMode = 'login' | 'register';
@@ -65,10 +67,39 @@ export interface ResetPasswordFormFeedback {
   fieldMessages: Partial<Record<ResetPasswordField, string>>;
 }
 
+export type FormSubmissionResult =
+  | {
+      success: true;
+    }
+  | {
+      success: false;
+      error: unknown;
+    };
+
 export type AuthMutationResult =
   | {
       success: true;
       member: Member;
+    }
+  | {
+      success: false;
+      error: unknown;
+    };
+
+export type LoginPhaseResult =
+  | {
+      success: true;
+      challenge: LoginChallenge;
+    }
+  | {
+      success: false;
+      error: unknown;
+    };
+
+export type TotpEnrollmentBootstrapResult =
+  | {
+      success: true;
+      enrollment: TotpEnrollmentBootstrap;
     }
   | {
       success: false;

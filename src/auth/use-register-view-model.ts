@@ -10,15 +10,15 @@ import {
 } from './form-validation';
 import type { RegisterRequest } from '../types/auth';
 import {
-  type AuthMutationResult,
   createEmptyRegisterFeedback,
+  type FormSubmissionResult,
   type RegisterField,
   type RegisterFormFeedback,
   type RegisterFormValues,
 } from '../types/auth-ui';
 
 interface RegisterViewModelInput {
-  submit: (payload: RegisterRequest) => Promise<AuthMutationResult>;
+  submit: (payload: RegisterRequest) => Promise<FormSubmissionResult>;
 }
 
 export const REGISTER_STEP_ORDER: RegisterField[] = [

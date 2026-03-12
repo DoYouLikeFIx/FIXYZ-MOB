@@ -3,6 +3,7 @@ import {
   getLoginErrorFeedback,
   getRegisterErrorFeedback,
   resolveAuthErrorPresentation,
+  resolveMfaErrorPresentation,
 } from '@/auth/auth-errors';
 import { createAuthFlowViewModel } from '@/auth/auth-flow-view-model';
 import { createMobileAuthService } from '@/auth/mobile-auth-service';
@@ -45,6 +46,8 @@ const errorResponse = (
   detail: string,
   options?: {
     traceId?: string;
+    retryAfterSeconds?: number;
+    enrollUrl?: string;
   },
 ): Response =>
   jsonResponse(status, {
@@ -55,6 +58,8 @@ const errorResponse = (
       code,
       message,
       detail,
+      retryAfterSeconds: options?.retryAfterSeconds,
+      enrollUrl: options?.enrollUrl,
       timestamp: '2026-03-08T00:00:00.000Z',
     },
   });
@@ -106,6 +111,7 @@ const createHarness = (
   handler: (request: RecordedCall) => Promise<Response> | Response,
   options?: {
     authenticated?: boolean;
+    initialAppState?: 'active' | 'background' | 'inactive';
   },
 ) => {
   const baseUrl = 'http://localhost:8080';
@@ -166,6 +172,7 @@ const createHarness = (
   const viewModel = createAuthFlowViewModel({
     authService,
     authStore,
+    initialAppState: options?.initialAppState,
     initialNavigationState: options?.authenticated
       ? enterAuthenticatedApp(createAuthNavigationState(), {
           source: 'login',
@@ -193,19 +200,16 @@ const notFoundResponse = (request: RecordedCall): Response =>
     'Test harness request handler is missing a route',
   );
 
-describe('E2E tests: mobile auth workflow', () => {
+describe('Backend-driven mobile auth workflow contract tests', () => {
   beforeEach(() => {
     resetAuthStore();
   });
 
-  it('logs in through the mobile auth workflow, refreshes csrf state, and enters the authenticated stack', async () => {
+  it('completes the MFA login workflow, refreshes csrf state, and enters the authenticated stack', async () => {
     let csrfTokenVersion = 0;
 
     const harness = createHarness((request) => {
-      if (
-        request.method === 'GET' &&
-        getPathname(request.url) === '/api/v1/auth/csrf'
-      ) {
+      if (request.method === 'GET' && getPathname(request.url) === '/api/v1/auth/csrf') {
         csrfTokenVersion += 1;
 
         return successResponse(200, {
@@ -213,22 +217,22 @@ describe('E2E tests: mobile auth workflow', () => {
         });
       }
 
-      if (
-        request.method === 'POST' &&
-        getPathname(request.url) === '/api/v1/auth/login'
-      ) {
+      if (request.method === 'POST' && getPathname(request.url) === '/api/v1/auth/login') {
+        return successResponse(200, {
+          loginToken: 'login-token',
+          nextAction: 'VERIFY_TOTP',
+          totpEnrolled: true,
+          expiresAt: '2026-03-12T10:00:00Z',
+        });
+      }
+
+      if (request.method === 'POST' && getPathname(request.url) === '/api/v1/auth/otp/verify') {
         return successResponse(200, {
           memberId: 1,
           email: 'demo@fix.com',
           name: 'Demo User',
+          totpEnrolled: true,
         });
-      }
-
-      if (
-        request.method === 'GET' &&
-        getPathname(request.url) === '/api/v1/auth/session'
-      ) {
-        return successResponse(200, memberFixture);
       }
 
       return notFoundResponse(request);
@@ -236,18 +240,36 @@ describe('E2E tests: mobile auth workflow', () => {
 
     authStore.initialize(null);
 
-    const result = await harness.viewModel.submitLogin({
+    const passwordStep = await harness.viewModel.submitLogin({
       email: 'demo@fix.com',
       password: 'Test1234!',
     });
 
-    expect(result).toEqual({
+    expect(passwordStep).toEqual({
       success: true,
-      member: memberFixture,
+    });
+    expect(harness.getNavigationState()).toMatchObject({
+      stack: 'auth',
+      authRoute: 'login',
+    });
+
+    const mfaStep = await harness.viewModel.submitLoginMfa({
+      loginToken: 'login-token',
+      otpCode: '123456',
+    });
+
+    expect(mfaStep).toEqual({
+      success: true,
     });
     expect(authStore.getState()).toMatchObject({
       status: 'authenticated',
-      member: memberFixture,
+      member: {
+        memberUuid: '1',
+        email: 'demo@fix.com',
+        name: 'Demo User',
+        role: 'ROLE_USER',
+        totpEnrolled: true,
+      },
     });
     expect(harness.getNavigationState()).toMatchObject({
       stack: 'app',
@@ -255,16 +277,21 @@ describe('E2E tests: mobile auth workflow', () => {
     });
 
     const loginCall = findCall(harness.calls, '/api/v1/auth/login', 'POST');
+    const verifyCall = findCall(harness.calls, '/api/v1/auth/otp/verify', 'POST');
+
     expect(loginCall?.headers['X-XSRF-TOKEN']).toBe('csrf-login-1');
-    expect(
-      harness.calls.filter(
-        (call) => getPathname(call.url) === '/api/v1/auth/csrf',
-      ),
-    ).toHaveLength(2);
+    expect(verifyCall?.headers['X-XSRF-TOKEN']).toBe('csrf-login-1');
     expect(getFormBody(loginCall?.body)).toEqual({
       email: 'demo@fix.com',
       password: 'Test1234!',
     });
+    expect(verifyCall?.body).toBe(JSON.stringify({
+      loginToken: 'login-token',
+      otpCode: '123456',
+    }));
+    expect(
+      harness.calls.filter((call) => getPathname(call.url) === '/api/v1/auth/csrf'),
+    ).toHaveLength(2);
 
     await expect(harness.cookieManager.get(harness.baseUrl)).resolves.toMatchObject({
       'XSRF-TOKEN': {
@@ -273,14 +300,11 @@ describe('E2E tests: mobile auth workflow', () => {
     });
   });
 
-  it('registers, performs the follow-up login, and preserves the register welcome state', async () => {
+  it('registers, enrolls TOTP, and preserves the register welcome state', async () => {
     let csrfTokenVersion = 0;
 
     const harness = createHarness((request) => {
-      if (
-        request.method === 'GET' &&
-        getPathname(request.url) === '/api/v1/auth/csrf'
-      ) {
+      if (request.method === 'GET' && getPathname(request.url) === '/api/v1/auth/csrf') {
         csrfTokenVersion += 1;
 
         return successResponse(200, {
@@ -288,10 +312,7 @@ describe('E2E tests: mobile auth workflow', () => {
         });
       }
 
-      if (
-        request.method === 'POST' &&
-        getPathname(request.url) === '/api/v1/auth/register'
-      ) {
+      if (request.method === 'POST' && getPathname(request.url) === '/api/v1/auth/register') {
         return successResponse(200, {
           memberId: 2,
           email: 'new@fix.com',
@@ -299,25 +320,36 @@ describe('E2E tests: mobile auth workflow', () => {
         });
       }
 
+      if (request.method === 'POST' && getPathname(request.url) === '/api/v1/auth/login') {
+        return successResponse(200, {
+          loginToken: 'register-login-token',
+          nextAction: 'ENROLL_TOTP',
+          totpEnrolled: false,
+          expiresAt: '2026-03-12T10:05:00Z',
+        });
+      }
+
       if (
         request.method === 'POST' &&
-        getPathname(request.url) === '/api/v1/auth/login'
+        getPathname(request.url) === '/api/v1/members/me/totp/enroll'
+      ) {
+        return successResponse(200, {
+          qrUri: 'otpauth://totp/FIX:new@fix.com?secret=NEW123',
+          manualEntryKey: 'NEW123',
+          enrollmentToken: 'enrollment-token',
+          expiresAt: '2026-03-12T10:08:00Z',
+        });
+      }
+
+      if (
+        request.method === 'POST' &&
+        getPathname(request.url) === '/api/v1/members/me/totp/confirm'
       ) {
         return successResponse(200, {
           memberId: 2,
           email: 'new@fix.com',
           name: 'New User',
-        });
-      }
-
-      if (
-        request.method === 'GET' &&
-        getPathname(request.url) === '/api/v1/auth/session'
-      ) {
-        return successResponse(200, {
-          ...memberFixture,
-          email: 'new@fix.com',
-          name: 'New User',
+          totpEnrolled: true,
         });
       }
 
@@ -326,24 +358,49 @@ describe('E2E tests: mobile auth workflow', () => {
 
     authStore.initialize(null);
 
-    const result = await harness.viewModel.submitRegister({
+    const registerResult = await harness.viewModel.submitRegister({
       email: 'new@fix.com',
       name: 'New User',
       password: 'Test1234!',
     });
 
-    expect(result).toMatchObject({
+    expect(registerResult).toEqual({
       success: true,
-      member: {
-        email: 'new@fix.com',
+    });
+    expect(harness.getNavigationState()).toMatchObject({
+      stack: 'auth',
+      authRoute: 'totpEnroll',
+    });
+
+    const enrollmentBootstrap = await harness.viewModel.loadTotpEnrollment();
+
+    expect(enrollmentBootstrap).toEqual({
+      success: true,
+      enrollment: {
+        qrUri: 'otpauth://totp/FIX:new@fix.com?secret=NEW123',
+        manualEntryKey: 'NEW123',
+        enrollmentToken: 'enrollment-token',
+        expiresAt: '2026-03-12T10:08:00Z',
       },
+    });
+
+    const confirmResult = await harness.viewModel.submitTotpEnrollmentConfirmation({
+      loginToken: 'register-login-token',
+      enrollmentToken: 'enrollment-token',
+      otpCode: '123456',
+    });
+
+    expect(confirmResult).toEqual({
+      success: true,
     });
     expect(authStore.getState()).toMatchObject({
       status: 'authenticated',
       member: {
-        ...memberFixture,
+        memberUuid: '2',
         email: 'new@fix.com',
         name: 'New User',
+        role: 'ROLE_USER',
+        totpEnrolled: true,
       },
     });
     expect(harness.getNavigationState()).toMatchObject({
@@ -353,35 +410,29 @@ describe('E2E tests: mobile auth workflow', () => {
 
     const registerCall = findCall(harness.calls, '/api/v1/auth/register', 'POST');
     const loginCall = findCall(harness.calls, '/api/v1/auth/login', 'POST');
+    const enrollCall = findCall(harness.calls, '/api/v1/members/me/totp/enroll', 'POST');
+    const confirmCall = findCall(harness.calls, '/api/v1/members/me/totp/confirm', 'POST');
 
     expect(registerCall?.headers['X-XSRF-TOKEN']).toBe('csrf-register-1');
     expect(loginCall?.headers['X-XSRF-TOKEN']).toBe('csrf-register-1');
+    expect(enrollCall?.headers['X-XSRF-TOKEN']).toBe('csrf-register-1');
+    expect(confirmCall?.headers['X-XSRF-TOKEN']).toBe('csrf-register-1');
     expect(getFormBody(registerCall?.body)).toEqual({
       email: 'new@fix.com',
       name: 'New User',
       password: 'Test1234!',
     });
-    expect(getFormBody(loginCall?.body)).toEqual({
-      email: 'new@fix.com',
-      password: 'Test1234!',
-    });
   });
 
-  it('maps invalid login responses to the standardized global auth copy', async () => {
+  it('maps invalid password-step responses to the standardized global auth copy', async () => {
     const harness = createHarness((request) => {
-      if (
-        request.method === 'GET' &&
-        getPathname(request.url) === '/api/v1/auth/csrf'
-      ) {
+      if (request.method === 'GET' && getPathname(request.url) === '/api/v1/auth/csrf') {
         return successResponse(200, {
           token: 'csrf-invalid-login',
         });
       }
 
-      if (
-        request.method === 'POST' &&
-        getPathname(request.url) === '/api/v1/auth/login'
-      ) {
+      if (request.method === 'POST' && getPathname(request.url) === '/api/v1/auth/login') {
         return errorResponse(
           401,
           'AUTH-001',
@@ -403,88 +454,200 @@ describe('E2E tests: mobile auth workflow', () => {
     expect(result).toMatchObject({
       success: false,
     });
+    expect(
+      getLoginErrorFeedback((result as Extract<typeof result, { success: false }>).error),
+    ).toMatchObject({
+      globalMessage: '이메일 또는 비밀번호가 올바르지 않습니다.',
+    });
     expect(authStore.getState()).toMatchObject({
       status: 'anonymous',
       member: null,
+    });
+  });
+
+  it('redirects MFA verification failures that require enrollment into the enrollment route', async () => {
+    const harness = createHarness((request) => {
+      if (request.method === 'GET' && getPathname(request.url) === '/api/v1/auth/csrf') {
+        return successResponse(200, {
+          token: 'csrf-auth-009',
+        });
+      }
+
+      if (request.method === 'POST' && getPathname(request.url) === '/api/v1/auth/login') {
+        return successResponse(200, {
+          loginToken: 'login-token',
+          nextAction: 'VERIFY_TOTP',
+          totpEnrolled: true,
+          expiresAt: '2026-03-12T10:00:00Z',
+        });
+      }
+
+      if (request.method === 'POST' && getPathname(request.url) === '/api/v1/auth/otp/verify') {
+        return errorResponse(
+          403,
+          'AUTH-009',
+          'TOTP enrollment required',
+          'User must enroll before OTP verification',
+          {
+            enrollUrl: '/settings/totp/enroll',
+          },
+        );
+      }
+
+      return notFoundResponse(request);
+    });
+
+    authStore.initialize(null);
+
+    await harness.viewModel.submitLogin({
+      email: 'demo@fix.com',
+      password: 'Test1234!',
+    });
+
+    const result = await harness.viewModel.submitLoginMfa({
+      loginToken: 'login-token',
+      otpCode: '123456',
+    });
+
+    expect(result).toEqual({
+      success: true,
+    });
+    expect(harness.getNavigationState()).toMatchObject({
+      stack: 'auth',
+      authRoute: 'totpEnroll',
+    });
+    expect(harness.viewModel.getState().pendingMfa).toMatchObject({
+      loginToken: 'login-token',
+      nextAction: 'ENROLL_TOTP',
+    });
+  });
+
+  it('keeps the MFA login step active and exposes throttle guidance when otp verification is rate limited', async () => {
+    const harness = createHarness((request) => {
+      if (request.method === 'GET' && getPathname(request.url) === '/api/v1/auth/csrf') {
+        return successResponse(200, {
+          token: 'csrf-rate-limit',
+        });
+      }
+
+      if (request.method === 'POST' && getPathname(request.url) === '/api/v1/auth/login') {
+        return successResponse(200, {
+          loginToken: 'login-token',
+          nextAction: 'VERIFY_TOTP',
+          totpEnrolled: true,
+          expiresAt: '2026-03-12T10:00:00Z',
+        });
+      }
+
+      if (request.method === 'POST' && getPathname(request.url) === '/api/v1/auth/otp/verify') {
+        return errorResponse(
+          429,
+          'RATE-001',
+          'Too many attempts',
+          'Too many OTP verification attempts',
+          {
+            retryAfterSeconds: 30,
+          },
+        );
+      }
+
+      return notFoundResponse(request);
+    });
+
+    authStore.initialize(null);
+
+    await harness.viewModel.submitLogin({
+      email: 'demo@fix.com',
+      password: 'Test1234!',
+    });
+
+    const result = await harness.viewModel.submitLoginMfa({
+      loginToken: 'login-token',
+      otpCode: '123456',
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+    });
+    expect(
+      resolveMfaErrorPresentation((result as Extract<typeof result, { success: false }>).error),
+    ).toMatchObject({
+      code: 'RATE-001',
+      message: '인증 시도가 너무 많습니다. 30초 후 다시 시도해 주세요.',
+      restartLogin: false,
+      navigateToEnroll: false,
     });
     expect(harness.getNavigationState()).toMatchObject({
       stack: 'auth',
       authRoute: 'login',
     });
+    expect(harness.viewModel.getState().pendingMfa).toMatchObject({
+      loginToken: 'login-token',
+      nextAction: 'VERIFY_TOTP',
+    });
+    expect(findCall(harness.calls, '/api/v1/auth/otp/verify', 'POST')?.body).toBe(
+      JSON.stringify({
+        loginToken: 'login-token',
+        otpCode: '123456',
+      }),
+    );
   });
 
-  it.each([
-    ['AUTH-002', 401, '로그인 시도가 잠겨 있습니다. 잠시 후 다시 시도해 주세요.'],
-    ['RATE-001', 429, '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.'],
-  ])(
-    'maps %s login failures to consistent recoverable feedback',
-    async (code, status, expectedMessage) => {
-      const harness = createHarness((request) => {
-        if (
-          request.method === 'GET' &&
-          getPathname(request.url) === '/api/v1/auth/csrf'
-        ) {
-          return successResponse(200, {
-            token: `csrf-${code}`,
-          });
-        }
-
-        if (
-          request.method === 'POST' &&
-          getPathname(request.url) === '/api/v1/auth/login'
-        ) {
-          return errorResponse(
-            status,
-            code,
-            `${code} backend message`,
-            'Auth guardrail triggered for login',
-          );
-        }
-
-        return notFoundResponse(request);
-      });
-
-      authStore.initialize(null);
-
-      const result = await harness.viewModel.submitLogin({
-        email: 'demo@fix.com',
-        password: 'wrong-password',
-      });
-
-      expect(result).toMatchObject({
-        success: false,
-      });
-      expect(
-        getLoginErrorFeedback((result as Extract<typeof result, { success: false }>).error),
-      ).toMatchObject({
-        globalMessage: expectedMessage,
-      });
-      expect(authStore.getState()).toMatchObject({
-        status: 'anonymous',
-        member: null,
-      });
-      expect(harness.getNavigationState()).toMatchObject({
-        stack: 'auth',
-        authRoute: 'login',
-      });
-    },
-  );
-
-  it('maps unknown login failures to the safe fallback with a visible correlation id', async () => {
+  it('maps duplicate-email registration failures to the email field', async () => {
     const harness = createHarness((request) => {
-      if (
-        request.method === 'GET' &&
-        getPathname(request.url) === '/api/v1/auth/csrf'
-      ) {
+      if (request.method === 'GET' && getPathname(request.url) === '/api/v1/auth/csrf') {
+        return successResponse(200, {
+          token: 'csrf-register-email-error',
+        });
+      }
+
+      if (request.method === 'POST' && getPathname(request.url) === '/api/v1/auth/register') {
+        return errorResponse(
+          409,
+          'AUTH-017',
+          'Email already exists',
+          'Duplicate email',
+        );
+      }
+
+      return notFoundResponse(request);
+    });
+
+    authStore.initialize(null);
+
+    const result = await harness.viewModel.submitRegister({
+      email: 'new@fix.com',
+      name: 'New User',
+      password: 'Test1234!',
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+    });
+    expect(
+      getRegisterErrorFeedback(
+        (result as Extract<typeof result, { success: false }>).error,
+      ),
+    ).toMatchObject({
+      fieldErrors: {
+        email: true,
+      },
+      fieldMessages: {
+        email: '이미 가입된 이메일입니다. 다른 이메일을 입력해 주세요.',
+      },
+    });
+    expect(findCall(harness.calls, '/api/v1/auth/login', 'POST')).toBeUndefined();
+  });
+
+  it('maps unknown password-step failures to the safe fallback with a visible correlation id', async () => {
+    const harness = createHarness((request) => {
+      if (request.method === 'GET' && getPathname(request.url) === '/api/v1/auth/csrf') {
         return successResponse(200, {
           token: 'csrf-auth-unknown',
         });
       }
 
-      if (
-        request.method === 'POST' &&
-        getPathname(request.url) === '/api/v1/auth/login'
-      ) {
+      if (request.method === 'POST' && getPathname(request.url) === '/api/v1/auth/login') {
         return errorResponse(
           500,
           'AUTH-999',
@@ -525,64 +688,56 @@ describe('E2E tests: mobile auth workflow', () => {
     });
   });
 
-  it('maps duplicate-email registration failures to the email field', async () => {
+  it('revalidates on app resume and routes stale sessions back to login safely', async () => {
     const harness = createHarness((request) => {
-      if (
-        request.method === 'GET' &&
-        getPathname(request.url) === '/api/v1/auth/csrf'
-      ) {
+      if (request.method === 'GET' && getPathname(request.url) === '/api/v1/auth/csrf') {
         return successResponse(200, {
-          token: 'csrf-register-email-error',
+          token: 'csrf-resume-1',
         });
       }
 
-      if (
-        request.method === 'POST' &&
-        getPathname(request.url) === '/api/v1/auth/register'
-      ) {
+      if (request.method === 'GET' && getPathname(request.url) === '/api/v1/auth/session') {
         return errorResponse(
-          409,
-          'AUTH-017',
-          'Email already exists',
-          'Duplicate email',
+          401,
+          'AUTH-003',
+          'Authentication required',
+          'Session is missing or invalid',
         );
       }
 
       return notFoundResponse(request);
+    }, {
+      authenticated: true,
     });
 
-    authStore.initialize(null);
+    harness.setAuthenticatedState();
 
-    const result = await harness.viewModel.submitRegister({
-      email: 'new@fix.com',
-      name: 'New User',
-      password: 'Test1234!',
-    });
+    const result = await harness.viewModel.refreshProtectedSession('resume');
 
     expect(result).toMatchObject({
-      success: false,
+      status: 'reauth',
+    });
+    expect(authStore.getState()).toMatchObject({
+      status: 'anonymous',
+      member: null,
+      reauthMessage: '세션이 만료되었습니다. 다시 로그인해 주세요.',
+    });
+    expect(harness.getNavigationState()).toMatchObject({
+      stack: 'auth',
+      authRoute: 'login',
+      pendingProtectedRoute: 'portfolio',
     });
     expect(
-      getRegisterErrorFeedback(
-        (result as Extract<typeof result, { success: false }>).error,
-      ),
-    ).toMatchObject({
-      fieldErrors: {
-        email: true,
-      },
-      fieldMessages: {
-        email: '이미 가입된 이메일입니다. 다른 이메일을 입력해 주세요.',
-      },
-    });
-    expect(findCall(harness.calls, '/api/v1/auth/login', 'POST')).toBeUndefined();
+      harness.calls.map((call) => `${call.method} ${getPathname(call.url)}`),
+    ).toEqual([
+      'GET /api/v1/auth/csrf',
+      'GET /api/v1/auth/session',
+    ]);
   });
 
   it('routes protected-session failures to deterministic re-auth navigation', async () => {
     const harness = createHarness((request) => {
-      if (
-        request.method === 'GET' &&
-        getPathname(request.url) === '/api/v1/auth/session'
-      ) {
+      if (request.method === 'GET' && getPathname(request.url) === '/api/v1/auth/session') {
         return errorResponse(
           401,
           'AUTH-003',
@@ -612,103 +767,6 @@ describe('E2E tests: mobile auth workflow', () => {
       stack: 'auth',
       authRoute: 'login',
       pendingProtectedRoute: 'portfolio',
-    });
-  });
-
-  it('treats sessions invalidated by a newer login as deterministic re-auth flows', async () => {
-    const harness = createHarness((request) => {
-      if (
-        request.method === 'GET' &&
-        getPathname(request.url) === '/api/v1/auth/session'
-      ) {
-        return errorResponse(
-          401,
-          'AUTH-016',
-          'Session invalidated by another login',
-          'Existing session was invalidated by a newer device login',
-        );
-      }
-
-      return notFoundResponse(request);
-    }, {
-      authenticated: true,
-    });
-
-    harness.setAuthenticatedState();
-
-    const result = await harness.viewModel.refreshProtectedSession();
-
-    expect(result).toMatchObject({
-      status: 'reauth',
-    });
-    expect(authStore.getState()).toMatchObject({
-      status: 'anonymous',
-      member: null,
-      reauthMessage: '세션이 만료되었습니다. 다시 로그인해 주세요.',
-    });
-    expect(harness.getNavigationState()).toMatchObject({
-      stack: 'auth',
-      authRoute: 'login',
-      pendingProtectedRoute: 'portfolio',
-    });
-  });
-
-  it('revalidates the session on app resume and rejects stale sessions deterministically', async () => {
-    const harness = createHarness((request) => {
-      if (
-        request.method === 'GET' &&
-        getPathname(request.url) === '/api/v1/auth/csrf'
-      ) {
-        return successResponse(200, {
-          token: 'csrf-resume',
-        });
-      }
-
-      if (
-        request.method === 'GET' &&
-        getPathname(request.url) === '/api/v1/auth/session'
-      ) {
-        return errorResponse(
-          410,
-          'CHANNEL-001',
-          'Redis session expired',
-          'Session cache entry expired while app was backgrounded',
-        );
-      }
-
-      return notFoundResponse(request);
-    }, {
-      authenticated: true,
-    });
-
-    harness.setAuthenticatedState();
-
-    const result = await harness.viewModel.refreshProtectedSession('resume');
-
-    expect(result).toMatchObject({
-      status: 'reauth',
-    });
-    expect(authStore.getState()).toMatchObject({
-      status: 'anonymous',
-      member: null,
-      reauthMessage: '세션이 만료되었습니다. 다시 로그인해 주세요.',
-    });
-
-    const csrfCallIndex = harness.calls.findIndex(
-      (call) =>
-        call.method === 'GET' && getPathname(call.url) === '/api/v1/auth/csrf',
-    );
-    const sessionCallIndex = harness.calls.findIndex(
-      (call) =>
-        call.method === 'GET' && getPathname(call.url) === '/api/v1/auth/session',
-    );
-
-    expect(csrfCallIndex).toBeGreaterThanOrEqual(0);
-    expect(sessionCallIndex).toBeGreaterThanOrEqual(0);
-    expect(csrfCallIndex).toBeLessThan(sessionCallIndex);
-    expect(harness.getNavigationState()).toMatchObject({
-      stack: 'auth',
-      authRoute: 'login',
     });
   });
 });
