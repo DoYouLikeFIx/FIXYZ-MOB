@@ -25,7 +25,10 @@ const createHttpError = (
 describe('mobile auth service', () => {
   const authApi: AuthApi = {
     fetchSession: vi.fn(),
-    loginMember: vi.fn(),
+    startLoginFlow: vi.fn(),
+    verifyLoginOtp: vi.fn(),
+    beginTotpEnrollment: vi.fn(),
+    confirmTotpEnrollment: vi.fn(),
     registerMember: vi.fn(),
     requestPasswordResetEmail: vi.fn(),
     requestPasswordRecoveryChallenge: vi.fn(),
@@ -57,7 +60,10 @@ describe('mobile auth service', () => {
 
   beforeEach(() => {
     vi.mocked(authApi.fetchSession).mockReset();
-    vi.mocked(authApi.loginMember).mockReset();
+    vi.mocked(authApi.startLoginFlow).mockReset();
+    vi.mocked(authApi.verifyLoginOtp).mockReset();
+    vi.mocked(authApi.beginTotpEnrollment).mockReset();
+    vi.mocked(authApi.confirmTotpEnrollment).mockReset();
     vi.mocked(authApi.registerMember).mockReset();
     vi.mocked(authApi.requestPasswordResetEmail).mockReset();
     vi.mocked(authApi.requestPasswordRecoveryChallenge).mockReset();
@@ -116,37 +122,39 @@ describe('mobile auth service', () => {
     expect(vi.mocked(authApi.fetchSession)).not.toHaveBeenCalled();
   });
 
-  it('returns the authenticated member when login succeeds', async () => {
-    vi.mocked(authApi.loginMember).mockResolvedValue({
-      memberUuid: 'member-001',
-      email: 'demo@fix.com',
-      name: 'Demo User',
-      role: 'ROLE_USER',
-      totpEnrolled: false,
+  it('returns the login challenge when the password step succeeds', async () => {
+    vi.mocked(authApi.startLoginFlow).mockResolvedValue({
+      loginToken: 'login-token',
+      nextAction: 'VERIFY_TOTP',
+      totpEnrolled: true,
+      expiresAt: '2026-03-12T10:00:00Z',
     });
 
-    const result = await service.loginMember({
+    const result = await service.startLoginFlow({
       email: 'demo@fix.com',
       password: 'Test1234!',
     });
 
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       success: true,
-      member: {
-        email: 'demo@fix.com',
+      challenge: {
+        loginToken: 'login-token',
+        nextAction: 'VERIFY_TOTP',
+        totpEnrolled: true,
+        expiresAt: '2026-03-12T10:00:00Z',
       },
     });
   });
 
-  it('returns the raw error when login fails', async () => {
+  it('returns the raw error when the password step fails', async () => {
     const error = createHttpError({
       code: 'AUTH-001',
       status: 401,
       message: 'Credential mismatch',
     });
-    vi.mocked(authApi.loginMember).mockRejectedValue(error);
+    vi.mocked(authApi.startLoginFlow).mockRejectedValue(error);
 
-    const result = await service.loginMember({
+    const result = await service.startLoginFlow({
       email: 'demo@fix.com',
       password: 'wrong-password',
     });
@@ -157,15 +165,31 @@ describe('mobile auth service', () => {
     });
   });
 
-  it('registers then logs in with email for the follow-up session', async () => {
-    vi.mocked(authApi.registerMember).mockResolvedValue({
-      memberUuid: 'member-002',
-      email: 'new@fix.com',
-      name: 'New User',
+  it('verifies the submitted OTP and returns the authenticated member', async () => {
+    vi.mocked(authApi.verifyLoginOtp).mockResolvedValue({
+      memberUuid: 'member-001',
+      email: 'demo@fix.com',
+      name: 'Demo User',
       role: 'ROLE_USER',
-      totpEnrolled: false,
+      totpEnrolled: true,
     });
-    vi.mocked(authApi.loginMember).mockResolvedValue({
+
+    const result = await service.verifyLoginOtp({
+      loginToken: 'login-token',
+      otpCode: '123456',
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      member: {
+        email: 'demo@fix.com',
+        totpEnrolled: true,
+      },
+    });
+  });
+
+  it('registers a member without forcing an immediate login', async () => {
+    vi.mocked(authApi.registerMember).mockResolvedValue({
       memberUuid: 'member-002',
       email: 'new@fix.com',
       name: 'New User',
@@ -185,9 +209,53 @@ describe('mobile auth service', () => {
         email: 'new@fix.com',
       },
     });
-    expect(vi.mocked(authApi.loginMember)).toHaveBeenCalledWith({
+    expect(vi.mocked(authApi.startLoginFlow)).not.toHaveBeenCalled();
+  });
+
+  it('bootstraps TOTP enrollment details from the pending challenge', async () => {
+    vi.mocked(authApi.beginTotpEnrollment).mockResolvedValue({
+      qrUri: 'otpauth://totp/FIX:new@fix.com?secret=ABC123',
+      manualEntryKey: 'ABC123',
+      enrollmentToken: 'enrollment-token',
+      expiresAt: '2026-03-12T10:05:00Z',
+    });
+
+    const result = await service.beginTotpEnrollment({
+      loginToken: 'login-token',
+    });
+
+    expect(result).toEqual({
+      success: true,
+      enrollment: {
+        qrUri: 'otpauth://totp/FIX:new@fix.com?secret=ABC123',
+        manualEntryKey: 'ABC123',
+        enrollmentToken: 'enrollment-token',
+        expiresAt: '2026-03-12T10:05:00Z',
+      },
+    });
+  });
+
+  it('confirms TOTP enrollment and returns the authenticated member', async () => {
+    vi.mocked(authApi.confirmTotpEnrollment).mockResolvedValue({
+      memberUuid: 'member-002',
       email: 'new@fix.com',
-      password: 'Test1234!',
+      name: 'New User',
+      role: 'ROLE_USER',
+      totpEnrolled: true,
+    });
+
+    const result = await service.confirmTotpEnrollment({
+      loginToken: 'login-token',
+      enrollmentToken: 'enrollment-token',
+      otpCode: '123456',
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      member: {
+        email: 'new@fix.com',
+        totpEnrolled: true,
+      },
     });
   });
 

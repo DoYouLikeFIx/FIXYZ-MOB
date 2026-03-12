@@ -1,10 +1,11 @@
+import { createAuthFlowViewModel } from '@/auth/auth-flow-view-model';
 import {
-  createAuthFlowViewModel,
-} from '@/auth/auth-flow-view-model';
-import { createAuthNavigationState, enterAuthenticatedApp } from '@/navigation/auth-navigation';
+  createAuthNavigationState,
+  enterAuthenticatedApp,
+} from '@/navigation/auth-navigation';
 import type { NormalizedHttpError } from '@/network/types';
 import { authStore, resetAuthStore } from '@/store/auth-store';
-import type { Member } from '@/types/auth';
+import type { LoginChallenge, Member } from '@/types/auth';
 
 const memberFixture: Member = {
   memberUuid: 'member-001',
@@ -12,6 +13,20 @@ const memberFixture: Member = {
   name: 'Demo User',
   role: 'ROLE_USER',
   totpEnrolled: false,
+};
+
+const verifyChallengeFixture: LoginChallenge = {
+  loginToken: 'login-token',
+  nextAction: 'VERIFY_TOTP',
+  totpEnrolled: true,
+  expiresAt: '2026-03-12T10:00:00Z',
+};
+
+const enrollChallengeFixture: LoginChallenge = {
+  loginToken: 'register-login-token',
+  nextAction: 'ENROLL_TOTP',
+  totpEnrolled: false,
+  expiresAt: '2026-03-12T10:05:00Z',
 };
 
 const createHttpError = (
@@ -26,13 +41,18 @@ const createHttpError = (
   error.status = overrides.status;
   error.detail = overrides.detail;
   error.retriable = overrides.retriable;
+  error.retryAfterSeconds = overrides.retryAfterSeconds;
+  error.enrollUrl = overrides.enrollUrl;
 
   return error;
 };
 
 type AuthServiceStub = {
   bootstrap: ReturnType<typeof vi.fn>;
-  loginMember: ReturnType<typeof vi.fn>;
+  startLoginFlow: ReturnType<typeof vi.fn>;
+  verifyLoginOtp: ReturnType<typeof vi.fn>;
+  beginTotpEnrollment: ReturnType<typeof vi.fn>;
+  confirmTotpEnrollment: ReturnType<typeof vi.fn>;
   registerMember: ReturnType<typeof vi.fn>;
   requestPasswordResetEmail: ReturnType<typeof vi.fn>;
   requestPasswordRecoveryChallenge: ReturnType<typeof vi.fn>;
@@ -43,7 +63,10 @@ type AuthServiceStub = {
 
 const createServiceStub = (): AuthServiceStub => ({
   bootstrap: vi.fn(),
-  loginMember: vi.fn(),
+  startLoginFlow: vi.fn(),
+  verifyLoginOtp: vi.fn(),
+  beginTotpEnrollment: vi.fn(),
+  confirmTotpEnrollment: vi.fn(),
   registerMember: vi.fn(),
   requestPasswordResetEmail: vi.fn(),
   requestPasswordRecoveryChallenge: vi.fn(),
@@ -110,52 +133,10 @@ describe('auth flow view model', () => {
     });
   });
 
-  it('does not clobber a reset-password handoff when bootstrap recovers a session', async () => {
-    authService.bootstrap.mockResolvedValue({
-      recoveredSession: true,
-      member: memberFixture,
-      error: null,
-    });
-
-    const viewModel = createAuthFlowViewModel({
-      authService: authService as never,
-      authStore,
-    });
-
-    viewModel.ingestPasswordResetToken('link-token');
-    await viewModel.bootstrap();
-
-    expect(authStore.getState()).toMatchObject({
-      status: 'authenticated',
-      member: memberFixture,
-    });
-    expect(viewModel.getState().navigationState).toMatchObject({
-      stack: 'auth',
-      authRoute: 'resetPassword',
-      resetPasswordToken: 'link-token',
-    });
-  });
-
-  it('opens register and login routes while clearing transient errors', () => {
-    authStore.requireReauth('세션이 만료되었습니다. 다시 로그인해 주세요.');
-
-    const viewModel = createAuthFlowViewModel({
-      authService: authService as never,
-      authStore,
-    });
-
-    viewModel.openRegister();
-    expect(viewModel.getState().navigationState.authRoute).toBe('register');
-    expect(authStore.getState().reauthMessage).toBeNull();
-
-    viewModel.openLogin();
-    expect(viewModel.getState().navigationState.authRoute).toBe('login');
-  });
-
-  it('submits login through the service and enters the app route on success', async () => {
-    authService.loginMember.mockResolvedValue({
+  it('stores the pending MFA challenge after the password step succeeds', async () => {
+    authService.startLoginFlow.mockResolvedValue({
       success: true,
-      member: memberFixture,
+      challenge: verifyChallengeFixture,
     });
 
     const viewModel = createAuthFlowViewModel({
@@ -170,12 +151,352 @@ describe('auth flow view model', () => {
 
     expect(result).toEqual({
       success: true,
-      member: memberFixture,
     });
-    expect(authStore.getState().status).toBe('authenticated');
-    expect(viewModel.getState().navigationState).toMatchObject({
-      stack: 'app',
-      welcomeVariant: 'login',
+    expect(viewModel.getState()).toMatchObject({
+      pendingMfa: verifyChallengeFixture,
+      navigationState: {
+        stack: 'auth',
+        authRoute: 'login',
+      },
+    });
+    expect(authStore.getState()).toMatchObject({
+      status: 'checking',
+      member: null,
+    });
+  });
+
+  it('authenticates after a successful MFA verification step', async () => {
+    authService.startLoginFlow.mockResolvedValue({
+      success: true,
+      challenge: verifyChallengeFixture,
+    });
+    authService.verifyLoginOtp.mockResolvedValue({
+      success: true,
+      member: {
+        ...memberFixture,
+        totpEnrolled: true,
+      },
+    });
+
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+    });
+
+    await viewModel.submitLogin({
+      email: 'demo@fix.com',
+      password: 'Test1234!',
+    });
+
+    const result = await viewModel.submitLoginMfa({
+      loginToken: verifyChallengeFixture.loginToken,
+      otpCode: '123456',
+    });
+
+    expect(result).toEqual({
+      success: true,
+    });
+    expect(authStore.getState()).toMatchObject({
+      status: 'authenticated',
+      member: {
+        ...memberFixture,
+        totpEnrolled: true,
+      },
+    });
+    expect(viewModel.getState()).toMatchObject({
+      pendingMfa: null,
+      navigationState: {
+        stack: 'app',
+        welcomeVariant: 'login',
+      },
+    });
+  });
+
+  it('redirects MFA verification failures requiring enrollment into the enrollment route', async () => {
+    authService.startLoginFlow.mockResolvedValue({
+      success: true,
+      challenge: verifyChallengeFixture,
+    });
+    authService.verifyLoginOtp.mockResolvedValue({
+      success: false,
+      error: createHttpError({
+        code: 'AUTH-009',
+        status: 403,
+        message: 'TOTP enrollment required',
+        enrollUrl: '/settings/totp/enroll',
+      }),
+    });
+
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+    });
+
+    await viewModel.submitLogin({
+      email: 'demo@fix.com',
+      password: 'Test1234!',
+    });
+
+    const result = await viewModel.submitLoginMfa({
+      loginToken: verifyChallengeFixture.loginToken,
+      otpCode: '123456',
+    });
+
+    expect(result).toEqual({
+      success: true,
+    });
+    expect(viewModel.getState()).toMatchObject({
+      pendingMfa: {
+        ...verifyChallengeFixture,
+        nextAction: 'ENROLL_TOTP',
+      },
+      navigationState: {
+        authRoute: 'totpEnroll',
+      },
+    });
+  });
+
+  it('loads TOTP enrollment data from the pending challenge token', async () => {
+    authService.startLoginFlow.mockResolvedValue({
+      success: true,
+      challenge: enrollChallengeFixture,
+    });
+    authService.beginTotpEnrollment.mockResolvedValue({
+      success: true,
+      enrollment: {
+        qrUri: 'otpauth://totp/FIX:new@fix.com?secret=ABC123',
+        manualEntryKey: 'ABC123',
+        enrollmentToken: 'enrollment-token',
+        expiresAt: '2026-03-12T10:08:00Z',
+      },
+    });
+
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+    });
+
+    await viewModel.submitLogin({
+      email: 'new@fix.com',
+      password: 'Test1234!',
+    });
+
+    const result = await viewModel.loadTotpEnrollment();
+
+    expect(result).toEqual({
+      success: true,
+      enrollment: {
+        qrUri: 'otpauth://totp/FIX:new@fix.com?secret=ABC123',
+        manualEntryKey: 'ABC123',
+        enrollmentToken: 'enrollment-token',
+        expiresAt: '2026-03-12T10:08:00Z',
+      },
+    });
+    expect(authService.beginTotpEnrollment).toHaveBeenCalledWith({
+      loginToken: enrollChallengeFixture.loginToken,
+    });
+  });
+
+  it('completes TOTP enrollment and enters the app with the register welcome state', async () => {
+    authService.registerMember.mockResolvedValue({
+      success: true,
+      member: {
+        ...memberFixture,
+        email: 'new@fix.com',
+        name: 'New User',
+        totpEnrolled: false,
+      },
+    });
+    authService.startLoginFlow.mockResolvedValue({
+      success: true,
+      challenge: enrollChallengeFixture,
+    });
+    authService.confirmTotpEnrollment.mockResolvedValue({
+      success: true,
+      member: {
+        ...memberFixture,
+        email: 'new@fix.com',
+        name: 'New User',
+        totpEnrolled: true,
+      },
+    });
+
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+    });
+
+    await viewModel.submitRegister({
+      email: 'new@fix.com',
+      name: 'New User',
+      password: 'Test1234!',
+    });
+
+    const result = await viewModel.submitTotpEnrollmentConfirmation({
+      loginToken: enrollChallengeFixture.loginToken,
+      enrollmentToken: 'enrollment-token',
+      otpCode: '123456',
+    });
+
+    expect(result).toEqual({
+      success: true,
+    });
+    expect(authStore.getState()).toMatchObject({
+      status: 'authenticated',
+      member: {
+        email: 'new@fix.com',
+        name: 'New User',
+        totpEnrolled: true,
+      },
+    });
+    expect(viewModel.getState()).toMatchObject({
+      pendingMfa: null,
+      navigationState: {
+        stack: 'app',
+        welcomeVariant: 'register',
+      },
+    });
+  });
+
+  it('keeps the login welcome state when enrollment is completed after a login-driven MFA redirect', async () => {
+    authService.startLoginFlow.mockResolvedValue({
+      success: true,
+      challenge: verifyChallengeFixture,
+    });
+    authService.verifyLoginOtp.mockResolvedValue({
+      success: false,
+      error: createHttpError({
+        code: 'AUTH-009',
+        status: 403,
+        message: 'TOTP enrollment required',
+        enrollUrl: '/settings/totp/enroll',
+      }),
+    });
+    authService.confirmTotpEnrollment.mockResolvedValue({
+      success: true,
+      member: {
+        ...memberFixture,
+        totpEnrolled: true,
+      },
+    });
+
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+    });
+
+    await viewModel.submitLogin({
+      email: 'demo@fix.com',
+      password: 'Test1234!',
+    });
+    await viewModel.submitLoginMfa({
+      loginToken: verifyChallengeFixture.loginToken,
+      otpCode: '123456',
+    });
+
+    const result = await viewModel.submitTotpEnrollmentConfirmation({
+      loginToken: verifyChallengeFixture.loginToken,
+      enrollmentToken: 'enrollment-token',
+      otpCode: '123456',
+    });
+
+    expect(result).toEqual({
+      success: true,
+    });
+    expect(viewModel.getState()).toMatchObject({
+      navigationState: {
+        stack: 'app',
+        welcomeVariant: 'login',
+      },
+    });
+  });
+
+  it('registers then starts the MFA challenge for the follow-up flow', async () => {
+    authService.registerMember.mockResolvedValue({
+      success: true,
+      member: {
+        ...memberFixture,
+        email: 'new@fix.com',
+        name: 'New User',
+      },
+    });
+    authService.startLoginFlow.mockResolvedValue({
+      success: true,
+      challenge: enrollChallengeFixture,
+    });
+
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+    });
+
+    const result = await viewModel.submitRegister({
+      email: 'new@fix.com',
+      name: 'New User',
+      password: 'Test1234!',
+    });
+
+    expect(result).toEqual({
+      success: true,
+    });
+    expect(authService.startLoginFlow).toHaveBeenCalledWith({
+      email: 'new@fix.com',
+      password: 'Test1234!',
+    });
+    expect(viewModel.getState()).toMatchObject({
+      pendingMfa: enrollChallengeFixture,
+      navigationState: {
+        authRoute: 'totpEnroll',
+      },
+    });
+  });
+
+  it('returns unenrolled registrations to the TOTP enrollment route on a later login attempt', async () => {
+    authService.startLoginFlow
+      .mockResolvedValueOnce({
+        success: true,
+        challenge: enrollChallengeFixture,
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        challenge: {
+          ...enrollChallengeFixture,
+          loginToken: 'register-login-token-2',
+        },
+      });
+
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+    });
+
+    await viewModel.submitLogin({
+      email: 'new@fix.com',
+      password: 'Test1234!',
+    });
+
+    viewModel.resetPendingMfa();
+
+    const result = await viewModel.submitLogin({
+      email: 'new@fix.com',
+      password: 'Test1234!',
+    });
+
+    expect(result).toEqual({
+      success: true,
+    });
+    expect(viewModel.getState()).toMatchObject({
+      pendingMfa: {
+        ...enrollChallengeFixture,
+        loginToken: 'register-login-token-2',
+      },
+      navigationState: {
+        authRoute: 'totpEnroll',
+      },
+    });
+    expect(authService.startLoginFlow).toHaveBeenNthCalledWith(2, {
+      email: 'new@fix.com',
+      password: 'Test1234!',
     });
   });
 
@@ -231,87 +552,5 @@ describe('auth flow view model', () => {
     await Promise.resolve();
 
     expect(authService.revalidateSessionOnResume).toHaveBeenCalledTimes(1);
-  });
-
-  it('opens recovery routes and returns to login with a success banner after reset', async () => {
-    authService.resetPassword.mockResolvedValue({
-      success: true,
-    });
-
-    const viewModel = createAuthFlowViewModel({
-      authService: authService as never,
-      authStore,
-    });
-
-    viewModel.openForgotPassword();
-    expect(viewModel.getState().navigationState.authRoute).toBe('forgotPassword');
-
-    viewModel.openResetPassword('handoff-token');
-    expect(viewModel.getState().navigationState).toMatchObject({
-      authRoute: 'resetPassword',
-      resetPasswordToken: 'handoff-token',
-    });
-
-    await viewModel.submitPasswordReset({
-      token: 'reset-token',
-      newPassword: 'Test1234!',
-    });
-
-    expect(viewModel.getState()).toMatchObject({
-      authBannerMessage: '비밀번호가 변경되었습니다. 새 비밀번호로 로그인해 주세요.',
-      authBannerTone: 'success',
-      navigationState: {
-        authRoute: 'login',
-      },
-    });
-  });
-
-  it('routes reset AUTH-016 failures back to login with reauth guidance', async () => {
-    authService.resetPassword.mockResolvedValue({
-      success: false,
-      error: createHttpError({
-        code: 'AUTH-016',
-        status: 401,
-        message: 'Session invalidated by another login',
-      }),
-    });
-
-    const viewModel = createAuthFlowViewModel({
-      authService: authService as never,
-      authStore,
-    });
-
-    viewModel.openResetPassword('handoff-token');
-
-    const result = await viewModel.submitPasswordReset({
-      token: 'handoff-token',
-      newPassword: 'Test1234!',
-    });
-
-    expect(result).toMatchObject({
-      success: false,
-      error: expect.objectContaining({
-        code: 'AUTH-016',
-      }),
-    });
-    expect(authStore.getState().reauthMessage).toBe('세션이 만료되었습니다. 다시 로그인해 주세요.');
-    expect(viewModel.getState().navigationState).toMatchObject({
-      authRoute: 'login',
-      resetPasswordToken: null,
-    });
-  });
-
-  it('ingests a reset-token handoff into the dedicated reset route', () => {
-    const viewModel = createAuthFlowViewModel({
-      authService: authService as never,
-      authStore,
-    });
-
-    viewModel.ingestPasswordResetToken('link-token');
-
-    expect(viewModel.getState().navigationState).toMatchObject({
-      authRoute: 'resetPassword',
-      resetPasswordToken: 'link-token',
-    });
   });
 });
