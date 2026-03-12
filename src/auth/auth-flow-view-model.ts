@@ -152,12 +152,6 @@ export const createAuthFlowViewModel = ({
     });
   };
 
-  const clearPendingMfa = () => {
-    setState({
-      pendingMfa: null,
-    });
-  };
-
   const openPendingMfaRoute = (
     navigationState: AuthNavigationState,
     challenge: LoginChallenge,
