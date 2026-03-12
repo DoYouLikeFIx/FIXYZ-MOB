@@ -55,6 +55,25 @@ appId: org.reactjs.native.example.FIXYZMob
     optional: true
 - extendedWaitUntil:
     visible:
+      id: totp-enroll-manual-key
+    timeout: 20000
+- tapOn:
+    id: totp-enroll-code
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: 123456
+- tapOn: "Google Authenticator를 연결해 주세요"
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    text: "등록 완료"
+- waitForAnimationToEnd:
+    timeout: 700
+- tapOn:
+    text: "등록 완료"
+    optional: true
+- extendedWaitUntil:
+    visible:
       id: protected-area-title
     timeout: 20000
 - assertVisible: "가입 완료"

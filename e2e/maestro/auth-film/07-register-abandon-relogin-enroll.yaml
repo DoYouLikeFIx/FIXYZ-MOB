@@ -1,0 +1,71 @@
+appId: org.reactjs.native.example.FIXYZMob
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    arguments:
+      mobApiBaseUrl: http://localhost:18080
+      mobDisableAnimations: true
+      mobQaPlaintextPasswords: true
+- extendedWaitUntil:
+    visible:
+      id: login-email
+    timeout: 20000
+- tapOn:
+    id: login-email
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: mfa-enroll@fix.com
+- tapOn:
+    id: login-password
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: Test1234!
+- pressKey: Enter
+- tapOn:
+    text: "지금 안 함"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: totp-enroll-manual-key
+    timeout: 20000
+- assertVisible:
+    id: totp-enroll-open-authenticator
+- waitForAnimationToEnd:
+    timeout: 1600
+- launchApp:
+    appId: org.reactjs.native.example.FIXYZMob
+    clearState: false
+    clearKeychain: false
+    arguments:
+      mobApiBaseUrl: http://localhost:18080
+      mobDisableAnimations: true
+      mobQaPlaintextPasswords: true
+- extendedWaitUntil:
+    visible:
+      id: login-email
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 900
+- tapOn:
+    id: login-email
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: mfa-enroll@fix.com
+- tapOn:
+    id: login-password
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: Test1234!
+- pressKey: Enter
+- tapOn:
+    text: "지금 안 함"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: totp-enroll-manual-key
+    timeout: 20000
+- assertVisible:
+    id: totp-enroll-open-authenticator
+- waitForAnimationToEnd:
+    timeout: 2200
