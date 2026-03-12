@@ -1,4 +1,9 @@
-export type AuthRoute = 'login' | 'register' | 'forgotPassword' | 'resetPassword';
+export type AuthRoute =
+  | 'login'
+  | 'register'
+  | 'forgotPassword'
+  | 'resetPassword'
+  | 'totpEnroll';
 export type ProtectedRoute = 'portfolio';
 export type WelcomeVariant = 'login' | 'register' | null;
 
@@ -58,6 +63,16 @@ export const openResetPasswordRoute = (
   stack: 'auth',
   authRoute: 'resetPassword',
   resetPasswordToken: token?.trim() ? token.trim() : null,
+  welcomeVariant: null,
+});
+
+export const openTotpEnrollRoute = (
+  state: AuthNavigationState,
+): AuthNavigationState => ({
+  ...state,
+  stack: 'auth',
+  authRoute: 'totpEnroll',
+  resetPasswordToken: null,
   welcomeVariant: null,
 });
 
