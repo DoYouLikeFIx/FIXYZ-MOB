@@ -1,6 +1,7 @@
 import type { CsrfTokenManager } from '../network/csrf';
 import type { HttpClient } from '../network/http-client';
 import type {
+  LoginChallenge,
   LoginRequest,
   Member,
   PasswordForgotRequest,
@@ -9,6 +10,10 @@ import type {
   PasswordRecoveryChallengeResponse,
   PasswordResetRequest,
   RegisterRequest,
+  TotpEnrollmentBootstrap,
+  TotpEnrollmentConfirmationRequest,
+  TotpEnrollmentRequest,
+  TotpVerificationRequest,
 } from '../types/auth';
 
 interface AuthMutationResponse {
@@ -48,7 +53,12 @@ const createCompatMember = (payload: AuthMutationResponse): Member => ({
 
 export interface AuthApi {
   fetchSession: () => Promise<Member>;
-  loginMember: (payload: LoginRequest) => Promise<Member>;
+  startLoginFlow: (payload: LoginRequest) => Promise<LoginChallenge>;
+  verifyLoginOtp: (payload: TotpVerificationRequest) => Promise<Member>;
+  beginTotpEnrollment: (payload: TotpEnrollmentRequest) => Promise<TotpEnrollmentBootstrap>;
+  confirmTotpEnrollment: (
+    payload: TotpEnrollmentConfirmationRequest,
+  ) => Promise<Member>;
   registerMember: (payload: RegisterRequest) => Promise<Member>;
   requestPasswordResetEmail: (payload: PasswordForgotRequest) => Promise<PasswordForgotResponse>;
   requestPasswordRecoveryChallenge: (
@@ -70,8 +80,8 @@ export const createAuthApi = ({
     const response = await client.get<Member>('/api/v1/auth/session');
     return response.body;
   },
-  loginMember: async (payload) => {
-    const response = await client.post<Member | AuthMutationResponse>(
+  startLoginFlow: async (payload) => {
+    const response = await client.post<LoginChallenge>(
       '/api/v1/auth/login',
       createFormBody({
         email: payload.email,
@@ -82,16 +92,40 @@ export const createAuthApi = ({
       },
     );
 
+    return response.body;
+  },
+
+  verifyLoginOtp: async (payload) => {
+    const response = await client.post<AuthMutationResponse>(
+      '/api/v1/auth/otp/verify',
+      payload,
+    );
+
     if (csrfManager) {
       await csrfManager.onLoginSuccess();
     }
 
-    if (isMember(response.body)) {
-      return response.body;
+    return createCompatMember(response.body);
+  },
+  beginTotpEnrollment: async (payload) => {
+    const response = await client.post<TotpEnrollmentBootstrap>(
+      '/api/v1/members/me/totp/enroll',
+      payload,
+    );
+
+    return response.body;
+  },
+  confirmTotpEnrollment: async (payload) => {
+    const response = await client.post<AuthMutationResponse>(
+      '/api/v1/members/me/totp/confirm',
+      payload,
+    );
+
+    if (csrfManager) {
+      await csrfManager.onLoginSuccess();
     }
 
-    const sessionResponse = await client.get<Member>('/api/v1/auth/session');
-    return sessionResponse.body;
+    return createCompatMember(response.body);
   },
   registerMember: async (payload) => {
     const response = await client.post<Member | AuthMutationResponse>(
@@ -105,11 +139,9 @@ export const createAuthApi = ({
         headers: FORM_HEADERS,
       },
     );
-    if (isMember(response.body)) {
-      return response.body;
-    }
-
-    return createCompatMember(response.body);
+    return isMember(response.body)
+      ? response.body
+      : createCompatMember(response.body);
   },
   requestPasswordResetEmail: async (payload) => {
     const response = await client.post<PasswordForgotResponse>(
