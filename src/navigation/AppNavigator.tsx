@@ -87,20 +87,29 @@ const getRouteKey = (
 };
 
 const getTransitionOffset = (previousKey: string, nextKey: string): number => {
+  const isAuthRouteKey = (routeKey: string, authRoute: string) =>
+    routeKey.startsWith(`auth:${authRoute}:`);
+
   if (previousKey === nextKey) {
     return 0;
   }
 
-  if (previousKey === 'auth:login' && nextKey === 'auth:register') {
+  if (
+    isAuthRouteKey(previousKey, 'login')
+    && isAuthRouteKey(nextKey, 'register')
+  ) {
     return 34;
   }
 
-  if (previousKey === 'auth:register' && nextKey === 'auth:login') {
+  if (
+    isAuthRouteKey(previousKey, 'register')
+    && isAuthRouteKey(nextKey, 'login')
+  ) {
     return -34;
   }
 
   if (previousKey.startsWith('auth:') && nextKey.startsWith('auth:')) {
-    return nextKey === 'auth:login' ? -24 : 24;
+    return isAuthRouteKey(nextKey, 'login') ? -24 : 24;
   }
 
   if (nextKey.startsWith('app:')) {

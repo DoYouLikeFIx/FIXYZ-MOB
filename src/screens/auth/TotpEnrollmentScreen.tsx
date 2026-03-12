@@ -96,9 +96,11 @@ export const TotpEnrollmentScreen = ({
     }
 
     previousChallengeTokenRef.current = challenge.loginToken;
+    bootstrapRequestIdRef.current += 1;
     setBootstrap(null);
     setOtpCode('');
     setErrorMessage(null);
+    setIsLoadingBootstrap(false);
     setShouldLoadBootstrap(true);
   }, [challenge.loginToken]);
 
