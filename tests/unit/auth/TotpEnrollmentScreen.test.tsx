@@ -49,9 +49,10 @@ const createDeferred = <T,>() => {
 
 const renderScreen = (
   onLoadEnrollment: () => Promise<TotpEnrollmentBootstrapResult>,
+  challenge: LoginChallenge = challengeFixture,
 ) => create(
   <TotpEnrollmentScreen
-    challenge={challengeFixture}
+    challenge={challenge}
     onLoadEnrollment={onLoadEnrollment}
     onLoginPress={() => {}}
     onRegisterPress={() => {}}
@@ -61,8 +62,26 @@ const renderScreen = (
 );
 
 describe('TotpEnrollmentScreen', () => {
+  let renderer: ReturnType<typeof create> | null = null;
+  const getRendererRoot = () => {
+    if (!renderer) {
+      throw new Error('Renderer has not been created yet.');
+    }
+
+    return renderer.root;
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    if (renderer) {
+      act(() => {
+        renderer?.unmount();
+      });
+    }
+    renderer = null;
   });
 
   it('does not loop enrollment bootstrap requests after an initial failure', async () => {
@@ -76,14 +95,13 @@ describe('TotpEnrollmentScreen', () => {
     };
     const deferredBootstrap = createDeferred<TotpEnrollmentBootstrapResult>();
     const onLoadEnrollment = vi.fn(() => deferredBootstrap.promise);
-    let renderer!: ReturnType<typeof create>;
 
     act(() => {
       renderer = renderScreen(onLoadEnrollment);
     });
 
     expect(onLoadEnrollment).toHaveBeenCalledTimes(1);
-    expect(findAllByTestId(renderer.root, 'totp-enroll-loading')).toHaveLength(1);
+    expect(findAllByTestId(getRendererRoot(), 'totp-enroll-loading')).toHaveLength(1);
 
     await act(async () => {
       deferredBootstrap.resolve(failureResult);
@@ -95,8 +113,8 @@ describe('TotpEnrollmentScreen', () => {
     });
 
     expect(onLoadEnrollment).toHaveBeenCalledTimes(1);
-    expect(findAllByTestId(renderer.root, 'totp-enroll-loading')).toHaveLength(0);
-    expect(findAllByTestId(renderer.root, 'totp-enroll-retry')).toHaveLength(1);
+    expect(findAllByTestId(getRendererRoot(), 'totp-enroll-loading')).toHaveLength(0);
+    expect(findAllByTestId(getRendererRoot(), 'totp-enroll-retry')).toHaveLength(1);
   });
 
   it('retries enrollment bootstrap only when the user explicitly asks', async () => {
@@ -114,7 +132,6 @@ describe('TotpEnrollmentScreen', () => {
       .fn<() => Promise<TotpEnrollmentBootstrapResult>>()
       .mockImplementationOnce(() => initialBootstrap.promise)
       .mockImplementationOnce(() => retryBootstrap.promise);
-    let renderer!: ReturnType<typeof create>;
 
     act(() => {
       renderer = renderScreen(onLoadEnrollment);
@@ -129,7 +146,7 @@ describe('TotpEnrollmentScreen', () => {
       await flushPromises();
     });
 
-    const retryButton = findByTestId(renderer.root, 'totp-enroll-retry');
+    const retryButton = findByTestId(getRendererRoot(), 'totp-enroll-retry');
 
     await act(async () => {
       retryButton.props.onPress();
@@ -153,7 +170,6 @@ describe('TotpEnrollmentScreen', () => {
         expiresAt: '2026-03-12T10:08:00Z',
       },
     }));
-    let renderer!: ReturnType<typeof create>;
 
     act(() => {
       renderer = renderScreen(onLoadEnrollment);
@@ -164,7 +180,7 @@ describe('TotpEnrollmentScreen', () => {
     });
 
     const openAuthenticatorButton = findByTestId(
-      renderer.root,
+      getRendererRoot(),
       'totp-enroll-open-authenticator',
     );
 
@@ -176,5 +192,72 @@ describe('TotpEnrollmentScreen', () => {
     expect(Linking.openURL).toHaveBeenCalledWith(
       'otpauth://totp/FIX:demo@fix.com?secret=ABC123',
     );
+  });
+
+  it('ignores a stale enrollment bootstrap response after the challenge token changes', async () => {
+    const firstBootstrap = createDeferred<TotpEnrollmentBootstrapResult>();
+    const secondBootstrap = createDeferred<TotpEnrollmentBootstrapResult>();
+    const onLoadEnrollment = vi
+      .fn<() => Promise<TotpEnrollmentBootstrapResult>>()
+      .mockImplementationOnce(() => firstBootstrap.promise)
+      .mockImplementationOnce(() => secondBootstrap.promise);
+
+    act(() => {
+      renderer = renderScreen(onLoadEnrollment);
+    });
+
+    expect(onLoadEnrollment).toHaveBeenCalledTimes(1);
+
+    const nextChallenge: LoginChallenge = {
+      ...challengeFixture,
+      loginToken: 'login-token-2',
+      expiresAt: '2026-03-12T10:12:00Z',
+    };
+
+    await act(async () => {
+      renderer?.update(
+        <TotpEnrollmentScreen
+          challenge={nextChallenge}
+          onLoadEnrollment={onLoadEnrollment}
+          onLoginPress={() => {}}
+          onRegisterPress={() => {}}
+          onRestartLogin={() => {}}
+          onSubmit={async () => ({ success: true })}
+        />,
+      );
+      await flushPromises();
+    });
+
+    expect(onLoadEnrollment).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      firstBootstrap.resolve({
+        success: true,
+        enrollment: {
+          qrUri: 'otpauth://totp/FIX:demo@fix.com?secret=OLD123',
+          manualEntryKey: 'OLD123',
+          enrollmentToken: 'enrollment-token-old',
+          expiresAt: '2026-03-12T10:08:00Z',
+        },
+      });
+      await flushPromises();
+    });
+
+    expect(findAllByTestId(getRendererRoot(), 'totp-enroll-manual-key')).toHaveLength(0);
+
+    await act(async () => {
+      secondBootstrap.resolve({
+        success: true,
+        enrollment: {
+          qrUri: 'otpauth://totp/FIX:demo@fix.com?secret=NEW456',
+          manualEntryKey: 'NEW456',
+          enrollmentToken: 'enrollment-token-new',
+          expiresAt: '2026-03-12T10:12:00Z',
+        },
+      });
+      await flushPromises();
+    });
+
+    expect(findByTestId(getRendererRoot(), 'totp-enroll-manual-key').props.children).toBe('NEW456');
   });
 });
