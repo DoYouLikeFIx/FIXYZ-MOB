@@ -699,6 +699,7 @@ const issueLoginChallenge = (profile, nextAction) => {
   return {
     loginToken,
     nextAction,
+    totpEnrolled: profile.member.totpEnrolled,
     expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
     enrollUrl: nextAction === 'ENROLL_TOTP' ? '/settings/totp/enroll' : undefined,
   };
