@@ -14,7 +14,7 @@ import {
 import {
   type RegisterField,
 } from '../../types/auth-ui';
-import type { AuthMutationResult } from '../../types/auth-ui';
+import type { FormSubmissionResult } from '../../types/auth-ui';
 import type { RegisterRequest } from '../../types/auth';
 import { REGISTER_EMAIL_USAGE_HINT } from '../../auth/auth-copy';
 import {
@@ -27,7 +27,7 @@ import { AuthField } from '../../components/auth/AuthField';
 import { authSharedStyles as styles } from '../../components/auth/auth-styles';
 
 interface RegisterScreenProps {
-  onSubmit: (payload: RegisterRequest) => Promise<AuthMutationResult>;
+  onSubmit: (payload: RegisterRequest) => Promise<FormSubmissionResult>;
   onLoginPress: () => void;
 }
 

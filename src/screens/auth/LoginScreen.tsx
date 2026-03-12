@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
 import type { LoginRequest } from '../../types/auth';
-import type { AuthMutationResult } from '../../types/auth-ui';
+import type { FormSubmissionResult } from '../../types/auth-ui';
 import { buildPasswordRecoveryGuidance } from '../../auth/auth-copy';
 import { useLoginViewModel } from '../../auth/use-login-view-model';
 import { AuthField } from '../../components/auth/AuthField';
@@ -13,7 +13,7 @@ interface LoginScreenProps {
   bannerMessage?: string | null;
   bannerTone?: 'info' | 'error' | 'success';
   onForgotPasswordPress: () => void;
-  onSubmit: (payload: LoginRequest) => Promise<AuthMutationResult>;
+  onSubmit: (payload: LoginRequest) => Promise<FormSubmissionResult>;
   onRegisterPress: () => void;
   onLoginPress: () => void;
 }
