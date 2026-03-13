@@ -22,6 +22,7 @@ const SUPPORT_REFERENCE_LABEL = '문의 코드';
 
 type AuthErrorSemantic =
   | 'invalid-credentials'
+  | 'current-password-mismatch'
   | 'account-locked'
   | 'reauth-required'
   | 'withdrawn-account'
@@ -30,6 +31,10 @@ type AuthErrorSemantic =
   | 'password-reset-token-consumed'
   | 'password-reset-rate-limited'
   | 'password-reset-same-password'
+  | 'recovery-challenge-invalid'
+  | 'recovery-challenge-bootstrap-unavailable'
+  | 'recovery-challenge-replayed'
+  | 'recovery-challenge-verify-unavailable'
   | 'duplicate-email'
   | 'rate-limited'
   | 'validation'
@@ -46,6 +51,8 @@ type AuthRecoveryAction =
   | 'fix-password'
   | 'request-password-reset'
   | 'request-new-reset-link'
+  | 'refresh-challenge'
+  | 'restart-recovery-challenge'
   | 'change-email'
   | 'check-input'
   | 'retry-register'
@@ -71,7 +78,9 @@ export interface MfaErrorPresentation {
   message: string;
   restartLogin: boolean;
   navigateToEnroll: boolean;
+  navigateToRecovery: boolean;
   enrollUrl?: string;
+  recoveryUrl?: string;
 }
 
 const AUTH_TEMPLATE_BY_CODE: Record<string, AuthErrorTemplate> = {
@@ -84,6 +93,11 @@ const AUTH_TEMPLATE_BY_CODE: Record<string, AuthErrorTemplate> = {
     semantic: 'account-locked',
     recoveryAction: 'retry-later',
     message: '로그인 시도가 잠겨 있습니다. 잠시 후 다시 시도해 주세요.',
+  },
+  'AUTH-026': {
+    semantic: 'current-password-mismatch',
+    recoveryAction: 'retry-credentials',
+    message: '현재 비밀번호가 일치하지 않습니다. 다시 입력해 주세요.',
   },
   'AUTH-003': {
     semantic: 'reauth-required',
@@ -119,6 +133,26 @@ const AUTH_TEMPLATE_BY_CODE: Record<string, AuthErrorTemplate> = {
     semantic: 'password-reset-same-password',
     recoveryAction: 'fix-password',
     message: '현재 비밀번호와 다른 새 비밀번호를 입력해 주세요.',
+  },
+  'AUTH-022': {
+    semantic: 'recovery-challenge-invalid',
+    recoveryAction: 'refresh-challenge',
+    message: '보안 확인이 유효하지 않거나 만료되었습니다. 새 보안 확인을 다시 진행해 주세요.',
+  },
+  'AUTH-023': {
+    semantic: 'recovery-challenge-bootstrap-unavailable',
+    recoveryAction: 'retry-later',
+    message: '지금은 보안 확인을 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.',
+  },
+  'AUTH-024': {
+    semantic: 'recovery-challenge-replayed',
+    recoveryAction: 'refresh-challenge',
+    message: '이미 사용된 보안 확인입니다. 새 보안 확인을 다시 받아 주세요.',
+  },
+  'AUTH-025': {
+    semantic: 'recovery-challenge-verify-unavailable',
+    recoveryAction: 'restart-recovery-challenge',
+    message: '보안 확인을 검증하는 중 문제가 발생했습니다. 현재 보안 확인을 지우고 다시 시작해 주세요.',
   },
   'AUTH-017': {
     semantic: 'duplicate-email',
@@ -278,6 +312,10 @@ const getMfaErrorOptions = (error: unknown) =>
           'enrollUrl' in error && typeof (error as Partial<NormalizedHttpError>).enrollUrl === 'string'
             ? (error as Partial<NormalizedHttpError>).enrollUrl
             : undefined,
+        recoveryUrl:
+          'recoveryUrl' in error && typeof (error as Partial<NormalizedHttpError>).recoveryUrl === 'string'
+            ? (error as Partial<NormalizedHttpError>).recoveryUrl
+            : undefined,
       }
     : {
         code: undefined,
@@ -285,6 +323,7 @@ const getMfaErrorOptions = (error: unknown) =>
         traceId: undefined,
         retryAfterSeconds: undefined,
         enrollUrl: undefined,
+        recoveryUrl: undefined,
       };
 
 export const resolveMfaErrorPresentation = (
@@ -296,6 +335,7 @@ export const resolveMfaErrorPresentation = (
     traceId,
     retryAfterSeconds,
     enrollUrl,
+    recoveryUrl,
   } = getMfaErrorOptions(error);
 
   if (code === 'AUTH-009') {
@@ -304,7 +344,18 @@ export const resolveMfaErrorPresentation = (
       message: 'Google Authenticator 등록이 필요합니다. 인증 앱을 연결한 뒤 첫 코드를 확인해 주세요.',
       restartLogin: false,
       navigateToEnroll: true,
+      navigateToRecovery: false,
       enrollUrl,
+    };
+  }
+
+  if (code === 'AUTH-026') {
+    return {
+      code,
+      message: '현재 비밀번호가 일치하지 않습니다. 다시 입력해 주세요.',
+      restartLogin: false,
+      navigateToEnroll: false,
+      navigateToRecovery: false,
     };
   }
 
@@ -314,6 +365,7 @@ export const resolveMfaErrorPresentation = (
       message: '인증 코드가 올바르지 않습니다. 앱에 표시된 현재 6자리 코드를 다시 입력해 주세요.',
       restartLogin: false,
       navigateToEnroll: false,
+      navigateToRecovery: false,
     };
   }
 
@@ -323,6 +375,7 @@ export const resolveMfaErrorPresentation = (
       message: '방금 사용한 인증 코드는 다시 사용할 수 없습니다. 새로운 6자리 코드를 입력해 주세요.',
       restartLogin: false,
       navigateToEnroll: false,
+      navigateToRecovery: false,
     };
   }
 
@@ -332,6 +385,38 @@ export const resolveMfaErrorPresentation = (
       message: '인증 단계가 만료되었습니다. 이메일과 비밀번호부터 다시 로그인해 주세요.',
       restartLogin: true,
       navigateToEnroll: false,
+      navigateToRecovery: false,
+    };
+  }
+
+  if (code === 'AUTH-019') {
+    return {
+      code,
+      message: '복구 단계가 유효하지 않거나 만료되었습니다. 비밀번호 재설정을 다시 진행해 주세요.',
+      restartLogin: false,
+      navigateToEnroll: false,
+      navigateToRecovery: false,
+    };
+  }
+
+  if (code === 'AUTH-020') {
+    return {
+      code,
+      message: '이미 사용된 복구 단계입니다. 비밀번호 재설정을 다시 진행해 주세요.',
+      restartLogin: false,
+      navigateToEnroll: false,
+      navigateToRecovery: false,
+    };
+  }
+
+  if (code === 'AUTH-021') {
+    return {
+      code,
+      message: '기존 인증기를 사용할 수 없어 복구가 필요합니다. 새 인증 앱을 연결하는 복구 단계를 진행해 주세요.',
+      restartLogin: false,
+      navigateToEnroll: false,
+      navigateToRecovery: true,
+      recoveryUrl,
     };
   }
 
@@ -344,6 +429,7 @@ export const resolveMfaErrorPresentation = (
           : '인증 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.',
       restartLogin: false,
       navigateToEnroll: false,
+      navigateToRecovery: false,
     };
   }
 
@@ -352,6 +438,7 @@ export const resolveMfaErrorPresentation = (
       message: '보안 토큰을 다시 확인했습니다. 같은 작업을 한 번 더 시도해 주세요.',
       restartLogin: false,
       navigateToEnroll: false,
+      navigateToRecovery: false,
     };
   }
 
@@ -365,6 +452,7 @@ export const resolveMfaErrorPresentation = (
         : fallback.message,
     restartLogin: fallback.semantic === 'reauth-required',
     navigateToEnroll: false,
+    navigateToRecovery: false,
   };
 };
 

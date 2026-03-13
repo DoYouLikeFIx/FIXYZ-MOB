@@ -3,7 +3,9 @@ export type AuthRoute =
   | 'register'
   | 'forgotPassword'
   | 'resetPassword'
-  | 'totpEnroll';
+  | 'totpEnroll'
+  | 'mfaRecovery'
+  | 'mfaRecoveryRebind';
 export type ProtectedRoute = 'portfolio';
 export type WelcomeVariant = 'login' | 'register' | null;
 
@@ -72,6 +74,26 @@ export const openTotpEnrollRoute = (
   ...state,
   stack: 'auth',
   authRoute: 'totpEnroll',
+  resetPasswordToken: null,
+  welcomeVariant: null,
+});
+
+export const openMfaRecoveryRoute = (
+  state: AuthNavigationState,
+): AuthNavigationState => ({
+  ...state,
+  stack: 'auth',
+  authRoute: 'mfaRecovery',
+  resetPasswordToken: null,
+  welcomeVariant: null,
+});
+
+export const openMfaRecoveryRebindRoute = (
+  state: AuthNavigationState,
+): AuthNavigationState => ({
+  ...state,
+  stack: 'auth',
+  authRoute: 'mfaRecoveryRebind',
   resetPasswordToken: null,
   welcomeVariant: null,
 });

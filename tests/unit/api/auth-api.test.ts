@@ -9,6 +9,12 @@ const memberFixture: Member = {
   totpEnrolled: false,
 };
 
+const response = <T,>(statusCode: number, body: T, headers = new Headers()) => ({
+  statusCode,
+  body,
+  headers,
+});
+
 describe('auth api', () => {
   const client = {
     get: vi.fn(),
@@ -29,6 +35,7 @@ describe('auth api', () => {
     client.get.mockResolvedValue({
       statusCode: 200,
       body: memberFixture,
+      headers: new Headers(),
     });
 
     const authApi = createAuthApi({ client });
@@ -38,15 +45,12 @@ describe('auth api', () => {
   });
 
   it('starts the password-only login challenge contract', async () => {
-    client.post.mockResolvedValue({
-      statusCode: 200,
-      body: {
+    client.post.mockResolvedValue(response(200, {
         loginToken: 'login-token',
         nextAction: 'VERIFY_TOTP',
         totpEnrolled: true,
         expiresAt: '2026-03-12T10:00:00Z',
-      },
-    });
+      }));
 
     const authApi = createAuthApi({ client, csrfManager });
 
@@ -75,14 +79,11 @@ describe('auth api', () => {
   });
 
   it('registers a member without forcing an immediate csrf refresh before follow-up login', async () => {
-    client.post.mockResolvedValue({
-      statusCode: 200,
-      body: {
+    client.post.mockResolvedValue(response(200, {
         memberId: 1,
         email: 'new@fix.com',
         name: 'New User',
-      },
-    });
+      }));
 
     const authApi = createAuthApi({ client, csrfManager });
 
@@ -113,15 +114,12 @@ describe('auth api', () => {
   });
 
   it('verifies the submitted OTP and refreshes csrf bootstrap state for subsequent protected calls', async () => {
-    client.post.mockResolvedValue({
-      statusCode: 200,
-      body: {
+    client.post.mockResolvedValue(response(200, {
         memberId: 1,
         email: 'demo@fix.com',
         name: 'Demo User',
         totpEnrolled: true,
-      },
-    });
+      }));
 
     const authApi = createAuthApi({ client, csrfManager });
 
@@ -150,15 +148,12 @@ describe('auth api', () => {
   });
 
   it('bootstraps TOTP enrollment with the pending login token', async () => {
-    client.post.mockResolvedValue({
-      statusCode: 200,
-      body: {
+    client.post.mockResolvedValue(response(200, {
         qrUri: 'otpauth://totp/FIX:demo@fix.com?secret=ABC123',
         manualEntryKey: 'ABC123',
         enrollmentToken: 'enrollment-token',
         expiresAt: '2026-03-12T10:05:00Z',
-      },
-    });
+      }));
 
     const authApi = createAuthApi({ client, csrfManager });
 
@@ -182,15 +177,12 @@ describe('auth api', () => {
   });
 
   it('confirms TOTP enrollment and refreshes csrf bootstrap state for the new session', async () => {
-    client.post.mockResolvedValue({
-      statusCode: 200,
-      body: {
+    client.post.mockResolvedValue(response(200, {
         memberId: 1,
         email: 'demo@fix.com',
         name: 'Demo User',
         totpEnrolled: true,
-      },
-    });
+      }));
 
     const authApi = createAuthApi({ client, csrfManager });
 
@@ -221,17 +213,14 @@ describe('auth api', () => {
   });
 
   it('submits the forgot-password payload as JSON', async () => {
-    client.post.mockResolvedValue({
-      statusCode: 202,
-      body: {
+    client.post.mockResolvedValue(response(202, {
         accepted: true,
         message: 'If the account is eligible, a reset email will be sent.',
         recovery: {
           challengeEndpoint: '/api/v1/auth/password/forgot/challenge',
           challengeMayBeRequired: true,
         },
-      },
-    });
+      }));
 
     const authApi = createAuthApi({ client, csrfManager });
 
@@ -257,14 +246,11 @@ describe('auth api', () => {
   });
 
   it('bootstraps a password-recovery challenge as JSON', async () => {
-    client.post.mockResolvedValue({
-      statusCode: 200,
-      body: {
+    client.post.mockResolvedValue(response(200, {
         challengeToken: 'challenge-token',
         challengeType: 'captcha',
         challengeTtlSeconds: 300,
-      },
-    });
+      }));
 
     const authApi = createAuthApi({ client, csrfManager });
 
@@ -287,10 +273,7 @@ describe('auth api', () => {
   });
 
   it('submits the password-reset payload as JSON', async () => {
-    client.post.mockResolvedValue({
-      statusCode: 204,
-      body: null,
-    });
+    client.post.mockResolvedValue(response(204, null));
 
     const authApi = createAuthApi({ client, csrfManager });
 
@@ -299,7 +282,7 @@ describe('auth api', () => {
         token: 'reset-token',
         newPassword: 'Test1234!',
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({});
 
     expect(client.post).toHaveBeenCalledWith(
       '/api/v1/auth/password/reset',
@@ -308,5 +291,141 @@ describe('auth api', () => {
         newPassword: 'Test1234!',
       },
     );
+  });
+
+  it('returns MFA recovery continuation when reset response headers include proof metadata', async () => {
+    client.post.mockResolvedValue(
+      response(204, null, new Headers({
+        'X-MFA-Recovery-Proof': 'recovery-proof-token',
+        'X-MFA-Recovery-Proof-Expires-In': '600',
+      })),
+    );
+
+    const authApi = createAuthApi({ client, csrfManager });
+
+    await expect(
+      authApi.resetPassword({
+        token: 'reset-token',
+        newPassword: 'Test1234!',
+      }),
+    ).resolves.toEqual({
+      recoveryProof: 'recovery-proof-token',
+      recoveryProofExpiresInSeconds: 600,
+    });
+  });
+
+  it('bootstraps authenticated TOTP rebind as JSON', async () => {
+    client.post.mockResolvedValue(response(200, {
+      rebindToken: 'rebind-token',
+      qrUri: 'otpauth://totp/FIX:demo@fix.com?secret=ABC123',
+      manualEntryKey: 'ABC123',
+      enrollmentToken: 'enrollment-token',
+      expiresAt: '2026-03-12T10:05:00Z',
+    }));
+
+    const authApi = createAuthApi({ client, csrfManager });
+
+    await expect(
+      authApi.bootstrapAuthenticatedTotpRebind({
+        currentPassword: 'Test1234!',
+      }),
+    ).resolves.toEqual({
+      rebindToken: 'rebind-token',
+      qrUri: 'otpauth://totp/FIX:demo@fix.com?secret=ABC123',
+      manualEntryKey: 'ABC123',
+      enrollmentToken: 'enrollment-token',
+      expiresAt: '2026-03-12T10:05:00Z',
+    });
+
+    expect(client.post).toHaveBeenCalledWith(
+      '/api/v1/members/me/totp/rebind',
+      {
+        currentPassword: 'Test1234!',
+      },
+    );
+  });
+
+  it('bootstraps recovery-based TOTP rebind as JSON', async () => {
+    client.post.mockResolvedValue(response(200, {
+      rebindToken: 'rebind-token',
+      qrUri: 'otpauth://totp/FIX:demo@fix.com?secret=ABC123',
+      manualEntryKey: 'ABC123',
+      enrollmentToken: 'enrollment-token',
+      expiresAt: '2026-03-12T10:05:00Z',
+    }));
+
+    const authApi = createAuthApi({ client, csrfManager });
+
+    await expect(
+      authApi.bootstrapRecoveryTotpRebind({
+        recoveryProof: 'recovery-proof-token',
+      }),
+    ).resolves.toEqual({
+      rebindToken: 'rebind-token',
+      qrUri: 'otpauth://totp/FIX:demo@fix.com?secret=ABC123',
+      manualEntryKey: 'ABC123',
+      enrollmentToken: 'enrollment-token',
+      expiresAt: '2026-03-12T10:05:00Z',
+    });
+
+    expect(client.post).toHaveBeenCalledWith(
+      '/api/v1/auth/mfa-recovery/rebind',
+      {
+        recoveryProof: 'recovery-proof-token',
+      },
+    );
+  });
+
+  it('confirms MFA recovery rebind as JSON', async () => {
+    client.post.mockResolvedValue(response(200, {
+      rebindCompleted: true,
+      reauthRequired: true,
+    }));
+
+    const authApi = createAuthApi({ client, csrfManager });
+
+    await expect(
+      authApi.confirmMfaRecoveryRebind({
+        rebindToken: 'rebind-token',
+        enrollmentToken: 'enrollment-token',
+        otpCode: '123456',
+      }),
+    ).resolves.toEqual({
+      rebindCompleted: true,
+      reauthRequired: true,
+    });
+
+    expect(client.post).toHaveBeenCalledWith(
+      '/api/v1/auth/mfa-recovery/rebind/confirm',
+      {
+        rebindToken: 'rebind-token',
+        enrollmentToken: 'enrollment-token',
+        otpCode: '123456',
+      },
+    );
+    expect(csrfManager.onLoginSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not mask a successful MFA recovery rebind when csrf bootstrap refresh fails', async () => {
+    client.post.mockResolvedValue(response(200, {
+      rebindCompleted: true,
+      reauthRequired: true,
+    }));
+    csrfManager.onLoginSuccess.mockRejectedValueOnce(new Error('csrf bootstrap unavailable'));
+
+    const authApi = createAuthApi({ client, csrfManager });
+
+    await expect(
+      authApi.confirmMfaRecoveryRebind({
+        rebindToken: 'rebind-token',
+        enrollmentToken: 'enrollment-token',
+        otpCode: '123456',
+      }),
+    ).resolves.toEqual({
+      rebindCompleted: true,
+      reauthRequired: true,
+    });
+
+    expect(csrfManager.onLoginSuccess).toHaveBeenCalledTimes(1);
   });
 });

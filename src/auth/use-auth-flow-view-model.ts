@@ -4,6 +4,8 @@ import { AppState, Linking } from 'react-native';
 import type { AuthState } from '../store/auth-store';
 import type {
   LoginRequest,
+  MemberTotpRebindRequest,
+  MfaRecoveryRebindConfirmRequest,
   PasswordForgotRequest,
   PasswordRecoveryChallengeRequest,
   PasswordResetRequest,
@@ -16,6 +18,7 @@ import {
   type AuthServiceAdapter,
   type AuthStoreAdapter,
   createAuthFlowViewModel,
+  type RestartMfaRecoveryOptions,
 } from './auth-flow-view-model';
 import { extractPasswordResetTokenFromUrl } from './password-reset-handoff';
 
@@ -100,6 +103,9 @@ export const useAuthFlowViewModel = ({
     onOpenLogin: () => {
       viewModelRef.current?.openLogin();
     },
+    onRequireEnrollmentRestart: (message: string) => {
+      viewModelRef.current?.requireEnrollmentRestart(message);
+    },
     onOpenRegister: () => {
       viewModelRef.current?.openRegister();
     },
@@ -108,6 +114,9 @@ export const useAuthFlowViewModel = ({
     },
     onOpenResetPassword: (token?: string) => {
       viewModelRef.current?.openResetPassword(token);
+    },
+    onOpenAuthenticatedMfaRecovery: () => {
+      viewModelRef.current?.openAuthenticatedMfaRecovery();
     },
     onLoginSubmit: (payload: LoginRequest) =>
       viewModelRef.current!.submitLogin(payload),
@@ -128,6 +137,15 @@ export const useAuthFlowViewModel = ({
       viewModelRef.current!.submitPasswordRecoveryChallenge(payload),
     onPasswordResetSubmit: (payload: PasswordResetRequest) =>
       viewModelRef.current!.submitPasswordReset(payload),
+    onAuthenticatedMfaRecoveryBootstrap: (payload: MemberTotpRebindRequest) =>
+      viewModelRef.current!.bootstrapAuthenticatedMfaRecovery(payload),
+    onRecoveryMfaRecoveryBootstrap: () =>
+      viewModelRef.current!.bootstrapRecoveryMfaRecovery(),
+    onRestartMfaRecovery: (options?: RestartMfaRecoveryOptions) => {
+      viewModelRef.current?.restartMfaRecovery(options);
+    },
+    onSubmitMfaRecoveryRebind: (payload: MfaRecoveryRebindConfirmRequest) =>
+      viewModelRef.current!.submitMfaRecoveryRebindConfirmation(payload),
     onRefreshProtectedSession: () => {
       void viewModelRef.current?.refreshProtectedSession('manual');
     },

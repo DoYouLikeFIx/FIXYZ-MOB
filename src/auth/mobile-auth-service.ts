@@ -3,10 +3,13 @@ import { bootstrapAppSession } from '../bootstrap/app-bootstrap';
 import type { CsrfTokenManager } from '../network/csrf';
 import type {
   LoginRequest,
+  MemberTotpRebindRequest,
+  MfaRecoveryRebindConfirmRequest,
   PasswordForgotRequest,
   PasswordRecoveryChallengeRequest,
   PasswordResetRequest,
   RegisterRequest,
+  MfaRecoveryRebindRequest,
   TotpEnrollmentConfirmationRequest,
   TotpEnrollmentRequest,
   TotpVerificationRequest,
@@ -15,10 +18,12 @@ import type {
   AuthMutationResult,
   BootstrapResult,
   LoginPhaseResult,
+  MfaRecoveryRebindConfirmationResult,
   PasswordForgotResult,
   PasswordRecoveryChallengeResult,
   PasswordResetResult,
   ProtectedRequestResult,
+  TotpRebindBootstrapResult,
   TotpEnrollmentBootstrapResult,
 } from '../types/auth-ui';
 
@@ -220,10 +225,65 @@ export const createMobileAuthService = ({
     payload: PasswordResetRequest,
   ): Promise<PasswordResetResult> {
     try {
-      await authApi.resetPassword(payload);
+      const continuation = await authApi.resetPassword(payload);
 
       return {
         success: true,
+        continuation,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error,
+      };
+    }
+  },
+
+  async bootstrapAuthenticatedTotpRebind(
+    payload: MemberTotpRebindRequest,
+  ): Promise<TotpRebindBootstrapResult> {
+    try {
+      const bootstrap = await authApi.bootstrapAuthenticatedTotpRebind(payload);
+
+      return {
+        success: true,
+        bootstrap,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error,
+      };
+    }
+  },
+
+  async bootstrapRecoveryTotpRebind(
+    payload: MfaRecoveryRebindRequest,
+  ): Promise<TotpRebindBootstrapResult> {
+    try {
+      const bootstrap = await authApi.bootstrapRecoveryTotpRebind(payload);
+
+      return {
+        success: true,
+        bootstrap,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error,
+      };
+    }
+  },
+
+  async confirmMfaRecoveryRebind(
+    payload: MfaRecoveryRebindConfirmRequest,
+  ): Promise<MfaRecoveryRebindConfirmationResult> {
+    try {
+      const response = await authApi.confirmMfaRecoveryRebind(payload);
+
+      return {
+        success: true,
+        response,
       };
     } catch (error) {
       return {

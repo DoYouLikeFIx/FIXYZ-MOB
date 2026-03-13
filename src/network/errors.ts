@@ -23,6 +23,7 @@ interface DirectApiErrorPayload {
   operatorCode?: string;
   retryAfterSeconds?: unknown;
   enrollUrl?: string;
+  recoveryUrl?: string;
   userMessageKey?: string;
   timestamp?: string;
 }
@@ -78,6 +79,7 @@ export const createNormalizedHttpError = (
     retriable?: boolean;
     traceId?: string;
     enrollUrl?: string;
+    recoveryUrl?: string;
     userMessageKey?: string;
   },
 ): NormalizedHttpError => {
@@ -91,6 +93,7 @@ export const createNormalizedHttpError = (
   normalized.retriable = options?.retriable;
   normalized.traceId = options?.traceId;
   normalized.enrollUrl = options?.enrollUrl;
+  normalized.recoveryUrl = options?.recoveryUrl;
   normalized.userMessageKey = options?.userMessageKey;
 
   return normalized;
@@ -160,6 +163,7 @@ export const normalizeHttpError = (
         status: input.status,
         traceId: input.data.traceId,
         enrollUrl: input.data.error.enrollUrl ?? undefined,
+        recoveryUrl: input.data.error.recoveryUrl ?? undefined,
         userMessageKey: input.data.error.userMessageKey ?? undefined,
       },
     );
@@ -179,6 +183,7 @@ export const normalizeHttpError = (
         status: input.status,
         traceId: input.data.correlationId,
         enrollUrl: input.data.enrollUrl,
+        recoveryUrl: input.data.recoveryUrl,
         userMessageKey: input.data.userMessageKey,
       },
     );

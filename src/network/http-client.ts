@@ -182,12 +182,14 @@ export class HttpClient {
           return {
             statusCode: response.status,
             body: data.data as T,
+            headers: response.headers,
           };
         }
 
         return {
           statusCode: response.status,
           body: data as T,
+          headers: response.headers,
         };
       } catch (error: unknown) {
         if (isNormalizedHttpError(error)) {

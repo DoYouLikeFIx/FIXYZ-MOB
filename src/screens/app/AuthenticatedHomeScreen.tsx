@@ -23,6 +23,7 @@ interface AuthenticatedHomeScreenProps {
   welcomeVariant: 'login' | 'register' | null;
   sessionErrorMessage?: string | null;
   isRefreshingSession: boolean;
+  onOpenMfaRecovery: () => void;
   onRefreshSession: () => void;
 }
 
@@ -33,6 +34,7 @@ export const AuthenticatedHomeScreen = ({
   welcomeVariant,
   sessionErrorMessage,
   isRefreshingSession,
+  onOpenMfaRecovery,
   onRefreshSession,
 }: AuthenticatedHomeScreenProps) => {
   const hasOrderAccount = hasExternalOrderAccountId(member.accountId);
@@ -929,6 +931,31 @@ export const AuthenticatedHomeScreen = ({
               </Text>
             </View>
           ))}
+          {member.totpEnrolled ? (
+            <Pressable
+              onPress={onOpenMfaRecovery}
+              style={{
+                minHeight: 48,
+                borderRadius: 16,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: palette.accentSoft,
+                borderWidth: 1,
+                borderColor: '#F6D5BA',
+              }}
+              testID="mobile-open-mfa-recovery"
+            >
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: '800',
+                  color: palette.accentDeep,
+                }}
+              >
+                Authenticator 재연결
+              </Text>
+            </Pressable>
+          ) : null}
           <View
             style={{
               borderRadius: 18,

@@ -18,6 +18,7 @@ const createHttpError = (
   error.status = overrides.status;
   error.detail = overrides.detail;
   error.retriable = overrides.retriable;
+  error.recoveryUrl = overrides.recoveryUrl;
 
   return error;
 };
@@ -33,6 +34,9 @@ describe('mobile auth service', () => {
     requestPasswordResetEmail: vi.fn(),
     requestPasswordRecoveryChallenge: vi.fn(),
     resetPassword: vi.fn(),
+    bootstrapAuthenticatedTotpRebind: vi.fn(),
+    bootstrapRecoveryTotpRebind: vi.fn(),
+    confirmMfaRecoveryRebind: vi.fn(),
   };
 
   const csrfManager = {
@@ -44,8 +48,9 @@ describe('mobile auth service', () => {
     get: vi.fn(async () => ({
       statusCode: 200,
       body: { status: 'UP' },
+      headers: new Headers(),
     })),
-  } as HealthClient;
+  } as unknown as HealthClient;
 
   const service = createMobileAuthService({
     authApi,
@@ -68,12 +73,16 @@ describe('mobile auth service', () => {
     vi.mocked(authApi.requestPasswordResetEmail).mockReset();
     vi.mocked(authApi.requestPasswordRecoveryChallenge).mockReset();
     vi.mocked(authApi.resetPassword).mockReset();
+    vi.mocked(authApi.bootstrapAuthenticatedTotpRebind).mockReset();
+    vi.mocked(authApi.bootstrapRecoveryTotpRebind).mockReset();
+    vi.mocked(authApi.confirmMfaRecoveryRebind).mockReset();
     vi.mocked(csrfManager.onAppColdStart).mockClear();
     vi.mocked(csrfManager.onForegroundResume).mockClear();
     vi.mocked(healthClient.get).mockClear();
     vi.mocked(healthClient.get).mockResolvedValue({
       statusCode: 200,
       body: { status: 'UP' },
+      headers: new Headers(),
     });
   });
 
@@ -344,7 +353,7 @@ describe('mobile auth service', () => {
   });
 
   it('returns success when the password reset completes', async () => {
-    vi.mocked(authApi.resetPassword).mockResolvedValue(undefined);
+    vi.mocked(authApi.resetPassword).mockResolvedValue({});
 
     await expect(
       service.resetPassword({
@@ -353,6 +362,78 @@ describe('mobile auth service', () => {
       }),
     ).resolves.toEqual({
       success: true,
+      continuation: {},
+    });
+  });
+
+  it('bootstraps authenticated TOTP rebind and returns the new enrollment payload', async () => {
+    vi.mocked(authApi.bootstrapAuthenticatedTotpRebind).mockResolvedValue({
+      rebindToken: 'rebind-token',
+      qrUri: 'otpauth://totp/FIX:demo@fix.com?secret=ABC123',
+      manualEntryKey: 'ABC123',
+      enrollmentToken: 'enrollment-token',
+      expiresAt: '2026-03-12T10:05:00Z',
+    });
+
+    await expect(
+      service.bootstrapAuthenticatedTotpRebind({
+        currentPassword: 'Test1234!',
+      }),
+    ).resolves.toEqual({
+      success: true,
+      bootstrap: {
+        rebindToken: 'rebind-token',
+        qrUri: 'otpauth://totp/FIX:demo@fix.com?secret=ABC123',
+        manualEntryKey: 'ABC123',
+        enrollmentToken: 'enrollment-token',
+        expiresAt: '2026-03-12T10:05:00Z',
+      },
+    });
+  });
+
+  it('bootstraps recovery-based TOTP rebind and returns the new enrollment payload', async () => {
+    vi.mocked(authApi.bootstrapRecoveryTotpRebind).mockResolvedValue({
+      rebindToken: 'rebind-token',
+      qrUri: 'otpauth://totp/FIX:demo@fix.com?secret=ABC123',
+      manualEntryKey: 'ABC123',
+      enrollmentToken: 'enrollment-token',
+      expiresAt: '2026-03-12T10:05:00Z',
+    });
+
+    await expect(
+      service.bootstrapRecoveryTotpRebind({
+        recoveryProof: 'recovery-proof-token',
+      }),
+    ).resolves.toEqual({
+      success: true,
+      bootstrap: {
+        rebindToken: 'rebind-token',
+        qrUri: 'otpauth://totp/FIX:demo@fix.com?secret=ABC123',
+        manualEntryKey: 'ABC123',
+        enrollmentToken: 'enrollment-token',
+        expiresAt: '2026-03-12T10:05:00Z',
+      },
+    });
+  });
+
+  it('confirms MFA recovery rebind and returns the completion contract', async () => {
+    vi.mocked(authApi.confirmMfaRecoveryRebind).mockResolvedValue({
+      rebindCompleted: true,
+      reauthRequired: true,
+    });
+
+    await expect(
+      service.confirmMfaRecoveryRebind({
+        rebindToken: 'rebind-token',
+        enrollmentToken: 'enrollment-token',
+        otpCode: '123456',
+      }),
+    ).resolves.toEqual({
+      success: true,
+      response: {
+        rebindCompleted: true,
+        reauthRequired: true,
+      },
     });
   });
 });

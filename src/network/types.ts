@@ -5,6 +5,7 @@ export interface ApiErrorPayload {
   operatorCode?: string | null;
   retryAfterSeconds?: number | null;
   enrollUrl?: string | null;
+  recoveryUrl?: string | null;
   userMessageKey?: string | null;
   timestamp: string;
 }
@@ -23,6 +24,7 @@ export interface NormalizedHttpError extends Error {
   operatorCode?: string;
   retryAfterSeconds?: number;
   enrollUrl?: string;
+  recoveryUrl?: string;
   userMessageKey?: string;
   retriable?: boolean;
   traceId?: string;
@@ -31,4 +33,5 @@ export interface NormalizedHttpError extends Error {
 export interface HttpClientResponse<T> {
   statusCode: number;
   body: T;
+  headers: Headers;
 }

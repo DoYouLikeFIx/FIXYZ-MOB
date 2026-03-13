@@ -323,6 +323,7 @@ describe('E2E tests: mobile password recovery workflow', () => {
 
     expect(result).toEqual({
       success: true,
+      continuation: {},
     });
     expect(
       harness.calls.filter((call) => getPathname(call.url) === '/api/v1/auth/password/reset'),

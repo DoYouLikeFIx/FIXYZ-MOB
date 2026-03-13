@@ -2,6 +2,8 @@ import {
   createAuthNavigationState,
   enterAuthenticatedApp,
   openForgotPasswordRoute,
+  openMfaRecoveryRebindRoute,
+  openMfaRecoveryRoute,
   openResetPasswordRoute,
   openRegisterRoute,
   requireReauthRoute,
@@ -51,6 +53,20 @@ describe('mobile auth navigation state', () => {
       stack: 'auth',
       authRoute: 'resetPassword',
       resetPasswordToken: 'handoff-token',
+    });
+  });
+
+  it('opens dedicated MFA recovery and rebind auth routes', () => {
+    expect(openMfaRecoveryRoute(createAuthNavigationState())).toMatchObject({
+      stack: 'auth',
+      authRoute: 'mfaRecovery',
+      resetPasswordToken: null,
+    });
+
+    expect(openMfaRecoveryRebindRoute(createAuthNavigationState())).toMatchObject({
+      stack: 'auth',
+      authRoute: 'mfaRecoveryRebind',
+      resetPasswordToken: null,
     });
   });
 });

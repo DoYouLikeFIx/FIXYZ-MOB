@@ -4,10 +4,12 @@ import {
   getRegisterErrorFeedback,
   getReauthMessage,
   isReauthError,
+  resolveMfaErrorPresentation,
   resolveAuthErrorPresentation,
 } from '@/auth/auth-errors';
 import { NETWORK_ERROR_MESSAGE } from '@/network/errors';
 import { authErrorContract } from '../../fixtures/auth-error-contract';
+import { recoveryChallengeAuthErrorContract } from '../../fixtures/recovery-challenge-auth-error-contract';
 
 const createHttpError = (
   overrides: Partial<NormalizedHttpError> & { message?: string } = {},
@@ -23,6 +25,8 @@ const createHttpError = (
   error.retriable = overrides.retriable;
   error.retryAfterSeconds = overrides.retryAfterSeconds;
   error.traceId = overrides.traceId;
+  error.enrollUrl = overrides.enrollUrl;
+  error.recoveryUrl = overrides.recoveryUrl;
 
   return error;
 };
@@ -30,6 +34,20 @@ const createHttpError = (
 describe('mobile auth error presentation', () => {
   for (const { codes, semantic, recoveryAction, message } of authErrorContract.cases) {
     it(`matches the mobile auth contract for ${codes.join(', ')}`, () => {
+      for (const code of codes) {
+        const presentation = resolveAuthErrorPresentation(
+          createHttpError({ code, message: `${code} server message` }),
+        );
+
+        expect(presentation.semantic).toBe(semantic);
+        expect(presentation.recoveryAction).toBe(recoveryAction);
+        expect(presentation.message).toBe(message);
+      }
+    });
+  }
+
+  for (const { codes, semantic, recoveryAction, message } of recoveryChallengeAuthErrorContract.cases) {
+    it(`matches the mobile recovery-challenge auth contract for ${codes.join(', ')}`, () => {
       for (const code of codes) {
         const presentation = resolveAuthErrorPresentation(
           createHttpError({ code, message: `${code} server message` }),
@@ -153,6 +171,71 @@ describe('mobile auth error presentation', () => {
     ).toMatchObject({
       semantic: 'password-reset-rate-limited',
       message: '비밀번호 재설정 요청이 너무 많습니다. 90초 후 다시 시도해 주세요.',
+    });
+  });
+
+  it('maps MFA recovery proof failures to deterministic retry guidance', () => {
+    expect(
+      resolveMfaErrorPresentation(createHttpError({ code: 'AUTH-019', status: 401 })),
+    ).toMatchObject({
+      code: 'AUTH-019',
+      message: '복구 단계가 유효하지 않거나 만료되었습니다. 비밀번호 재설정을 다시 진행해 주세요.',
+      navigateToRecovery: false,
+      restartLogin: false,
+    });
+
+    expect(
+      resolveMfaErrorPresentation(createHttpError({ code: 'AUTH-020', status: 409 })),
+    ).toMatchObject({
+      code: 'AUTH-020',
+      message: '이미 사용된 복구 단계입니다. 비밀번호 재설정을 다시 진행해 주세요.',
+      navigateToRecovery: false,
+      restartLogin: false,
+    });
+  });
+
+  it('maps authenticated MFA rebind password mismatches to retry guidance', () => {
+    expect(
+      resolveMfaErrorPresentation(createHttpError({ code: 'AUTH-026', status: 401 })),
+    ).toMatchObject({
+      code: 'AUTH-026',
+      message: '현재 비밀번호가 일치하지 않습니다. 다시 입력해 주세요.',
+      navigateToRecovery: false,
+      restartLogin: false,
+    });
+  });
+
+  it('preserves enrollment metadata for authenticated MFA recovery enrollment-required errors', () => {
+    expect(
+      resolveMfaErrorPresentation(
+        createHttpError({
+          code: 'AUTH-009',
+          status: 403,
+          enrollUrl: '/settings/totp/enroll?source=mfa-recovery',
+        }),
+      ),
+    ).toMatchObject({
+      code: 'AUTH-009',
+      navigateToEnroll: true,
+      enrollUrl: '/settings/totp/enroll?source=mfa-recovery',
+      message: 'Google Authenticator 등록이 필요합니다. 인증 앱을 연결한 뒤 첫 코드를 확인해 주세요.',
+    });
+  });
+
+  it('surfaces recovery navigation metadata for MFA recovery-required errors', () => {
+    expect(
+      resolveMfaErrorPresentation(
+        createHttpError({
+          code: 'AUTH-021',
+          status: 403,
+          recoveryUrl: '/mfa-recovery',
+        }),
+      ),
+    ).toMatchObject({
+      code: 'AUTH-021',
+      navigateToRecovery: true,
+      recoveryUrl: '/mfa-recovery',
+      message: '기존 인증기를 사용할 수 없어 복구가 필요합니다. 새 인증 앱을 연결하는 복구 단계를 진행해 주세요.',
     });
   });
 });
