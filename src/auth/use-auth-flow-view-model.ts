@@ -4,6 +4,8 @@ import { AppState, Linking } from 'react-native';
 import type { AuthState } from '../store/auth-store';
 import type {
   LoginRequest,
+  MemberTotpRebindRequest,
+  MfaRecoveryRebindConfirmRequest,
   PasswordForgotRequest,
   PasswordRecoveryChallengeRequest,
   PasswordResetRequest,
@@ -109,6 +111,9 @@ export const useAuthFlowViewModel = ({
     onOpenResetPassword: (token?: string) => {
       viewModelRef.current?.openResetPassword(token);
     },
+    onOpenAuthenticatedMfaRecovery: () => {
+      viewModelRef.current?.openAuthenticatedMfaRecovery();
+    },
     onLoginSubmit: (payload: LoginRequest) =>
       viewModelRef.current!.submitLogin(payload),
     onLoginMfaSubmit: (payload: TotpVerificationRequest) =>
@@ -128,6 +133,15 @@ export const useAuthFlowViewModel = ({
       viewModelRef.current!.submitPasswordRecoveryChallenge(payload),
     onPasswordResetSubmit: (payload: PasswordResetRequest) =>
       viewModelRef.current!.submitPasswordReset(payload),
+    onAuthenticatedMfaRecoveryBootstrap: (payload: MemberTotpRebindRequest) =>
+      viewModelRef.current!.bootstrapAuthenticatedMfaRecovery(payload),
+    onRecoveryMfaRecoveryBootstrap: () =>
+      viewModelRef.current!.bootstrapRecoveryMfaRecovery(),
+    onRestartMfaRecovery: () => {
+      viewModelRef.current?.restartMfaRecovery();
+    },
+    onSubmitMfaRecoveryRebind: (payload: MfaRecoveryRebindConfirmRequest) =>
+      viewModelRef.current!.submitMfaRecoveryRebindConfirmation(payload),
     onRefreshProtectedSession: () => {
       void viewModelRef.current?.refreshProtectedSession('manual');
     },

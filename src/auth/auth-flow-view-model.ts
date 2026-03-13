@@ -5,6 +5,8 @@ import {
   enterAuthenticatedApp,
   openForgotPasswordRoute,
   openLoginRoute,
+  openMfaRecoveryRebindRoute,
+  openMfaRecoveryRoute,
   openResetPasswordRoute,
   openRegisterRoute,
   openTotpEnrollRoute,
@@ -15,7 +17,11 @@ import type { AuthState } from '../store/auth-store';
 import type {
   LoginChallenge,
   LoginRequest,
+  MemberTotpRebindRequest,
+  MfaRecoveryRebindConfirmRequest,
+  TotpRebindBootstrap,
   PasswordForgotRequest,
+  MfaRecoveryRebindRequest,
   PasswordRecoveryChallengeRequest,
   PasswordResetRequest,
   RegisterRequest,
@@ -27,10 +33,12 @@ import type {
   AuthMutationResult,
   BootstrapResult,
   FormSubmissionResult,
+  MfaRecoveryRebindConfirmationResult,
   PasswordForgotResult,
   PasswordRecoveryChallengeResult,
   PasswordResetResult,
   ProtectedRequestResult,
+  TotpRebindBootstrapResult,
   TotpEnrollmentBootstrapResult,
 } from '../types/auth-ui';
 
@@ -45,12 +53,21 @@ type Listener = () => void;
 type PendingMfaSource = 'login' | 'register';
 interface PendingMfaState extends LoginChallenge {
   source: PendingMfaSource;
+  email?: string;
+}
+
+export interface MfaRecoveryState {
+  suggestedEmail: string;
+  recoveryProof: string | null;
+  recoveryProofExpiresInSeconds: number | null;
+  bootstrap: TotpRebindBootstrap | null;
 }
 
 export interface AuthStoreAdapter {
   getState: () => AuthState;
   initialize: (member: AuthState['member']) => void;
   login: (member: NonNullable<AuthState['member']>) => void;
+  logout: () => void;
   requireReauth: (message: string) => void;
   clearReauthMessage: () => void;
 }
@@ -71,6 +88,15 @@ export interface AuthServiceAdapter {
     payload: PasswordRecoveryChallengeRequest,
   ) => Promise<PasswordRecoveryChallengeResult>;
   resetPassword: (payload: PasswordResetRequest) => Promise<PasswordResetResult>;
+  bootstrapAuthenticatedTotpRebind: (
+    payload: MemberTotpRebindRequest,
+  ) => Promise<TotpRebindBootstrapResult>;
+  bootstrapRecoveryTotpRebind: (
+    payload: MfaRecoveryRebindRequest,
+  ) => Promise<TotpRebindBootstrapResult>;
+  confirmMfaRecoveryRebind: (
+    payload: MfaRecoveryRebindConfirmRequest,
+  ) => Promise<MfaRecoveryRebindConfirmationResult>;
   refreshProtectedSession: () => Promise<ProtectedRequestResult>;
   revalidateSessionOnResume: () => Promise<ProtectedRequestResult>;
 }
@@ -80,6 +106,7 @@ export interface AuthFlowViewState {
   authBannerTone: 'info' | 'error' | 'success';
   navigationState: AuthNavigationState;
   pendingMfa: PendingMfaState | null;
+  mfaRecovery: MfaRecoveryState | null;
   bootstrapErrorMessage: string | null;
   protectedErrorMessage: string | null;
   isRefreshingSession: boolean;
@@ -99,6 +126,7 @@ const createDefaultViewState = (
   authBannerTone: 'info',
   navigationState,
   pendingMfa: null,
+  mfaRecovery: null,
   bootstrapErrorMessage: null,
   protectedErrorMessage: null,
   isRefreshingSession: false,
@@ -110,7 +138,33 @@ const shouldPreserveRecoveryRoute = (
   && (
     navigationState.authRoute === 'forgotPassword'
     || navigationState.authRoute === 'resetPassword'
+    || navigationState.authRoute === 'mfaRecovery'
+    || navigationState.authRoute === 'mfaRecoveryRebind'
   );
+
+const createMfaRecoveryState = (
+  current: MfaRecoveryState | null,
+  overrides?: {
+    suggestedEmail?: string;
+    recoveryProof?: string | null;
+    recoveryProofExpiresInSeconds?: number | null;
+    bootstrap?: TotpRebindBootstrap | null;
+  },
+): MfaRecoveryState => ({
+  suggestedEmail: overrides?.suggestedEmail ?? current?.suggestedEmail ?? '',
+  recoveryProof:
+    overrides && Object.hasOwn(overrides, 'recoveryProof')
+      ? overrides.recoveryProof ?? null
+      : current?.recoveryProof ?? null,
+  recoveryProofExpiresInSeconds:
+    overrides && Object.hasOwn(overrides, 'recoveryProofExpiresInSeconds')
+      ? overrides.recoveryProofExpiresInSeconds ?? null
+      : current?.recoveryProofExpiresInSeconds ?? null,
+  bootstrap:
+    overrides && Object.hasOwn(overrides, 'bootstrap')
+      ? overrides.bootstrap ?? null
+      : current?.bootstrap ?? null,
+});
 
 export const createAuthFlowViewModel = ({
   authService,
@@ -167,6 +221,7 @@ export const createAuthFlowViewModel = ({
       setState((current) => ({
         ...current,
         pendingMfa: null,
+        mfaRecovery: null,
         navigationState: enterAuthenticatedApp(current.navigationState),
         protectedErrorMessage: null,
       }));
@@ -179,6 +234,7 @@ export const createAuthFlowViewModel = ({
       setState((current) => ({
         ...current,
         pendingMfa: null,
+        mfaRecovery: null,
         navigationState: requireReauthRoute(current.navigationState),
         protectedErrorMessage: null,
       }));
@@ -230,6 +286,7 @@ export const createAuthFlowViewModel = ({
       setState((current) => ({
         ...current,
         pendingMfa: null,
+        mfaRecovery: null,
         navigationState: openLoginRoute(current.navigationState),
       }));
     },
@@ -239,6 +296,7 @@ export const createAuthFlowViewModel = ({
       setState((current) => ({
         ...current,
         pendingMfa: null,
+        mfaRecovery: null,
         navigationState: openRegisterRoute(current.navigationState),
       }));
     },
@@ -257,6 +315,7 @@ export const createAuthFlowViewModel = ({
       setState((current) => ({
         ...current,
         pendingMfa: null,
+        mfaRecovery: null,
         navigationState: openResetPasswordRoute(current.navigationState, token),
       }));
     },
@@ -266,7 +325,25 @@ export const createAuthFlowViewModel = ({
       setState((current) => ({
         ...current,
         pendingMfa: null,
+        mfaRecovery: null,
         navigationState: openResetPasswordRoute(current.navigationState, token),
+      }));
+    },
+
+    openAuthenticatedMfaRecovery() {
+      clearTransientErrors();
+      const memberEmail = authStore.getState().member?.email?.trim() ?? '';
+
+      setState((current) => ({
+        ...current,
+        pendingMfa: null,
+        mfaRecovery: createMfaRecoveryState(current.mfaRecovery, {
+          suggestedEmail: memberEmail || (current.mfaRecovery?.suggestedEmail ?? ''),
+          recoveryProof: null,
+          recoveryProofExpiresInSeconds: null,
+          bootstrap: null,
+        }),
+        navigationState: openMfaRecoveryRoute(current.navigationState),
       }));
     },
 
@@ -282,7 +359,9 @@ export const createAuthFlowViewModel = ({
           pendingMfa: {
             ...result.challenge,
             source: 'login',
+            email: payload.email.trim(),
           },
+          mfaRecovery: null,
           navigationState: openPendingMfaRoute(current.navigationState, result.challenge),
         }));
 
@@ -302,6 +381,7 @@ export const createAuthFlowViewModel = ({
       setState((current) => ({
         ...current,
         pendingMfa: null,
+        mfaRecovery: null,
         navigationState: openLoginRoute(current.navigationState),
       }));
     },
@@ -317,6 +397,7 @@ export const createAuthFlowViewModel = ({
         setState((current) => ({
           ...current,
           pendingMfa: null,
+          mfaRecovery: null,
           navigationState: enterAuthenticatedApp(current.navigationState, {
             source: 'login',
           }),
@@ -361,6 +442,24 @@ export const createAuthFlowViewModel = ({
         };
       }
 
+      if (presentation.navigateToRecovery) {
+        const recoveryEmail = state.pendingMfa?.email?.trim() ?? '';
+
+        setState((current) => ({
+          ...current,
+          pendingMfa: null,
+          mfaRecovery: createMfaRecoveryState(current.mfaRecovery, {
+            suggestedEmail: recoveryEmail,
+            bootstrap: null,
+          }),
+          navigationState: openMfaRecoveryRoute(current.navigationState),
+        }));
+
+        return {
+          success: true,
+        };
+      }
+
       return {
         success: false,
         error: result.error,
@@ -389,6 +488,7 @@ export const createAuthFlowViewModel = ({
           setState((current) => ({
             ...current,
             pendingMfa: null,
+            mfaRecovery: null,
             authBannerMessage: presentation.message,
             authBannerTone: 'info',
             navigationState: openLoginRoute(current.navigationState),
@@ -411,6 +511,7 @@ export const createAuthFlowViewModel = ({
         setState((current) => ({
           ...current,
           pendingMfa: null,
+          mfaRecovery: null,
           navigationState: enterAuthenticatedApp(current.navigationState, {
             source: mfaSource,
           }),
@@ -428,6 +529,7 @@ export const createAuthFlowViewModel = ({
         setState((current) => ({
           ...current,
           pendingMfa: null,
+          mfaRecovery: null,
           authBannerMessage: presentation.message,
           authBannerTone: 'info',
           navigationState: openLoginRoute(current.navigationState),
@@ -465,12 +567,28 @@ export const createAuthFlowViewModel = ({
       const result = await authService.resetPassword(payload);
 
       if (result.success) {
-        setState((current) => ({
-          ...current,
-          authBannerMessage: '비밀번호가 변경되었습니다. 새 비밀번호로 로그인해 주세요.',
-          authBannerTone: 'success',
-          navigationState: openLoginRoute(current.navigationState),
-        }));
+        if (result.continuation.recoveryProof) {
+          setState((current) => ({
+            ...current,
+            authBannerMessage: null,
+            authBannerTone: 'info',
+            mfaRecovery: createMfaRecoveryState(current.mfaRecovery, {
+              recoveryProof: result.continuation.recoveryProof ?? null,
+              recoveryProofExpiresInSeconds:
+                result.continuation.recoveryProofExpiresInSeconds ?? null,
+              bootstrap: null,
+            }),
+            navigationState: openMfaRecoveryRoute(current.navigationState),
+          }));
+        } else {
+          setState((current) => ({
+            ...current,
+            authBannerMessage: '비밀번호가 변경되었습니다. 새 비밀번호로 로그인해 주세요.',
+            authBannerTone: 'success',
+            mfaRecovery: null,
+            navigationState: openLoginRoute(current.navigationState),
+          }));
+        }
 
         return result;
       }
@@ -481,6 +599,7 @@ export const createAuthFlowViewModel = ({
           ...current,
           authBannerMessage: null,
           authBannerTone: 'info',
+          mfaRecovery: null,
           navigationState: openLoginRoute(current.navigationState),
         }));
       }
@@ -512,7 +631,9 @@ export const createAuthFlowViewModel = ({
           pendingMfa: {
             ...loginResult.challenge,
             source: 'register',
+            email: payload.email.trim(),
           },
+          mfaRecovery: null,
           navigationState: openPendingMfaRoute(current.navigationState, loginResult.challenge),
         }));
 
@@ -525,6 +646,100 @@ export const createAuthFlowViewModel = ({
         success: false,
         error: loginResult.error,
       };
+    },
+
+    async bootstrapAuthenticatedMfaRecovery(
+      payload: MemberTotpRebindRequest,
+    ): Promise<TotpRebindBootstrapResult> {
+      clearTransientErrors();
+      const result = await authService.bootstrapAuthenticatedTotpRebind(payload);
+
+      if (result.success) {
+        setState((current) => ({
+          ...current,
+          pendingMfa: null,
+          mfaRecovery: createMfaRecoveryState(current.mfaRecovery, {
+            suggestedEmail:
+              current.mfaRecovery?.suggestedEmail
+              || authStore.getState().member?.email?.trim()
+              || '',
+            recoveryProof: null,
+            recoveryProofExpiresInSeconds: null,
+            bootstrap: result.bootstrap,
+          }),
+          navigationState: openMfaRecoveryRebindRoute(current.navigationState),
+        }));
+      }
+
+      return result;
+    },
+
+    async bootstrapRecoveryMfaRecovery(): Promise<TotpRebindBootstrapResult> {
+      clearTransientErrors();
+      const recoveryProof = state.mfaRecovery?.recoveryProof?.trim() ?? '';
+
+      if (!recoveryProof) {
+        return {
+          success: false,
+          error: new Error('No recovery proof is available.'),
+        };
+      }
+
+      const result = await authService.bootstrapRecoveryTotpRebind({
+        recoveryProof,
+      });
+
+      if (result.success) {
+        setState((current) => ({
+          ...current,
+          pendingMfa: null,
+          mfaRecovery: createMfaRecoveryState(current.mfaRecovery, {
+            bootstrap: result.bootstrap,
+          }),
+          navigationState: openMfaRecoveryRebindRoute(current.navigationState),
+        }));
+      }
+
+      return result;
+    },
+
+    restartMfaRecovery() {
+      clearTransientErrors();
+      setState((current) => ({
+        ...current,
+        pendingMfa: null,
+        mfaRecovery: createMfaRecoveryState(current.mfaRecovery, {
+          suggestedEmail:
+            current.mfaRecovery?.suggestedEmail
+            || authStore.getState().member?.email?.trim()
+            || '',
+          recoveryProof: null,
+          recoveryProofExpiresInSeconds: null,
+          bootstrap: null,
+        }),
+        navigationState: openMfaRecoveryRoute(current.navigationState),
+      }));
+    },
+
+    async submitMfaRecoveryRebindConfirmation(
+      payload: MfaRecoveryRebindConfirmRequest,
+    ): Promise<MfaRecoveryRebindConfirmationResult> {
+      clearTransientErrors();
+      const result = await authService.confirmMfaRecoveryRebind(payload);
+
+      if (result.success && result.response.rebindCompleted) {
+        authStore.logout();
+        setState((current) => ({
+          ...current,
+          pendingMfa: null,
+          mfaRecovery: null,
+          authBannerMessage: '새 authenticator 등록이 완료되었습니다. 새 비밀번호와 현재 인증 코드로 다시 로그인해 주세요.',
+          authBannerTone: 'success',
+          navigationState: openLoginRoute(current.navigationState),
+        }));
+      }
+
+      return result;
     },
 
     async refreshProtectedSession(
