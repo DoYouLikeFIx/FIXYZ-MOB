@@ -13,7 +13,10 @@ import { TotpEnrollmentScreen } from '../screens/auth/TotpEnrollmentScreen';
 import { AuthenticatedHomeScreen } from '../screens/app/AuthenticatedHomeScreen';
 import type { AccountApi } from '../api/account-api';
 import type { OrderApi } from '../api/order-api';
-import type { MfaRecoveryState } from '../auth/auth-flow-view-model';
+import type {
+  MfaRecoveryState,
+  RestartMfaRecoveryOptions,
+} from '../auth/auth-flow-view-model';
 import type { AuthStatus } from '../store/auth-store';
 import type {
   LoginChallenge,
@@ -61,6 +64,7 @@ interface AppNavigatorProps {
   onLoginMfaSubmit: (payload: TotpVerificationRequest) => Promise<FormSubmissionResult>;
   onRegisterSubmit: (payload: RegisterRequest) => Promise<FormSubmissionResult>;
   onOpenLogin: () => void;
+  onRequireEnrollmentRestart: (message: string) => void;
   onOpenRegister: () => void;
   onOpenForgotPassword: () => void;
   onOpenResetPassword: (token?: string) => void;
@@ -79,7 +83,7 @@ interface AppNavigatorProps {
     payload: MemberTotpRebindRequest,
   ) => Promise<TotpRebindBootstrapResult>;
   onRecoveryMfaRecoveryBootstrap: () => Promise<TotpRebindBootstrapResult>;
-  onRestartMfaRecovery: () => void;
+  onRestartMfaRecovery: (options?: RestartMfaRecoveryOptions) => void;
   onSubmitMfaRecoveryRebind: (
     payload: MfaRecoveryRebindConfirmRequest,
   ) => Promise<MfaRecoveryRebindConfirmationResult>;
@@ -159,6 +163,7 @@ export const AppNavigator = ({
   onLoginMfaSubmit,
   onRegisterSubmit,
   onOpenLogin,
+  onRequireEnrollmentRestart,
   onOpenRegister,
   onOpenForgotPassword,
   onOpenResetPassword,
@@ -302,11 +307,14 @@ export const AppNavigator = ({
     screen = (
       <MfaRecoveryScreen
         authStatus={authStatus}
+        bannerMessage={authBannerMessage}
+        bannerTone={authBannerTone}
         member={member}
         mfaRecovery={mfaRecovery}
         onBootstrapAuthenticated={onAuthenticatedMfaRecoveryBootstrap}
         onBootstrapRecovery={onRecoveryMfaRecoveryBootstrap}
         onRestartRecovery={onRestartMfaRecovery}
+        onRequireEnrollmentRestart={onRequireEnrollmentRestart}
         onForgotPasswordPress={onOpenForgotPassword}
         onLoginPress={onOpenLogin}
         onRegisterPress={onOpenRegister}
