@@ -1,8 +1,7 @@
-import { useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { resolveMfaErrorPresentation } from '../../auth/auth-errors';
-import { isCompleteOtpCode, sanitizeOtpCodeInput } from '../../auth/totp-code';
+import type { RestartMfaRecoveryOptions } from '../../auth/auth-flow-view-model';
+import { useMfaRecoveryRebindViewModel } from '../../auth/use-mfa-recovery-rebind-view-model';
 import { useExpiryCountdown } from '../../auth/use-expiry-countdown';
 import { AuthField } from '../../components/auth/AuthField';
 import { AuthScaffold } from '../../components/auth/AuthScaffold';
@@ -17,7 +16,7 @@ interface MfaRecoveryRebindScreenProps {
   bootstrap: TotpRebindBootstrap;
   onLoginPress: () => void;
   onRegisterPress: () => void;
-  onRestartRecovery: () => void;
+  onRestartRecovery: (options?: RestartMfaRecoveryOptions) => void;
   onSubmit: (
     payload: MfaRecoveryRebindConfirmRequest,
   ) => Promise<MfaRecoveryRebindConfirmationResult>;
@@ -30,52 +29,12 @@ export const MfaRecoveryRebindScreen = ({
   onRestartRecovery,
   onSubmit,
 }: MfaRecoveryRebindScreenProps) => {
-  const [otpCode, setOtpCode] = useState('');
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const viewModel = useMfaRecoveryRebindViewModel({
+    bootstrap,
+    restartRecovery: onRestartRecovery,
+    submit: onSubmit,
+  });
   const countdown = useExpiryCountdown(bootstrap.expiresAt);
-
-  const handleSubmit = async () => {
-    if (isSubmitting) {
-      return;
-    }
-
-    const normalizedOtp = sanitizeOtpCodeInput(otpCode);
-
-    if (!isCompleteOtpCode(normalizedOtp)) {
-      setErrorMessage('현재 인증 코드는 숫자 6자리로 입력해 주세요.');
-      return;
-    }
-
-    setIsSubmitting(true);
-    setErrorMessage(null);
-
-    try {
-      const result = await onSubmit({
-        rebindToken: bootstrap.rebindToken,
-        enrollmentToken: bootstrap.enrollmentToken,
-        otpCode: normalizedOtp,
-      });
-
-      if (!result.success) {
-        setErrorMessage(resolveMfaErrorPresentation(result.error).message);
-      }
-    } catch (error) {
-      setErrorMessage(resolveMfaErrorPresentation(error).message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleOpenAuthenticator = async () => {
-    setErrorMessage(null);
-
-    try {
-      await Linking.openURL(bootstrap.qrUri);
-    } catch {
-      setErrorMessage('인증 앱을 열지 못했습니다. 아래 수동 입력 키를 사용해 직접 등록해 주세요.');
-    }
-  };
 
   return (
     <AuthScaffold
@@ -95,7 +54,7 @@ export const MfaRecoveryRebindScreen = ({
         </Text>
         <Pressable
           onPress={() => {
-            void handleOpenAuthenticator();
+            void viewModel.openAuthenticator();
           }}
           style={styles.secondaryLinkButton}
           testID="mfa-recovery-open-authenticator"
@@ -120,39 +79,38 @@ export const MfaRecoveryRebindScreen = ({
       </View>
 
       <AuthField
-        errorMessage={errorMessage ?? undefined}
+        errorMessage={viewModel.errorMessage ?? undefined}
         keyboardType="numeric"
         label="현재 6자리 코드 확인"
-        onChangeText={(value) => {
-          setErrorMessage(null);
-          setOtpCode(sanitizeOtpCodeInput(value));
-        }}
+        onChangeText={viewModel.updateOtpCode}
         placeholder="6자리 코드"
         supportMessage="앱에 새 계정이 추가되면 현재 표시된 6자리 코드를 입력해 주세요."
         testID="mfa-recovery-code"
         textContentType="oneTimeCode"
-        value={otpCode}
+        value={viewModel.otpCode}
       />
 
       <Pressable
-        disabled={isSubmitting}
+        disabled={viewModel.isSubmitting}
         onPress={() => {
-          void handleSubmit();
+          void viewModel.submitRecoveryConfirmation();
         }}
         style={[
           styles.primaryButton,
-          isSubmitting ? styles.primaryButtonDisabled : null,
+          viewModel.isSubmitting ? styles.primaryButtonDisabled : null,
         ]}
         testID="mfa-recovery-confirm-submit"
       >
         <Text style={styles.primaryButtonText}>
-          {isSubmitting ? '복구 확인 중...' : '새 authenticator 등록 완료'}
+          {viewModel.isSubmitting ? '복구 확인 중...' : '새 authenticator 등록 완료'}
         </Text>
       </Pressable>
 
       <View style={styles.secondaryLinkWrap}>
         <Pressable
-          onPress={onRestartRecovery}
+          onPress={() => {
+            onRestartRecovery();
+          }}
           style={styles.secondaryLinkButton}
           testID="mfa-recovery-confirm-reset"
         >
