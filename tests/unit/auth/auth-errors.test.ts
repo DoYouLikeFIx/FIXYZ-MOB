@@ -9,6 +9,7 @@ import {
 } from '@/auth/auth-errors';
 import { NETWORK_ERROR_MESSAGE } from '@/network/errors';
 import { authErrorContract } from '../../fixtures/auth-error-contract';
+import { recoveryChallengeAuthErrorContract } from '../../fixtures/recovery-challenge-auth-error-contract';
 
 const createHttpError = (
   overrides: Partial<NormalizedHttpError> & { message?: string } = {},
@@ -24,6 +25,7 @@ const createHttpError = (
   error.retriable = overrides.retriable;
   error.retryAfterSeconds = overrides.retryAfterSeconds;
   error.traceId = overrides.traceId;
+  error.enrollUrl = overrides.enrollUrl;
   error.recoveryUrl = overrides.recoveryUrl;
 
   return error;
@@ -32,6 +34,20 @@ const createHttpError = (
 describe('mobile auth error presentation', () => {
   for (const { codes, semantic, recoveryAction, message } of authErrorContract.cases) {
     it(`matches the mobile auth contract for ${codes.join(', ')}`, () => {
+      for (const code of codes) {
+        const presentation = resolveAuthErrorPresentation(
+          createHttpError({ code, message: `${code} server message` }),
+        );
+
+        expect(presentation.semantic).toBe(semantic);
+        expect(presentation.recoveryAction).toBe(recoveryAction);
+        expect(presentation.message).toBe(message);
+      }
+    });
+  }
+
+  for (const { codes, semantic, recoveryAction, message } of recoveryChallengeAuthErrorContract.cases) {
+    it(`matches the mobile recovery-challenge auth contract for ${codes.join(', ')}`, () => {
       for (const code of codes) {
         const presentation = resolveAuthErrorPresentation(
           createHttpError({ code, message: `${code} server message` }),
@@ -175,6 +191,34 @@ describe('mobile auth error presentation', () => {
       message: '이미 사용된 복구 단계입니다. 비밀번호 재설정을 다시 진행해 주세요.',
       navigateToRecovery: false,
       restartLogin: false,
+    });
+  });
+
+  it('maps authenticated MFA rebind password mismatches to retry guidance', () => {
+    expect(
+      resolveMfaErrorPresentation(createHttpError({ code: 'AUTH-026', status: 401 })),
+    ).toMatchObject({
+      code: 'AUTH-026',
+      message: '현재 비밀번호가 일치하지 않습니다. 다시 입력해 주세요.',
+      navigateToRecovery: false,
+      restartLogin: false,
+    });
+  });
+
+  it('preserves enrollment metadata for authenticated MFA recovery enrollment-required errors', () => {
+    expect(
+      resolveMfaErrorPresentation(
+        createHttpError({
+          code: 'AUTH-009',
+          status: 403,
+          enrollUrl: '/settings/totp/enroll?source=mfa-recovery',
+        }),
+      ),
+    ).toMatchObject({
+      code: 'AUTH-009',
+      navigateToEnroll: true,
+      enrollUrl: '/settings/totp/enroll?source=mfa-recovery',
+      message: 'Google Authenticator 등록이 필요합니다. 인증 앱을 연결한 뒤 첫 코드를 확인해 주세요.',
     });
   });
 

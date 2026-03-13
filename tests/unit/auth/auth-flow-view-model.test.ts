@@ -748,4 +748,29 @@ describe('auth flow view model', () => {
       },
     });
   });
+
+  it('restarts MFA recovery with an error banner when a stale rebind must send the user back to entry', () => {
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+    });
+
+    viewModel.openAuthenticatedMfaRecovery();
+    viewModel.restartMfaRecovery({
+      bannerMessage: '이미 사용된 복구 단계입니다. 비밀번호 재설정을 다시 진행해 주세요.',
+      bannerTone: 'error',
+    });
+
+    expect(viewModel.getState()).toMatchObject({
+      authBannerMessage: '이미 사용된 복구 단계입니다. 비밀번호 재설정을 다시 진행해 주세요.',
+      authBannerTone: 'error',
+      navigationState: {
+        authRoute: 'mfaRecovery',
+      },
+      mfaRecovery: {
+        bootstrap: null,
+        recoveryProof: null,
+      },
+    });
+  });
 });
