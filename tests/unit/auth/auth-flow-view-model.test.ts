@@ -5,7 +5,7 @@ import {
 } from '@/navigation/auth-navigation';
 import type { NormalizedHttpError } from '@/network/types';
 import { authStore, resetAuthStore } from '@/store/auth-store';
-import type { LoginChallenge, Member } from '@/types/auth';
+import type { LoginChallenge, Member, TotpRebindBootstrap } from '@/types/auth';
 
 const memberFixture: Member = {
   memberUuid: 'member-001',
@@ -43,8 +43,17 @@ const createHttpError = (
   error.retriable = overrides.retriable;
   error.retryAfterSeconds = overrides.retryAfterSeconds;
   error.enrollUrl = overrides.enrollUrl;
+  error.recoveryUrl = overrides.recoveryUrl;
 
   return error;
+};
+
+const rebindBootstrapFixture: TotpRebindBootstrap = {
+  rebindToken: 'rebind-token',
+  qrUri: 'otpauth://totp/FIX:demo@fix.com?secret=ABC123',
+  manualEntryKey: 'ABC123',
+  enrollmentToken: 'enrollment-token',
+  expiresAt: '2026-03-12T10:05:00Z',
 };
 
 type AuthServiceStub = {
@@ -57,6 +66,9 @@ type AuthServiceStub = {
   requestPasswordResetEmail: ReturnType<typeof vi.fn>;
   requestPasswordRecoveryChallenge: ReturnType<typeof vi.fn>;
   resetPassword: ReturnType<typeof vi.fn>;
+  bootstrapAuthenticatedTotpRebind: ReturnType<typeof vi.fn>;
+  bootstrapRecoveryTotpRebind: ReturnType<typeof vi.fn>;
+  confirmMfaRecoveryRebind: ReturnType<typeof vi.fn>;
   refreshProtectedSession: ReturnType<typeof vi.fn>;
   revalidateSessionOnResume: ReturnType<typeof vi.fn>;
 };
@@ -71,6 +83,9 @@ const createServiceStub = (): AuthServiceStub => ({
   requestPasswordResetEmail: vi.fn(),
   requestPasswordRecoveryChallenge: vi.fn(),
   resetPassword: vi.fn(),
+  bootstrapAuthenticatedTotpRebind: vi.fn(),
+  bootstrapRecoveryTotpRebind: vi.fn(),
+  confirmMfaRecoveryRebind: vi.fn(),
   refreshProtectedSession: vi.fn(),
   revalidateSessionOnResume: vi.fn(),
 });
@@ -552,5 +567,185 @@ describe('auth flow view model', () => {
     await Promise.resolve();
 
     expect(authService.revalidateSessionOnResume).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes MFA verification recovery-required errors into the recovery flow and preserves the login email', async () => {
+    authService.startLoginFlow.mockResolvedValue({
+      success: true,
+      challenge: verifyChallengeFixture,
+    });
+    authService.verifyLoginOtp.mockResolvedValue({
+      success: false,
+      error: createHttpError({
+        code: 'AUTH-021',
+        status: 403,
+        message: 'MFA recovery required',
+        recoveryUrl: '/mfa-recovery',
+      }),
+    });
+
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+    });
+
+    await viewModel.submitLogin({
+      email: 'demo@fix.com',
+      password: 'Test1234!',
+    });
+
+    const result = await viewModel.submitLoginMfa({
+      loginToken: verifyChallengeFixture.loginToken,
+      otpCode: '123456',
+    });
+
+    expect(result).toEqual({
+      success: true,
+    });
+    expect(viewModel.getState()).toMatchObject({
+      pendingMfa: null,
+      mfaRecovery: {
+        suggestedEmail: 'demo@fix.com',
+        recoveryProof: null,
+        bootstrap: null,
+      },
+      navigationState: {
+        authRoute: 'mfaRecovery',
+      },
+    });
+  });
+
+  it('routes password reset continuations with recovery proof into the MFA recovery flow', async () => {
+    authService.resetPassword.mockResolvedValue({
+      success: true,
+      continuation: {
+        recoveryProof: 'recovery-proof-token',
+        recoveryProofExpiresInSeconds: 600,
+      },
+    });
+
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+    });
+
+    const result = await viewModel.submitPasswordReset({
+      token: 'reset-token',
+      newPassword: 'Test1234!',
+    });
+
+    expect(result).toEqual({
+      success: true,
+      continuation: {
+        recoveryProof: 'recovery-proof-token',
+        recoveryProofExpiresInSeconds: 600,
+      },
+    });
+    expect(viewModel.getState()).toMatchObject({
+      mfaRecovery: {
+        recoveryProof: 'recovery-proof-token',
+        recoveryProofExpiresInSeconds: 600,
+        bootstrap: null,
+      },
+      navigationState: {
+        authRoute: 'mfaRecovery',
+      },
+    });
+  });
+
+  it('bootstraps authenticated MFA recovery and routes to the rebind screen', async () => {
+    authStore.login({
+      ...memberFixture,
+      totpEnrolled: true,
+    });
+    authService.bootstrapAuthenticatedTotpRebind.mockResolvedValue({
+      success: true,
+      bootstrap: rebindBootstrapFixture,
+    });
+
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+      initialNavigationState: enterAuthenticatedApp(createAuthNavigationState(), {
+        source: 'login',
+      }),
+    });
+
+    viewModel.openAuthenticatedMfaRecovery();
+
+    const result = await viewModel.bootstrapAuthenticatedMfaRecovery({
+      currentPassword: 'Test1234!',
+    });
+
+    expect(result).toEqual({
+      success: true,
+      bootstrap: rebindBootstrapFixture,
+    });
+    expect(viewModel.getState()).toMatchObject({
+      mfaRecovery: {
+        suggestedEmail: memberFixture.email,
+        bootstrap: rebindBootstrapFixture,
+      },
+      navigationState: {
+        authRoute: 'mfaRecoveryRebind',
+      },
+    });
+  });
+
+  it('completes MFA recovery rebind, clears the session, and returns to login with success guidance', async () => {
+    authStore.login({
+      ...memberFixture,
+      totpEnrolled: true,
+    });
+    authService.bootstrapAuthenticatedTotpRebind.mockResolvedValue({
+      success: true,
+      bootstrap: rebindBootstrapFixture,
+    });
+    authService.confirmMfaRecoveryRebind.mockResolvedValue({
+      success: true,
+      response: {
+        rebindCompleted: true,
+        reauthRequired: true,
+      },
+    });
+
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+      initialNavigationState: enterAuthenticatedApp(createAuthNavigationState(), {
+        source: 'login',
+      }),
+    });
+
+    viewModel.openAuthenticatedMfaRecovery();
+    await viewModel.bootstrapAuthenticatedMfaRecovery({
+      currentPassword: 'Test1234!',
+    });
+
+    const result = await viewModel.submitMfaRecoveryRebindConfirmation({
+      rebindToken: rebindBootstrapFixture.rebindToken,
+      enrollmentToken: rebindBootstrapFixture.enrollmentToken,
+      otpCode: '123456',
+    });
+
+    expect(result).toEqual({
+      success: true,
+      response: {
+        rebindCompleted: true,
+        reauthRequired: true,
+      },
+    });
+    expect(authStore.getState()).toMatchObject({
+      status: 'anonymous',
+      member: null,
+    });
+    expect(viewModel.getState()).toMatchObject({
+      authBannerTone: 'success',
+      authBannerMessage: '새 authenticator 등록이 완료되었습니다. 새 비밀번호와 현재 인증 코드로 다시 로그인해 주세요.',
+      mfaRecovery: null,
+      navigationState: {
+        authRoute: 'login',
+      },
+    });
   });
 });

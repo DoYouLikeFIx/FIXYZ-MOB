@@ -153,6 +153,7 @@ const renderScreen = async (overrides?: {
         welcomeVariant={null}
         sessionErrorMessage={null}
         isRefreshingSession={false}
+        onOpenMfaRecovery={() => {}}
         onRefreshSession={() => {}}
       />,
     );

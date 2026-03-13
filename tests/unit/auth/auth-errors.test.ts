@@ -4,6 +4,7 @@ import {
   getRegisterErrorFeedback,
   getReauthMessage,
   isReauthError,
+  resolveMfaErrorPresentation,
   resolveAuthErrorPresentation,
 } from '@/auth/auth-errors';
 import { NETWORK_ERROR_MESSAGE } from '@/network/errors';
@@ -23,6 +24,7 @@ const createHttpError = (
   error.retriable = overrides.retriable;
   error.retryAfterSeconds = overrides.retryAfterSeconds;
   error.traceId = overrides.traceId;
+  error.recoveryUrl = overrides.recoveryUrl;
 
   return error;
 };
@@ -153,6 +155,43 @@ describe('mobile auth error presentation', () => {
     ).toMatchObject({
       semantic: 'password-reset-rate-limited',
       message: '비밀번호 재설정 요청이 너무 많습니다. 90초 후 다시 시도해 주세요.',
+    });
+  });
+
+  it('maps MFA recovery proof failures to deterministic retry guidance', () => {
+    expect(
+      resolveMfaErrorPresentation(createHttpError({ code: 'AUTH-019', status: 401 })),
+    ).toMatchObject({
+      code: 'AUTH-019',
+      message: '복구 단계가 유효하지 않거나 만료되었습니다. 비밀번호 재설정을 다시 진행해 주세요.',
+      navigateToRecovery: false,
+      restartLogin: false,
+    });
+
+    expect(
+      resolveMfaErrorPresentation(createHttpError({ code: 'AUTH-020', status: 409 })),
+    ).toMatchObject({
+      code: 'AUTH-020',
+      message: '이미 사용된 복구 단계입니다. 비밀번호 재설정을 다시 진행해 주세요.',
+      navigateToRecovery: false,
+      restartLogin: false,
+    });
+  });
+
+  it('surfaces recovery navigation metadata for MFA recovery-required errors', () => {
+    expect(
+      resolveMfaErrorPresentation(
+        createHttpError({
+          code: 'AUTH-021',
+          status: 403,
+          recoveryUrl: '/mfa-recovery',
+        }),
+      ),
+    ).toMatchObject({
+      code: 'AUTH-021',
+      navigateToRecovery: true,
+      recoveryUrl: '/mfa-recovery',
+      message: '기존 인증기를 사용할 수 없어 복구가 필요합니다. 새 인증 앱을 연결하는 복구 단계를 진행해 주세요.',
     });
   });
 });

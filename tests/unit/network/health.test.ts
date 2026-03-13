@@ -10,6 +10,7 @@ describe('health smoke check', () => {
         return {
           statusCode: 200,
           body: { status: 'UP' },
+          headers: new Headers(),
         };
       },
     });
