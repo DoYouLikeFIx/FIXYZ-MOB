@@ -3,13 +3,19 @@ import type { HttpClient } from '../network/http-client';
 import type {
   LoginChallenge,
   LoginRequest,
+  MemberTotpRebindRequest,
   Member,
+  MfaRecoveryRebindConfirmRequest,
+  MfaRecoveryRebindConfirmResponse,
+  MfaRecoveryRebindRequest,
   PasswordForgotRequest,
   PasswordForgotResponse,
+  PasswordResetContinuation,
   PasswordRecoveryChallengeRequest,
   PasswordRecoveryChallengeResponse,
   PasswordResetRequest,
   RegisterRequest,
+  TotpRebindBootstrap,
   TotpEnrollmentBootstrap,
   TotpEnrollmentConfirmationRequest,
   TotpEnrollmentRequest,
@@ -64,7 +70,16 @@ export interface AuthApi {
   requestPasswordRecoveryChallenge: (
     payload: PasswordRecoveryChallengeRequest,
   ) => Promise<PasswordRecoveryChallengeResponse>;
-  resetPassword: (payload: PasswordResetRequest) => Promise<void>;
+  resetPassword: (payload: PasswordResetRequest) => Promise<PasswordResetContinuation>;
+  bootstrapAuthenticatedTotpRebind: (
+    payload: MemberTotpRebindRequest,
+  ) => Promise<TotpRebindBootstrap>;
+  bootstrapRecoveryTotpRebind: (
+    payload: MfaRecoveryRebindRequest,
+  ) => Promise<TotpRebindBootstrap>;
+  confirmMfaRecoveryRebind: (
+    payload: MfaRecoveryRebindConfirmRequest,
+  ) => Promise<MfaRecoveryRebindConfirmResponse>;
 }
 
 interface CreateAuthApiInput {
@@ -76,6 +91,20 @@ export const createAuthApi = ({
   client,
   csrfManager,
 }: CreateAuthApiInput): AuthApi => ({
+  resetPassword: async (payload) => {
+    const response = await client.post('/api/v1/auth/password/reset', payload);
+    const recoveryProof = response.headers.get('X-MFA-Recovery-Proof')?.trim() ?? '';
+    const rawExpiresIn = response.headers.get('X-MFA-Recovery-Proof-Expires-In');
+    const recoveryProofExpiresInSeconds = rawExpiresIn ? Number(rawExpiresIn) : undefined;
+
+    return {
+      recoveryProof: recoveryProof || undefined,
+      recoveryProofExpiresInSeconds:
+        recoveryProofExpiresInSeconds !== undefined && Number.isFinite(recoveryProofExpiresInSeconds)
+          ? recoveryProofExpiresInSeconds
+          : undefined,
+    };
+  },
   fetchSession: async () => {
     const response = await client.get<Member>('/api/v1/auth/session');
     return response.body;
@@ -159,7 +188,32 @@ export const createAuthApi = ({
 
     return response.body;
   },
-  resetPassword: async (payload) => {
-    await client.post('/api/v1/auth/password/reset', payload);
+  bootstrapAuthenticatedTotpRebind: async (payload) => {
+    const response = await client.post<TotpRebindBootstrap>(
+      '/api/v1/members/me/totp/rebind',
+      payload,
+    );
+
+    return response.body;
+  },
+  bootstrapRecoveryTotpRebind: async (payload) => {
+    const response = await client.post<TotpRebindBootstrap>(
+      '/api/v1/auth/mfa-recovery/rebind',
+      payload,
+    );
+
+    return response.body;
+  },
+  confirmMfaRecoveryRebind: async (payload) => {
+    const response = await client.post<MfaRecoveryRebindConfirmResponse>(
+      '/api/v1/auth/mfa-recovery/rebind/confirm',
+      payload,
+    );
+
+    if (csrfManager) {
+      await csrfManager.onLoginSuccess().catch(() => undefined);
+    }
+
+    return response.body;
   },
 });
