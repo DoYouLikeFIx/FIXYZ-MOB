@@ -63,6 +63,11 @@ export interface MfaRecoveryState {
   bootstrap: TotpRebindBootstrap | null;
 }
 
+export interface RestartMfaRecoveryOptions {
+  bannerMessage?: string | null;
+  bannerTone?: 'info' | 'error' | 'success';
+}
+
 export interface AuthStoreAdapter {
   getState: () => AuthState;
   initialize: (member: AuthState['member']) => void;
@@ -287,6 +292,19 @@ export const createAuthFlowViewModel = ({
         ...current,
         pendingMfa: null,
         mfaRecovery: null,
+        navigationState: openLoginRoute(current.navigationState),
+      }));
+    },
+
+    requireEnrollmentRestart(message: string) {
+      clearTransientErrors();
+      authStore.requireReauth(message);
+      setState((current) => ({
+        ...current,
+        pendingMfa: null,
+        mfaRecovery: null,
+        authBannerMessage: message,
+        authBannerTone: 'info',
         navigationState: openLoginRoute(current.navigationState),
       }));
     },
@@ -703,11 +721,13 @@ export const createAuthFlowViewModel = ({
       return result;
     },
 
-    restartMfaRecovery() {
+    restartMfaRecovery(options?: RestartMfaRecoveryOptions) {
       clearTransientErrors();
       setState((current) => ({
         ...current,
         pendingMfa: null,
+        authBannerMessage: options?.bannerMessage ?? null,
+        authBannerTone: options?.bannerTone ?? 'info',
         mfaRecovery: createMfaRecoveryState(current.mfaRecovery, {
           suggestedEmail:
             current.mfaRecovery?.suggestedEmail

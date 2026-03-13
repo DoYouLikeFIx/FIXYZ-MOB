@@ -18,6 +18,7 @@ import {
   type AuthServiceAdapter,
   type AuthStoreAdapter,
   createAuthFlowViewModel,
+  type RestartMfaRecoveryOptions,
 } from './auth-flow-view-model';
 import { extractPasswordResetTokenFromUrl } from './password-reset-handoff';
 
@@ -102,6 +103,9 @@ export const useAuthFlowViewModel = ({
     onOpenLogin: () => {
       viewModelRef.current?.openLogin();
     },
+    onRequireEnrollmentRestart: (message: string) => {
+      viewModelRef.current?.requireEnrollmentRestart(message);
+    },
     onOpenRegister: () => {
       viewModelRef.current?.openRegister();
     },
@@ -137,8 +141,8 @@ export const useAuthFlowViewModel = ({
       viewModelRef.current!.bootstrapAuthenticatedMfaRecovery(payload),
     onRecoveryMfaRecoveryBootstrap: () =>
       viewModelRef.current!.bootstrapRecoveryMfaRecovery(),
-    onRestartMfaRecovery: () => {
-      viewModelRef.current?.restartMfaRecovery();
+    onRestartMfaRecovery: (options?: RestartMfaRecoveryOptions) => {
+      viewModelRef.current?.restartMfaRecovery(options);
     },
     onSubmitMfaRecoveryRebind: (payload: MfaRecoveryRebindConfirmRequest) =>
       viewModelRef.current!.submitMfaRecoveryRebindConfirmation(payload),
