@@ -5,16 +5,21 @@ import { BootScreen } from '../screens/auth/BootScreen';
 import { ForgotPasswordScreen } from '../screens/auth/ForgotPasswordScreen';
 import { LoginScreen } from '../screens/auth/LoginScreen';
 import { LoginMfaScreen } from '../screens/auth/LoginMfaScreen';
+import { MfaRecoveryRebindScreen } from '../screens/auth/MfaRecoveryRebindScreen';
+import { MfaRecoveryScreen } from '../screens/auth/MfaRecoveryScreen';
 import { RegisterScreen } from '../screens/auth/RegisterScreen';
 import { ResetPasswordScreen } from '../screens/auth/ResetPasswordScreen';
 import { TotpEnrollmentScreen } from '../screens/auth/TotpEnrollmentScreen';
 import { AuthenticatedHomeScreen } from '../screens/app/AuthenticatedHomeScreen';
 import type { AccountApi } from '../api/account-api';
 import type { OrderApi } from '../api/order-api';
+import type { MfaRecoveryState } from '../auth/auth-flow-view-model';
 import type { AuthStatus } from '../store/auth-store';
 import type {
   LoginChallenge,
   Member,
+  MemberTotpRebindRequest,
+  MfaRecoveryRebindConfirmRequest,
   TotpEnrollmentConfirmationRequest,
   TotpVerificationRequest,
 } from '../types/auth';
@@ -27,9 +32,11 @@ import type {
 } from '../types/auth';
 import type {
   FormSubmissionResult,
+  MfaRecoveryRebindConfirmationResult,
   PasswordForgotResult,
   PasswordRecoveryChallengeResult,
   PasswordResetResult,
+  TotpRebindBootstrapResult,
   TotpEnrollmentBootstrapResult,
 } from '../types/auth-ui';
 
@@ -49,6 +56,7 @@ interface AppNavigatorProps {
   protectedErrorMessage: string | null;
   isRefreshingSession: boolean;
   pendingMfa: LoginChallenge | null;
+  mfaRecovery: MfaRecoveryState | null;
   onLoginSubmit: (payload: LoginRequest) => Promise<FormSubmissionResult>;
   onLoginMfaSubmit: (payload: TotpVerificationRequest) => Promise<FormSubmissionResult>;
   onRegisterSubmit: (payload: RegisterRequest) => Promise<FormSubmissionResult>;
@@ -56,6 +64,7 @@ interface AppNavigatorProps {
   onOpenRegister: () => void;
   onOpenForgotPassword: () => void;
   onOpenResetPassword: (token?: string) => void;
+  onOpenAuthenticatedMfaRecovery: () => void;
   onResetPendingMfa: () => void;
   onLoadTotpEnrollment: () => Promise<TotpEnrollmentBootstrapResult>;
   onSubmitTotpEnrollment: (
@@ -66,6 +75,14 @@ interface AppNavigatorProps {
     payload: PasswordRecoveryChallengeRequest,
   ) => Promise<PasswordRecoveryChallengeResult>;
   onPasswordResetSubmit: (payload: PasswordResetRequest) => Promise<PasswordResetResult>;
+  onAuthenticatedMfaRecoveryBootstrap: (
+    payload: MemberTotpRebindRequest,
+  ) => Promise<TotpRebindBootstrapResult>;
+  onRecoveryMfaRecoveryBootstrap: () => Promise<TotpRebindBootstrapResult>;
+  onRestartMfaRecovery: () => void;
+  onSubmitMfaRecoveryRebind: (
+    payload: MfaRecoveryRebindConfirmRequest,
+  ) => Promise<MfaRecoveryRebindConfirmationResult>;
   onRefreshProtectedSession: () => void;
 }
 
@@ -137,6 +154,7 @@ export const AppNavigator = ({
   protectedErrorMessage,
   isRefreshingSession,
   pendingMfa,
+  mfaRecovery,
   onLoginSubmit,
   onLoginMfaSubmit,
   onRegisterSubmit,
@@ -144,12 +162,17 @@ export const AppNavigator = ({
   onOpenRegister,
   onOpenForgotPassword,
   onOpenResetPassword,
+  onOpenAuthenticatedMfaRecovery,
   onResetPendingMfa,
   onLoadTotpEnrollment,
   onSubmitTotpEnrollment,
   onPasswordForgotSubmit,
   onPasswordChallengeSubmit,
   onPasswordResetSubmit,
+  onAuthenticatedMfaRecoveryBootstrap,
+  onRecoveryMfaRecoveryBootstrap,
+  onRestartMfaRecovery,
+  onSubmitMfaRecoveryRebind,
   onRefreshProtectedSession,
 }: AppNavigatorProps) => {
   const routeKey = getRouteKey(authStatus, navigationState, member, pendingMfa);
@@ -214,6 +237,7 @@ export const AppNavigator = ({
         isRefreshingSession={isRefreshingSession}
         member={member}
         orderApi={orderApi}
+        onOpenMfaRecovery={onOpenAuthenticatedMfaRecovery}
         onRefreshSession={onRefreshProtectedSession}
         sessionErrorMessage={protectedErrorMessage}
         welcomeVariant={navigationState.welcomeVariant}
@@ -256,6 +280,36 @@ export const AppNavigator = ({
         onResetPasswordPress={onOpenResetPassword}
         onSubmit={onPasswordForgotSubmit}
         onSubmitChallenge={onPasswordChallengeSubmit}
+      />
+    );
+  } else if (
+    navigationState.authRoute === 'mfaRecoveryRebind'
+    && mfaRecovery?.bootstrap
+  ) {
+    screen = (
+      <MfaRecoveryRebindScreen
+        bootstrap={mfaRecovery.bootstrap}
+        onLoginPress={onOpenLogin}
+        onRegisterPress={onOpenRegister}
+        onRestartRecovery={onRestartMfaRecovery}
+        onSubmit={onSubmitMfaRecoveryRebind}
+      />
+    );
+  } else if (
+    navigationState.authRoute === 'mfaRecovery'
+    || navigationState.authRoute === 'mfaRecoveryRebind'
+  ) {
+    screen = (
+      <MfaRecoveryScreen
+        authStatus={authStatus}
+        member={member}
+        mfaRecovery={mfaRecovery}
+        onBootstrapAuthenticated={onAuthenticatedMfaRecoveryBootstrap}
+        onBootstrapRecovery={onRecoveryMfaRecoveryBootstrap}
+        onRestartRecovery={onRestartMfaRecovery}
+        onForgotPasswordPress={onOpenForgotPassword}
+        onLoginPress={onOpenLogin}
+        onRegisterPress={onOpenRegister}
       />
     );
   } else if (navigationState.authRoute === 'resetPassword') {
