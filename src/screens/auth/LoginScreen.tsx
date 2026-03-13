@@ -8,6 +8,7 @@ import { useLoginViewModel } from '../../auth/use-login-view-model';
 import { AuthField } from '../../components/auth/AuthField';
 import { AuthScaffold } from '../../components/auth/AuthScaffold';
 import { authSharedStyles as styles } from '../../components/auth/auth-styles';
+import { shouldUseQaPlaintextPasswords } from '../../config/runtime-options';
 
 interface LoginScreenProps {
   bannerMessage?: string | null;
@@ -31,6 +32,7 @@ export const LoginScreen = ({
   const viewModel = useLoginViewModel({
     submit: onSubmit,
   });
+  const qaPlaintextPasswords = shouldUseQaPlaintextPasswords();
   const passwordRecoveryGuidance = buildPasswordRecoveryGuidance(viewModel.email);
 
   return (
@@ -75,12 +77,12 @@ export const LoginScreen = ({
         placeholder="비밀번호"
         ref={passwordInputRef}
         returnKeyType="done"
-        rightActionActive={viewModel.showPassword}
+        rightActionActive={qaPlaintextPasswords || viewModel.showPassword}
         rightActionVariant="visibility"
-        secureTextEntry={!viewModel.showPassword}
+        secureTextEntry={!qaPlaintextPasswords && !viewModel.showPassword}
         testID="login-password"
-        autoComplete="password"
-        textContentType="password"
+        autoComplete={qaPlaintextPasswords ? 'off' : 'password'}
+        textContentType={qaPlaintextPasswords ? 'none' : 'password'}
         value={viewModel.password}
       />
       {viewModel.feedback.globalMessage ? (
