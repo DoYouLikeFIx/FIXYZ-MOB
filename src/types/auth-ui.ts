@@ -1,9 +1,12 @@
 import type {
   LoginChallenge,
   Member,
+  MfaRecoveryRebindConfirmResponse,
   PasswordForgotResponse,
+  PasswordResetContinuation,
   PasswordRecoveryChallengeResponse,
   RegisterRequest,
+  TotpRebindBootstrap,
   TotpEnrollmentBootstrap,
 } from './auth';
 
@@ -106,6 +109,26 @@ export type TotpEnrollmentBootstrapResult =
       error: unknown;
     };
 
+export type TotpRebindBootstrapResult =
+  | {
+      success: true;
+      bootstrap: TotpRebindBootstrap;
+    }
+  | {
+      success: false;
+      error: unknown;
+    };
+
+export type MfaRecoveryRebindConfirmationResult =
+  | {
+      success: true;
+      response: MfaRecoveryRebindConfirmResponse;
+    }
+  | {
+      success: false;
+      error: unknown;
+    };
+
 export type ProtectedRequestResult =
   | {
       status: 'authenticated';
@@ -149,6 +172,7 @@ export type PasswordRecoveryChallengeResult =
 export type PasswordResetResult =
   | {
       success: true;
+      continuation: PasswordResetContinuation;
     }
   | {
       success: false;
