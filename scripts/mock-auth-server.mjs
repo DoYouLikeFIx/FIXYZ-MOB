@@ -164,9 +164,19 @@ const indexProfile = (profile) => {
     mfaScenario: 'verify',
     totpEnrolled: true,
   }),
+  createProfile({
+    memberUuid: 'member-012',
+    email: 'order-stepup@fix.com',
+    name: 'Order Step-Up Demo',
+    accountId: '12',
+    orderScenario: 'step-up',
+    mfaScenario: 'verify',
+    totpEnrolled: true,
+  }),
 ].forEach(indexProfile);
 
 const sessions = new Map();
+const orderSessions = new Map();
 const pendingLoginChallenges = new Map();
 const pendingTotpEnrollments = new Map();
 
@@ -296,6 +306,12 @@ const ORDER_FIXTURE_EXPECTATIONS = {
     symbol: '005930',
   },
   'unknown-external': {
+    quantity: 1,
+    price: 70_100,
+    side: 'BUY',
+    symbol: '005930',
+  },
+  'step-up': {
     quantity: 1,
     price: 70_100,
     side: 'BUY',
@@ -554,7 +570,7 @@ const parsePositiveWholeNumber = (value) => {
 };
 
 const validateOrderRequest = ({ body, profile, request, response }) => {
-  const accountId = typeof body.accountId === 'string' ? body.accountId.trim() : '';
+  const accountId = String(body.accountId ?? '').trim();
   if (!profile.member.accountId || accountId !== profile.member.accountId) {
     writeJson(
       response,
@@ -568,28 +584,28 @@ const validateOrderRequest = ({ body, profile, request, response }) => {
     return null;
   }
 
-  const clOrdId = typeof body.clOrdId === 'string' ? body.clOrdId.trim() : '';
   const headerClOrdId =
     typeof request.headers['x-clordid'] === 'string'
       ? request.headers['x-clordid'].trim()
       : '';
-  if (!clOrdId || !headerClOrdId || clOrdId !== headerClOrdId) {
+  if (!headerClOrdId) {
     writeJson(
       response,
       422,
       errorEnvelope(
         'VALIDATION-001',
         'Invalid order idempotency contract',
-        'The X-ClOrdID header must be present and match body.clOrdId exactly.',
+        'The X-ClOrdID header must be present for canonical order sessions.',
       ),
     );
     return null;
   }
 
-  const quantity = parsePositiveWholeNumber(String(body.quantity ?? ''));
+  const quantity = parsePositiveWholeNumber(String(body.qty ?? body.quantity ?? ''));
   const price = parsePositiveWholeNumber(String(body.price ?? ''));
   const symbol = typeof body.symbol === 'string' ? body.symbol.trim() : '';
   const side = typeof body.side === 'string' ? body.side.trim() : '';
+  const orderType = typeof body.orderType === 'string' ? body.orderType.trim() : 'LIMIT';
   if (!quantity || !price || !symbol || !side) {
     writeJson(
       response,
@@ -623,9 +639,68 @@ const validateOrderRequest = ({ body, profile, request, response }) => {
   }
 
   return {
-    clOrdId,
+    accountId: Number.parseInt(accountId, 10),
+    clOrdId: headerClOrdId,
+    orderType,
+    price,
+    side,
+    symbol,
     quantity,
   };
+};
+
+const buildOrderSessionResponse = (session, overrides = {}) => ({
+  orderSessionId: session.orderSessionId,
+  clOrdId: session.clOrdId,
+  status: session.status,
+  challengeRequired: session.challengeRequired,
+  authorizationReason: session.authorizationReason,
+  accountId: session.accountId,
+  symbol: session.symbol,
+  side: session.side,
+  orderType: session.orderType,
+  qty: session.qty,
+  price: session.price,
+  executionResult: session.executionResult ?? null,
+  executedQty: session.executedQty ?? null,
+  leavesQty: session.leavesQty ?? null,
+  executedPrice: session.executedPrice ?? null,
+  externalOrderId: session.externalOrderId ?? null,
+  failureReason: session.failureReason ?? null,
+  executedAt: session.executedAt ?? null,
+  canceledAt: session.canceledAt ?? null,
+  createdAt: session.createdAt,
+  updatedAt: overrides.updatedAt ?? session.updatedAt,
+  expiresAt: session.expiresAt,
+  remainingSeconds: Math.max(0, Math.floor((Date.parse(session.expiresAt) - Date.now()) / 1000)),
+  ...overrides,
+});
+
+const createOrderSession = (profile, validatedOrder) => {
+  const timestamp = new Date().toISOString();
+  const requiresChallenge = profile.orderScenario === 'step-up';
+  const session = {
+    orderSessionId: `ord-sess-${crypto.randomUUID()}`,
+    clOrdId: validatedOrder.clOrdId,
+    status: requiresChallenge ? 'PENDING_NEW' : 'AUTHED',
+    challengeRequired: requiresChallenge,
+    authorizationReason: requiresChallenge
+      ? 'ELEVATED_ORDER_RISK'
+      : 'RECENT_LOGIN_MFA',
+    accountId: validatedOrder.accountId,
+    symbol: validatedOrder.symbol,
+    side: validatedOrder.side,
+    orderType: validatedOrder.orderType || 'LIMIT',
+    qty: validatedOrder.quantity,
+    price: validatedOrder.price,
+    profileEmail: profile.member.email,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+  };
+
+  orderSessions.set(session.orderSessionId, session);
+  return session;
 };
 
 const orderErrorEnvelope = (code, message, detail, options = {}) => ({
@@ -1328,7 +1403,7 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  if (method === 'POST' && url.pathname === '/api/v1/orders') {
+  if (method === 'POST' && url.pathname === '/api/v1/orders/sessions') {
     if (!ensureCsrf(request, response, cookies)) {
       return;
     }
@@ -1353,6 +1428,158 @@ const server = http.createServer(async (request, response) => {
     });
 
     if (!validatedOrder) {
+      return;
+    }
+
+    const orderSession = createOrderSession(profile, validatedOrder);
+
+    writeJson(
+      response,
+      201,
+      successEnvelope(buildOrderSessionResponse(orderSession)),
+    );
+    return;
+  }
+
+  const orderSessionStatusMatch = method === 'GET'
+    ? url.pathname.match(/^\/api\/v1\/orders\/sessions\/([^/]+)$/)
+    : null;
+
+  if (orderSessionStatusMatch) {
+    const profile = readAuthenticatedProfile(cookies, response);
+
+    if (!profile) {
+      return;
+    }
+
+    const [, orderSessionId] = orderSessionStatusMatch;
+    const orderSession = orderSessions.get(orderSessionId);
+
+    if (!orderSession || orderSession.profileEmail !== profile.member.email) {
+      writeJson(
+        response,
+        404,
+        errorEnvelope(
+          'ORD-008',
+          'Order session not found',
+          'The requested order session does not exist or is not visible to this member.',
+        ),
+      );
+      return;
+    }
+
+    writeJson(
+      response,
+      200,
+      successEnvelope(buildOrderSessionResponse(orderSession)),
+    );
+    return;
+  }
+
+  const orderSessionOtpMatch = method === 'POST'
+    ? url.pathname.match(/^\/api\/v1\/orders\/sessions\/([^/]+)\/otp\/verify$/)
+    : null;
+
+  if (orderSessionOtpMatch) {
+    if (!ensureCsrf(request, response, cookies)) {
+      return;
+    }
+
+    const profile = readAuthenticatedProfile(cookies, response);
+
+    if (!profile) {
+      return;
+    }
+
+    const [, orderSessionId] = orderSessionOtpMatch;
+    const orderSession = orderSessions.get(orderSessionId);
+
+    if (!orderSession || orderSession.profileEmail !== profile.member.email) {
+      writeJson(
+        response,
+        404,
+        errorEnvelope(
+          'ORD-008',
+          'Order session not found',
+          'The requested order session does not exist or is not visible to this member.',
+        ),
+      );
+      return;
+    }
+
+    const body = await readMutationBody(request, response);
+
+    if (!body) {
+      return;
+    }
+
+    const otpCode = typeof body.otpCode === 'string' ? body.otpCode.trim() : '';
+    if (otpCode !== MFA_CODE) {
+      writeJson(
+        response,
+        422,
+        errorEnvelope(
+          'CHANNEL-002',
+          'OTP mismatch',
+          'The provided OTP code did not match the active authenticator.',
+        ),
+      );
+      return;
+    }
+
+    orderSession.status = 'AUTHED';
+    orderSession.challengeRequired = false;
+    orderSession.updatedAt = new Date().toISOString();
+
+    writeJson(
+      response,
+      200,
+      successEnvelope(buildOrderSessionResponse(orderSession)),
+    );
+    return;
+  }
+
+  const orderSessionExecuteMatch = method === 'POST'
+    ? url.pathname.match(/^\/api\/v1\/orders\/sessions\/([^/]+)\/execute$/)
+    : null;
+
+  if (orderSessionExecuteMatch) {
+    if (!ensureCsrf(request, response, cookies)) {
+      return;
+    }
+
+    const profile = readAuthenticatedProfile(cookies, response);
+
+    if (!profile) {
+      return;
+    }
+
+    const [, orderSessionId] = orderSessionExecuteMatch;
+    const orderSession = orderSessions.get(orderSessionId);
+
+    if (!orderSession || orderSession.profileEmail !== profile.member.email) {
+      writeJson(
+        response,
+        404,
+        errorEnvelope(
+          'ORD-008',
+          'Order session not found',
+          'The requested order session does not exist or is not visible to this member.',
+        ),
+      );
+      return;
+    }
+
+    if (orderSession.status !== 'AUTHED') {
+      writeJson(
+        response,
+        409,
+        errorEnvelope(
+          'ORD-009',
+          'Order session requires OTP verification',
+          'The order session must be AUTHED before execute can run.',
+        ),
+      );
       return;
     }
 
@@ -1390,16 +1617,19 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    orderSession.status = 'COMPLETED';
+    orderSession.executionResult = 'FILLED';
+    orderSession.executedQty = orderSession.qty;
+    orderSession.leavesQty = 0;
+    orderSession.executedPrice = orderSession.price;
+    orderSession.externalOrderId = `ord-${nextOrderId++}`;
+    orderSession.executedAt = new Date().toISOString();
+    orderSession.updatedAt = orderSession.executedAt;
+
     writeJson(
       response,
       200,
-      successEnvelope({
-        orderId: nextOrderId++,
-        clOrdId: validatedOrder.clOrdId,
-        status: 'RECEIVED',
-        idempotent: false,
-        orderQuantity: validatedOrder.quantity,
-      }),
+      successEnvelope(buildOrderSessionResponse(orderSession)),
     );
     return;
   }
