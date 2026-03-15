@@ -1,4 +1,5 @@
 import {
+  LogBox,
   useRef,
 } from 'react';
 
@@ -9,15 +10,29 @@ import {
 } from './src/store/auth-store';
 import {
   isMotionDisabled,
+  resetMobileLaunchArgumentsCache,
+  shouldHideDevWarningsOverlay,
 } from './src/config/runtime-options';
 import { AppNavigator } from './src/navigation/AppNavigator';
 
 const App = () => {
+  resetMobileLaunchArgumentsCache();
   const runtimeRef = useRef<ReturnType<typeof createMobileAuthRuntime> | null>(null);
   const animationsDisabledRef = useRef(isMotionDisabled());
+  const warningsHiddenRef = useRef(false);
 
   if (runtimeRef.current === null) {
     runtimeRef.current = createMobileAuthRuntime();
+  }
+
+  if (
+    !warningsHiddenRef.current
+    && shouldHideDevWarningsOverlay()
+    && LogBox
+    && typeof LogBox.ignoreAllLogs === 'function'
+  ) {
+    LogBox.ignoreAllLogs();
+    warningsHiddenRef.current = true;
   }
 
   const authFlow = useAuthFlowViewModel({
