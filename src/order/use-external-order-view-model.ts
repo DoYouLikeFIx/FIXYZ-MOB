@@ -123,8 +123,7 @@ const formatOtpError = (error: unknown) => {
   if (
     typeof error === 'object'
     && error !== null
-    && 'code' in error
-    && (error as { code?: string }).code === 'CHANNEL-002'
+    && code === 'CHANNEL-002'
     && 'remainingAttempts' in error
     && typeof (error as { remainingAttempts?: unknown }).remainingAttempts === 'number'
   ) {
@@ -675,6 +674,7 @@ export const useExternalOrderViewModel = ({
             await verifyOtp(demoOrderOtpCode);
           }
         } catch {
+          return;
         }
       })();
     }, 900);
