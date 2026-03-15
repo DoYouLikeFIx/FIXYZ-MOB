@@ -830,6 +830,54 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     );
   });
 
+  it('ignores a stale restore result after the user edits the draft first', async () => {
+    const secureStoreRead = createDeferred<string | null>();
+    __setOrderSessionStorageRuntimeForTests({
+      isReactNativeRuntime: () => true,
+      loadSecureStore: vi.fn().mockResolvedValue({
+        get: vi.fn().mockReturnValue(secureStoreRead.promise),
+        remove: vi.fn().mockResolvedValue(undefined),
+        set: vi.fn().mockResolvedValue(undefined),
+      }),
+    });
+
+    const getOrderSession = vi.fn().mockResolvedValue({
+      orderSessionId: 'sess-stale-restore',
+      clOrdId: 'cl-stale-restore',
+      status: 'PENDING_NEW',
+      challengeRequired: true,
+      authorizationReason: 'ELEVATED_ORDER_RISK',
+      accountId: 1,
+      symbol: '005930',
+      side: 'BUY',
+      orderType: 'LIMIT',
+      qty: 5,
+      price: 70100,
+      expiresAt: futureIso(),
+    });
+
+    const { renderer } = await renderScreen({
+      orderApi: createOrderApi({
+        getOrderSession,
+      }),
+    });
+
+    await act(async () => {
+      findByTestId(renderer.root, 'mobile-order-input-symbol').props.onChangeText('000660');
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      secureStoreRead.resolve('sess-stale-restore');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(getOrderSession).not.toHaveBeenCalled();
+    expect(findByTestId(renderer.root, 'mobile-order-input-symbol').props.value).toBe('000660');
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-otp-input')).toHaveLength(0);
+  });
+
   it('shows deterministic inline guidance when secure-store bootstrap fails during restore', async () => {
     __setOrderSessionStorageRuntimeForTests({
       isReactNativeRuntime: () => true,
