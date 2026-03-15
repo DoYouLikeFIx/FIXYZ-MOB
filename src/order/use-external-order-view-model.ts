@@ -340,6 +340,7 @@ export const useExternalOrderViewModel = ({
 
   useEffect(() => {
     let cancelled = false;
+    const restoreVersion = operationVersionRef.current;
 
     const restore = async () => {
       if (!accountId || isRefreshingSession) {
@@ -350,31 +351,35 @@ export const useExternalOrderViewModel = ({
       try {
         storedOrderSessionId = await readPersistedOrderSessionId(accountId);
       } catch (error) {
-        if (!cancelled) {
+        if (!cancelled && restoreVersion === operationVersionRef.current) {
           reportStorageFailure(error);
         }
         return;
       }
 
-      if (cancelled || !storedOrderSessionId) {
+      if (
+        cancelled
+        || restoreVersion !== operationVersionRef.current
+        || !storedOrderSessionId
+      ) {
         return;
       }
 
       setIsRestoring(true);
       try {
         const session = await orderApi.getOrderSession(storedOrderSessionId);
-        if (!cancelled) {
+        if (!cancelled && restoreVersion === operationVersionRef.current) {
           applySessionStateEvent(session, { restoring: true });
         }
       } catch (error) {
-        if (!cancelled) {
+        if (!cancelled && restoreVersion === operationVersionRef.current) {
           resetEvent({
             keepPreset: true,
             message: getErrorMessage(error),
           });
         }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && restoreVersion === operationVersionRef.current) {
           setIsRestoring(false);
         }
       }
@@ -624,6 +629,7 @@ export const useExternalOrderViewModel = ({
     restartExpiredSession,
     backToDraft: goBackToDraft,
     selectPreset: (presetId: ExternalOrderPresetId) => {
+      invalidatePendingOperations();
       clearTransientFeedback();
       setSelectedPresetId(presetId);
       setDraft(draftFromPreset(presetId));
@@ -633,6 +639,7 @@ export const useExternalOrderViewModel = ({
     },
     selectedPresetId,
     setSymbolValue: (value: string) => {
+      invalidatePendingOperations();
       clearTransientFeedback();
       clearServerFieldErrors(['symbol']);
       if (orderSession !== null && step === 'A') {
@@ -646,6 +653,7 @@ export const useExternalOrderViewModel = ({
       setSelectedPresetId(matchPresetIdFromDraft(nextDraft));
     },
     setQuantityValue: (value: string) => {
+      invalidatePendingOperations();
       clearTransientFeedback();
       clearServerFieldErrors(['quantity']);
       if (orderSession !== null && step === 'A') {

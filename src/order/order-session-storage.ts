@@ -116,7 +116,7 @@ export const readPersistedOrderSessionId = async (
 
   const key = storageKey(accountId);
   const mirrored = storageMirror.get(key);
-  if (mirrored) {
+  if (mirrored !== undefined) {
     return mirrored;
   }
 
