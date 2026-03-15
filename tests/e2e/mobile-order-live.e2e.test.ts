@@ -19,7 +19,7 @@ const LIVE_BASE_URL = process.env.LIVE_API_BASE_URL?.trim() ?? '';
 const DEFAULT_REGISTER_PASSWORD = 'LiveMobOrder1!';
 const canonicalOrderSessionContract = JSON.parse(
   readFileSync(
-    fileURLToPath(new NodeURL('../../../docs/contracts/order-session-ux.json', import.meta.url)),
+    fileURLToPath(new NodeURL('../order-session-contract-cases.json', import.meta.url)),
     'utf8',
   ),
 ) as {
