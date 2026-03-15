@@ -258,7 +258,7 @@ describe('ExternalOrderRecoverySection', () => {
             price: 70100,
             expiresAt: futureIso(45),
           }}
-          authorizationReasonMessage="고위험 주문으로 분류되어 주문 실행 전에 OTP 인증이 필요합니다."
+          authorizationReasonMessage="고위험 주문으로 분류되어 주문 실행 전에 OTP 인증을 완료해야 합니다."
           otpValue=""
           presentation={null}
           presets={externalOrderPresetOptions}
@@ -319,7 +319,7 @@ describe('ExternalOrderRecoverySection', () => {
             price: 70100,
             expiresAt: null,
           }}
-          authorizationReasonMessage="현재 신뢰 세션이 유효하여 추가 OTP 없이 바로 주문을 실행할 수 있습니다."
+          authorizationReasonMessage="현재 인증 세션이 신뢰되어 추가 OTP 없이 바로 주문을 실행할 수 있습니다."
           otpValue=""
           presentation={null}
           presets={externalOrderPresetOptions}
@@ -508,7 +508,7 @@ describe('ExternalOrderRecoverySection', () => {
             price: 70100,
             expiresAt: new Date(Date.now() - 1000).toISOString(),
           }}
-          authorizationReasonMessage="현재 신뢰 세션이 유효하여 추가 OTP 없이 바로 주문을 실행할 수 있습니다."
+          authorizationReasonMessage="현재 인증 세션이 신뢰되어 추가 OTP 없이 바로 주문을 실행할 수 있습니다."
           otpValue=""
           presentation={null}
           presets={externalOrderPresetOptions}

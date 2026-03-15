@@ -54,6 +54,18 @@ type SharedProcessingStateCase = {
   body: string;
 };
 
+type SharedAuthorizationScenario = {
+  scenarioKey: string;
+  status: string;
+  challengeRequired: boolean;
+  authorizationReason: string;
+  failureReason?: string;
+  clientStep: string;
+  nextAction: string;
+  title: string;
+  body: string;
+};
+
 type SharedFinalResultCase = {
   name: string;
   status: string;
@@ -80,12 +92,25 @@ const sharedOrderSessionContractCases = JSON.parse(
     'utf8',
   ),
 ) as {
+  authorizationScenarios: SharedAuthorizationScenario[];
   processingStates: SharedProcessingStateCase[];
   finalResults: SharedFinalResultCase[];
 };
 
+const sharedAuthorizationScenarios = sharedOrderSessionContractCases.authorizationScenarios;
 const sharedProcessingStateCases = sharedOrderSessionContractCases.processingStates;
 const sharedFinalResultCases = sharedOrderSessionContractCases.finalResults;
+const authorizationScenario = (scenarioKey: string) => {
+  const scenario = sharedAuthorizationScenarios.find(
+    (candidate) => candidate.scenarioKey === scenarioKey,
+  );
+
+  if (!scenario) {
+    throw new Error(`Missing authorization scenario: ${scenarioKey}`);
+  }
+
+  return scenario;
+};
 
 const positionsFixture: AccountPosition[] = [
   {
@@ -637,12 +662,13 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
   });
 
   it('advances to the authorization guidance branch when the created session requires challenge', async () => {
+    const scenario = authorizationScenario('challenge-required-step-up');
     const createOrderSession = vi.fn().mockResolvedValue({
       orderSessionId: 'sess-step-b',
       clOrdId: 'cl-step-b',
-      status: 'PENDING_NEW',
-      challengeRequired: true,
-      authorizationReason: 'ELEVATED_ORDER_RISK',
+      status: scenario.status,
+      challengeRequired: scenario.challengeRequired,
+      authorizationReason: scenario.authorizationReason,
       accountId: 1,
       symbol: '005930',
       side: 'BUY',
@@ -663,8 +689,41 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
 
     expect(findAllByTestId(renderer.root, 'mobile-order-session-otp-input')).toHaveLength(1);
     expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-authorization'))).toContain(
-      'OTP 인증이 필요합니다.',
+      scenario.body,
     );
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-execute')).toHaveLength(0);
+  });
+
+  it('advances to the canonical auto-authorized confirmation branch without OTP input', async () => {
+    const scenario = authorizationScenario('auto-authorized-confirm');
+    const orderApi = createOrderApi({
+      createOrderSession: vi.fn().mockResolvedValue({
+        orderSessionId: 'sess-step-c',
+        clOrdId: 'cl-step-c',
+        status: scenario.status,
+        challengeRequired: scenario.challengeRequired,
+        authorizationReason: scenario.authorizationReason,
+        accountId: 1,
+        symbol: '005930',
+        side: 'BUY',
+        orderType: 'LIMIT',
+        qty: 1,
+        price: 70100,
+        expiresAt: futureIso(),
+      }),
+    });
+    const { renderer } = await renderScreen({ orderApi });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-execute')).toHaveLength(1);
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-authorization'))).toContain(
+      scenario.body,
+    );
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-otp-input')).toHaveLength(0);
   });
 
   it('maps replayed OTP verification into deterministic guidance', async () => {
@@ -867,6 +926,7 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
   });
 
   it('shows the expired-session modal and restarts the draft when the session has expired', async () => {
+    const scenario = authorizationScenario('expired-session-reset');
     const orderApi = createOrderApi({
       createOrderSession: vi.fn().mockResolvedValue({
         orderSessionId: 'sess-expired',
@@ -891,6 +951,9 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     });
 
     expect(findAllByTestId(renderer.root, 'mobile-order-session-expired-modal')).toHaveLength(1);
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-expired-modal'))).toContain(
+      scenario.title,
+    );
 
     await act(async () => {
       await findByTestId(renderer.root, 'mobile-order-session-expired-restart').props.onPress();
@@ -900,11 +963,12 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     expect(findAllByTestId(renderer.root, 'mobile-order-session-expired-modal')).toHaveLength(0);
     expect(findAllByTestId(renderer.root, 'mobile-order-session-create')).toHaveLength(1);
     expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error'))).toBe(
-      '주문 세션이 만료되었습니다. 입력한 주문을 확인한 뒤 다시 시작해 주세요.',
+      `주문 세션이 만료되었습니다. ${scenario.body}`,
     );
   });
 
   it('shows a blocking expired-session modal when Step B verify detects a stale session', async () => {
+    const scenario = authorizationScenario('expired-session-reset');
     const orderApi = createOrderApi({
       createOrderSession: vi.fn().mockResolvedValue({
         orderSessionId: 'sess-expired-verify',
@@ -948,8 +1012,37 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
 
     expect(findAllByTestId(renderer.root, 'mobile-order-session-expired-modal')).toHaveLength(0);
     expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error'))).toBe(
-      '주문 세션이 만료되었습니다. 입력한 주문을 확인한 뒤 다시 시작해 주세요.',
+      `주문 세션이 만료되었습니다. ${scenario.body}`,
     );
+  });
+
+  it('renders canonical OTP exhaustion restart guidance when a failed session is restored', async () => {
+    const scenario = authorizationScenario('failed-session-reset');
+
+    await persistOrderSessionForRestore('sess-failed-restore');
+
+    const orderApi = createOrderApi({
+      getOrderSession: vi.fn().mockResolvedValue(makeOrderSession({
+        orderSessionId: 'sess-failed-restore',
+        clOrdId: 'cl-failed-restore',
+        status: scenario.status,
+        challengeRequired: scenario.challengeRequired,
+        authorizationReason: scenario.authorizationReason,
+        failureReason: scenario.failureReason,
+        expiresAt: undefined,
+      })),
+    });
+    const { renderer } = await renderScreen({ orderApi });
+
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-result')).toHaveLength(1);
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-result-title'))).toBe(
+      scenario.title,
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-result'))).toContain(
+      scenario.body,
+    );
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-reset')).toHaveLength(1);
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-otp-input')).toHaveLength(0);
   });
 
   it('maps server-side Step A rejects back to quantity guidance', async () => {
@@ -1037,7 +1130,7 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
       '상태 PENDING_NEW',
     );
     expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-feedback'))).toContain(
-      'OTP 인증이 필요합니다.',
+      authorizationScenario('challenge-required-step-up').body,
     );
     expect(findAllByTestId(renderer.root, 'mobile-order-session-create')).toHaveLength(1);
   });

@@ -1,4 +1,6 @@
 import { createHmac, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import { createAuthApi } from '@/api/auth-api';
 import { createOrderApi } from '@/api/order-api';
@@ -15,6 +17,18 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 const LIVE_BASE_URL = process.env.LIVE_API_BASE_URL?.trim() ?? '';
 const DEFAULT_REGISTER_PASSWORD = 'LiveMobOrder1!';
+const canonicalOrderSessionContract = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL('../../../docs/contracts/order-session-ux.json', import.meta.url)),
+    'utf8',
+  ),
+) as {
+  finalResults: Array<{
+    status: string;
+    executionResult?: string;
+    failureReason?: string;
+  }>;
+};
 
 class LiveCookieManager extends InMemoryCookieManager {
   async cookieHeader(url: string): Promise<string | undefined> {
@@ -308,6 +322,37 @@ const createHighRiskOrderSession = async (
   });
 };
 
+const createLowRiskOrderSession = async (
+  loginHarness: ReturnType<typeof createLiveHarness>,
+  accountId: number,
+) => {
+  return loginHarness.orderApi.createOrderSession({
+    accountId,
+    clOrdId: randomUUID(),
+    symbol: '005930',
+    side: 'BUY',
+    quantity: 1,
+    price: 10_000,
+  });
+};
+
+const hasCanonicalFinalResult = (session: {
+  status: string;
+  executionResult?: string | null;
+  failureReason?: string | null;
+}) =>
+  canonicalOrderSessionContract.finalResults.some(
+    (candidate) =>
+      candidate.status === session.status
+      && (candidate.executionResult ?? null) === (session.executionResult ?? null)
+      && (candidate.failureReason ?? null) === (session.failureReason ?? null),
+  );
+
+const expectNoActiveWindowMetadata = (session: Record<string, unknown>) => {
+  expect(Object.prototype.hasOwnProperty.call(session, 'expiresAt')).toBe(false);
+  expect(Object.prototype.hasOwnProperty.call(session, 'remainingSeconds')).toBe(false);
+};
+
 describe.runIf(Boolean(LIVE_BASE_URL))('Live mobile order session against backend', () => {
   beforeAll(() => {
     authStore.initialize(null);
@@ -320,6 +365,30 @@ describe.runIf(Boolean(LIVE_BASE_URL))('Live mobile order session against backen
   afterAll(() => {
     resetAuthStore();
   });
+
+  it('registers, logs in with fresh MFA, and completes a low-risk auto-authorized order session', async () => {
+    const { accountId, loginHarness } = await registerEnrollAndLogin(LIVE_BASE_URL);
+
+    const createdSession = await createLowRiskOrderSession(loginHarness, accountId);
+
+    expect(createdSession).toMatchObject({
+      status: 'AUTHED',
+      challengeRequired: false,
+      authorizationReason: 'TRUSTED_AUTH_SESSION',
+      symbol: '005930',
+      qty: 1,
+    });
+    expect(createdSession.expiresAt).toBeTruthy();
+    expect(createdSession.remainingSeconds).toBeTypeOf('number');
+
+    const executedSession = await loginHarness.orderApi.executeOrderSession(
+      createdSession.orderSessionId,
+    );
+    expect(executedSession.status).toBe('COMPLETED');
+    expect(hasCanonicalFinalResult(executedSession)).toBe(true);
+    expectNoActiveWindowMetadata(executedSession as unknown as Record<string, unknown>);
+    expect(executedSession.failureReason).toBeNull();
+  }, 150_000);
 
   it('registers, enrolls TOTP, logs in with fresh MFA, and completes a challenged order session', async () => {
     const {
@@ -363,7 +432,8 @@ describe.runIf(Boolean(LIVE_BASE_URL))('Live mobile order session against backen
       createdSession.orderSessionId,
     );
     expect(executedSession.status).toBe('COMPLETED');
-    expect(executedSession.executionResult).toBeTruthy();
+    expect(hasCanonicalFinalResult(executedSession)).toBe(true);
+    expectNoActiveWindowMetadata(executedSession as unknown as Record<string, unknown>);
     expect(executedSession.externalOrderId).toBeTruthy();
   }, 150_000);
 
@@ -422,7 +492,8 @@ describe.runIf(Boolean(LIVE_BASE_URL))('Live mobile order session against backen
       secondSession.orderSessionId,
     );
     expect(executedRecoveredSession.status).toBe('COMPLETED');
-    expect(executedRecoveredSession.executionResult).toBeTruthy();
+    expect(hasCanonicalFinalResult(executedRecoveredSession)).toBe(true);
+    expectNoActiveWindowMetadata(executedRecoveredSession as unknown as Record<string, unknown>);
     expect(executedRecoveredSession.externalOrderId).toBeTruthy();
   }, 180_000);
 });
