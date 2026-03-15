@@ -8,6 +8,8 @@ export interface MobileLaunchArguments {
   mobApiBaseUrl?: string;
   mobRuntimeTarget?: RuntimeTarget;
   mobDisableAnimations?: boolean | string;
+  mobHideDevWarningsOverlay?: boolean | string;
+  mobDemoOrderOtpCode?: string;
   mobQaPlaintextPasswords?: boolean | string;
 }
 
@@ -85,6 +87,35 @@ export const shouldUseQaPlaintextPasswords = (): boolean => {
       typeof mobQaPlaintextPasswords === 'string' ? mobQaPlaintextPasswords : undefined,
     ) === true
   );
+};
+
+export const shouldHideDevWarningsOverlay = (): boolean => {
+  if (!isDevelopmentRuntime()) {
+    return false;
+  }
+
+  const { mobHideDevWarningsOverlay } = getMobileLaunchArguments();
+
+  return mobHideDevWarningsOverlay === true
+    || toBoolean(
+      typeof mobHideDevWarningsOverlay === 'string'
+        ? mobHideDevWarningsOverlay
+        : undefined,
+    ) === true;
+};
+
+export const resolveDemoOrderOtpCode = (): string | null => {
+  if (!isDevelopmentRuntime()) {
+    return null;
+  }
+
+  const { mobDemoOrderOtpCode } = getMobileLaunchArguments();
+  if (typeof mobDemoOrderOtpCode !== 'string') {
+    return null;
+  }
+
+  const digitsOnly = mobDemoOrderOtpCode.replace(/\D/g, '').slice(0, 6);
+  return digitsOnly.length === 6 ? digitsOnly : null;
 };
 
 export const shouldEnforceStrictCsrfBootstrap = (): boolean => {
