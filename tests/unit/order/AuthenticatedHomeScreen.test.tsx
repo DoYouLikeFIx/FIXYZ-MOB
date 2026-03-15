@@ -76,7 +76,7 @@ type SharedFinalResultCase = {
 
 const sharedOrderSessionContractCases = JSON.parse(
   readFileSync(
-    fileURLToPath(`${new URL('../../../../tests/order-session-contract-cases.json', testFileUrl)}`),
+    fileURLToPath(`${new URL('../../order-session-contract-cases.json', testFileUrl)}`),
     'utf8',
   ),
 ) as {
@@ -747,6 +747,47 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     );
   });
 
+  it('maps canonicalized OTP mismatch errors into remaining-attempts guidance', async () => {
+    const orderApi = createOrderApi({
+      createOrderSession: vi.fn().mockResolvedValue({
+        orderSessionId: 'sess-step-b',
+        clOrdId: 'cl-step-b',
+        status: 'PENDING_NEW',
+        challengeRequired: true,
+        authorizationReason: 'ELEVATED_ORDER_RISK',
+        accountId: 1,
+        symbol: '005930',
+        side: 'BUY',
+        orderType: 'LIMIT',
+        qty: 1,
+        price: 70100,
+        expiresAt: futureIso(),
+      }),
+      verifyOrderSessionOtp: vi.fn().mockRejectedValue(
+        createNormalizedHttpError('otp mismatch', {
+          code: 'CHANNEL_002',
+          remainingAttempts: 2,
+          status: 401,
+        }),
+      ),
+    });
+    const { renderer } = await renderScreen({ orderApi });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      findByTestId(renderer.root, 'mobile-order-session-otp-input').props.onChangeText('123456');
+      await flushMicrotasks();
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error'))).toBe(
+      'OTP 코드가 일치하지 않습니다. 남은 시도 2회',
+    );
+  });
+
   it('shows the 60-second warning bar and extends the order session', async () => {
     const extendOrderSession = vi.fn().mockResolvedValue({
       orderSessionId: 'sess-warning',
@@ -794,6 +835,35 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     });
 
     expect(extendOrderSession).toHaveBeenCalledWith('sess-warning');
+  });
+
+  it('does not treat an active session with null expiry metadata as already expired', async () => {
+    const orderApi = createOrderApi({
+      createOrderSession: vi.fn().mockResolvedValue({
+        orderSessionId: 'sess-null-expiry',
+        clOrdId: 'cl-null-expiry',
+        status: 'AUTHED',
+        challengeRequired: false,
+        authorizationReason: 'TRUSTED_AUTH_SESSION',
+        accountId: 1,
+        symbol: '005930',
+        side: 'BUY',
+        orderType: 'LIMIT',
+        qty: 1,
+        price: 70100,
+        expiresAt: null,
+      }),
+    });
+    const { renderer } = await renderScreen({ orderApi });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-execute')).toHaveLength(1);
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-warning')).toHaveLength(0);
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-expired-modal')).toHaveLength(0);
   });
 
   it('shows the expired-session modal and restarts the draft when the session has expired', async () => {
@@ -1153,6 +1223,7 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-processing-title'))).toContain(
       '다시 확인',
     );
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-feedback')).toHaveLength(0);
 
     await unmountRenderer(renderer);
   });
@@ -1188,6 +1259,7 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-manual-review'))).toContain(
       '수동 확인',
     );
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-feedback')).toHaveLength(0);
 
     await unmountRenderer(renderer);
   });
@@ -1556,6 +1628,7 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     expect(getTextContent(findByTestId(renderer.root, 'mobile-order-result-execution-result'))).toContain(
       filledResult?.executionResultLabel ?? 'FILLED',
     );
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-feedback')).toHaveLength(0);
 
     vi.useRealTimers();
   });
