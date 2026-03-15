@@ -1,8 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import type { ReactTestInstance } from 'react-test-renderer';
 import { act, create } from 'react-test-renderer';
 
 import type { AccountApi } from '@/api/account-api';
-import type { OrderApi } from '@/api/order-api';
+import type { OrderApi, OrderSessionResponse } from '@/api/order-api';
 import { createNormalizedHttpError } from '@/network/errors';
 import { __resetPersistedOrderSessionForTests } from '@/order/use-external-order-view-model';
 import { __setOrderSessionStorageRuntimeForTests } from '@/order/order-session-storage';
@@ -21,6 +24,68 @@ const memberFixture: Member = {
 
 const futureIso = (seconds = 3600) =>
   new Date(Date.now() + seconds * 1000).toISOString();
+
+const makeOrderSession = (
+  overrides?: Partial<OrderSessionResponse>,
+): OrderSessionResponse => ({
+  orderSessionId: 'sess-001',
+  clOrdId: 'cl-001',
+  status: 'AUTHED',
+  challengeRequired: false,
+  authorizationReason: 'TRUSTED_AUTH_SESSION',
+  accountId: 1,
+  symbol: '005930',
+  side: 'BUY',
+  orderType: 'LIMIT',
+  qty: 1,
+  price: 70100,
+  expiresAt: futureIso(),
+  ...overrides,
+});
+
+const testFileUrl = import.meta.url.startsWith('file:')
+  ? import.meta.url
+  : `file://${import.meta.url}`;
+
+type SharedProcessingStateCase = {
+  name: string;
+  status: string;
+  title: string;
+  body: string;
+};
+
+type SharedFinalResultCase = {
+  name: string;
+  status: string;
+  executionResult?: string;
+  title: string;
+  body: string;
+  externalOrderId?: string;
+  executionResultLabel?: string;
+  executedQty?: number;
+  executedQtyLabel?: string;
+  executedPrice?: number;
+  executedPriceLabel?: string;
+  failureReason?: string;
+  failureReasonLabel?: string;
+  leavesQty?: number;
+  leavesQtyLabel?: string;
+  canceledAt?: string;
+  canceledAtLabel?: string;
+};
+
+const sharedOrderSessionContractCases = JSON.parse(
+  readFileSync(
+    fileURLToPath(`${new URL('../../../../tests/order-session-contract-cases.json', testFileUrl)}`),
+    'utf8',
+  ),
+) as {
+  processingStates: SharedProcessingStateCase[];
+  finalResults: SharedFinalResultCase[];
+};
+
+const sharedProcessingStateCases = sharedOrderSessionContractCases.processingStates;
+const sharedFinalResultCases = sharedOrderSessionContractCases.finalResults;
 
 const positionsFixture: AccountPosition[] = [
   {
@@ -110,6 +175,26 @@ const createDeferred = <T,>() => {
     reject: rejectPromise,
     resolve: resolvePromise,
   };
+};
+
+const mountedRenderers: Array<ReturnType<typeof create>> = [];
+
+const flushMicrotasks = async (cycles = 3) => {
+  for (let index = 0; index < cycles; index += 1) {
+    await Promise.resolve();
+  }
+};
+
+const unmountRenderer = async (renderer: ReturnType<typeof create>) => {
+  const index = mountedRenderers.indexOf(renderer);
+  if (index >= 0) {
+    mountedRenderers.splice(index, 1);
+  }
+
+  await act(async () => {
+    renderer.unmount();
+    await flushMicrotasks();
+  });
 };
 
 const createAccountApi = (overrides?: Partial<AccountApi>): AccountApi => ({
@@ -204,6 +289,7 @@ const renderScreen = async (overrides?: {
     );
     await Promise.resolve();
   });
+  mountedRenderers.push(renderer);
 
   return {
     accountApi,
@@ -212,9 +298,39 @@ const renderScreen = async (overrides?: {
   };
 };
 
+const persistOrderSessionForRestore = async (orderSessionId: string) => {
+  const firstRender = await renderScreen({
+    orderApi: createOrderApi({
+      createOrderSession: vi.fn().mockResolvedValue(makeOrderSession({
+        orderSessionId,
+        clOrdId: `cl-${orderSessionId}`,
+        status: 'PENDING_NEW',
+        challengeRequired: true,
+        authorizationReason: 'ELEVATED_ORDER_RISK',
+        qty: 5,
+      })),
+    }),
+  });
+
+  await act(async () => {
+    await findByTestId(firstRender.renderer.root, 'mobile-order-session-create').props.onPress();
+    await flushMicrotasks();
+  });
+  await unmountRenderer(firstRender.renderer);
+};
+
 describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
   beforeEach(() => {
     __resetPersistedOrderSessionForTests();
+  });
+
+  afterEach(async () => {
+    while (mountedRenderers.length > 0) {
+      const renderer = mountedRenderers.pop();
+      if (renderer) {
+        await unmountRenderer(renderer);
+      }
+    }
   });
 
   it('renders the dashboard summary, owned symbols, and masked account after loading', async () => {
@@ -441,9 +557,25 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
         },
       ),
     );
+    const getOrderSession = vi.fn().mockResolvedValue({
+      orderSessionId: 'sess-001',
+      clOrdId: 'cl-001',
+      status: 'COMPLETED',
+      challengeRequired: false,
+      authorizationReason: 'TRUSTED_AUTH_SESSION',
+      accountId: 1,
+      symbol: '005930',
+      side: 'BUY',
+      orderType: 'LIMIT',
+      qty: 1,
+      price: 70100,
+      executionResult: 'FILLED',
+      expiresAt: futureIso(),
+    });
     const orderApi = createOrderApi({
       createOrderSession,
       executeOrderSession,
+      getOrderSession,
     });
     const { renderer } = await renderScreen({ orderApi });
 
@@ -467,6 +599,8 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
       }),
     );
     expect(executeOrderSession).toHaveBeenCalledWith('sess-001');
+    expect(getOrderSession).toHaveBeenCalledWith('sess-001');
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-result')).toHaveLength(1);
     expect(
       getTextContent(findByTestId(renderer.root, 'external-order-error-title')),
     ).toBe('주문 결과를 확인하고 있습니다');
@@ -530,6 +664,86 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     expect(findAllByTestId(renderer.root, 'mobile-order-session-otp-input')).toHaveLength(1);
     expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-authorization'))).toContain(
       'OTP 인증이 필요합니다.',
+    );
+  });
+
+  it('maps replayed OTP verification into deterministic guidance', async () => {
+    const orderApi = createOrderApi({
+      createOrderSession: vi.fn().mockResolvedValue({
+        orderSessionId: 'sess-step-b',
+        clOrdId: 'cl-step-b',
+        status: 'PENDING_NEW',
+        challengeRequired: true,
+        authorizationReason: 'ELEVATED_ORDER_RISK',
+        accountId: 1,
+        symbol: '005930',
+        side: 'BUY',
+        orderType: 'LIMIT',
+        qty: 1,
+        price: 70100,
+        expiresAt: futureIso(),
+      }),
+      verifyOrderSessionOtp: vi.fn().mockRejectedValue(
+        createNormalizedHttpError('otp code already used in current window', {
+          code: 'AUTH-011',
+          status: 401,
+        }),
+      ),
+    });
+    const { renderer } = await renderScreen({ orderApi });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      findByTestId(renderer.root, 'mobile-order-session-otp-input').props.onChangeText('123456');
+      await flushMicrotasks();
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error'))).toBe(
+      '이미 사용한 OTP 코드입니다. 새 코드가 표시되면 다시 입력해 주세요.',
+    );
+  });
+
+  it('maps throttled OTP verification into retry guidance', async () => {
+    const orderApi = createOrderApi({
+      createOrderSession: vi.fn().mockResolvedValue({
+        orderSessionId: 'sess-step-b',
+        clOrdId: 'cl-step-b',
+        status: 'PENDING_NEW',
+        challengeRequired: true,
+        authorizationReason: 'ELEVATED_ORDER_RISK',
+        accountId: 1,
+        symbol: '005930',
+        side: 'BUY',
+        orderType: 'LIMIT',
+        qty: 1,
+        price: 70100,
+        expiresAt: futureIso(),
+      }),
+      verifyOrderSessionOtp: vi.fn().mockRejectedValue(
+        createNormalizedHttpError('rate limit exceeded', {
+          code: 'RATE_001',
+          status: 429,
+        }),
+      ),
+    });
+    const { renderer } = await renderScreen({ orderApi });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      findByTestId(renderer.root, 'mobile-order-session-otp-input').props.onChangeText('123456');
+      await flushMicrotasks();
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error'))).toBe(
+      'OTP를 너무 빠르게 연속 제출했습니다. 잠시 후 다시 시도해 주세요.',
     );
   });
 
@@ -615,6 +829,54 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
 
     expect(findAllByTestId(renderer.root, 'mobile-order-session-expired-modal')).toHaveLength(0);
     expect(findAllByTestId(renderer.root, 'mobile-order-session-create')).toHaveLength(1);
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error'))).toBe(
+      '주문 세션이 만료되었습니다. 입력한 주문을 확인한 뒤 다시 시작해 주세요.',
+    );
+  });
+
+  it('shows a blocking expired-session modal when Step B verify detects a stale session', async () => {
+    const orderApi = createOrderApi({
+      createOrderSession: vi.fn().mockResolvedValue({
+        orderSessionId: 'sess-expired-verify',
+        clOrdId: 'cl-expired-verify',
+        status: 'PENDING_NEW',
+        challengeRequired: true,
+        authorizationReason: 'ELEVATED_ORDER_RISK',
+        accountId: 1,
+        symbol: '005930',
+        side: 'BUY',
+        orderType: 'LIMIT',
+        qty: 1,
+        price: 70100,
+        expiresAt: futureIso(),
+      }),
+      verifyOrderSessionOtp: vi.fn().mockRejectedValue(
+        createNormalizedHttpError('Order session not found.', {
+          code: 'ORD-008',
+          status: 404,
+        }),
+      ),
+    });
+    const { renderer } = await renderScreen({ orderApi });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      findByTestId(renderer.root, 'mobile-order-session-otp-input').props.onChangeText('123456');
+      await flushMicrotasks();
+    });
+
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-expired-modal')).toHaveLength(1);
+
+    await act(async () => {
+      findByTestId(renderer.root, 'mobile-order-session-expired-restart').props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-expired-modal')).toHaveLength(0);
     expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error'))).toBe(
       '주문 세션이 만료되었습니다. 입력한 주문을 확인한 뒤 다시 시작해 주세요.',
     );
@@ -830,6 +1092,106 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     );
   });
 
+  it('restores an AUTHED order session into Step C after remount', async () => {
+    await persistOrderSessionForRestore('sess-restore-authed');
+
+    const getOrderSession = vi.fn().mockResolvedValue(makeOrderSession({
+      orderSessionId: 'sess-restore-authed',
+      clOrdId: 'cl-sess-restore-authed',
+      status: 'AUTHED',
+      challengeRequired: true,
+      authorizationReason: 'ELEVATED_ORDER_RISK',
+      qty: 5,
+    }));
+    const { renderer } = await renderScreen({
+      orderApi: createOrderApi({
+        getOrderSession,
+      }),
+    });
+
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(getOrderSession).toHaveBeenCalledWith('sess-restore-authed');
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-execute')).toHaveLength(1);
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-otp-input')).toHaveLength(0);
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-summary'))).toContain(
+      '상태 AUTHED',
+    );
+
+    await unmountRenderer(renderer);
+  });
+
+  it('restores a REQUERYING order session into processing guidance after remount', async () => {
+    await persistOrderSessionForRestore('sess-restore-requery');
+
+    const restoredSession = makeOrderSession({
+      orderSessionId: 'sess-restore-requery',
+      clOrdId: 'cl-sess-restore-requery',
+      status: 'REQUERYING',
+      challengeRequired: true,
+      authorizationReason: 'ELEVATED_ORDER_RISK',
+      qty: 5,
+    });
+    const pollDeferred = createDeferred<OrderSessionResponse>();
+    const getOrderSession = vi.fn()
+      .mockResolvedValueOnce(restoredSession)
+      .mockImplementation(() => pollDeferred.promise);
+    const { renderer } = await renderScreen({
+      orderApi: createOrderApi({
+        getOrderSession,
+      }),
+    });
+
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(getOrderSession).toHaveBeenCalledWith('sess-restore-requery');
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-processing')).toHaveLength(1);
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-processing-title'))).toContain(
+      '다시 확인',
+    );
+
+    await unmountRenderer(renderer);
+  });
+
+  it('restores an ESCALATED order session into manual-review guidance after remount', async () => {
+    await persistOrderSessionForRestore('sess-restore-escalated');
+
+    const restoredSession = makeOrderSession({
+      orderSessionId: 'sess-restore-escalated',
+      clOrdId: 'cl-sess-restore-escalated',
+      status: 'ESCALATED',
+      challengeRequired: true,
+      authorizationReason: 'ELEVATED_ORDER_RISK',
+      qty: 5,
+      failureReason: 'ESCALATED_MANUAL_REVIEW',
+    });
+    const pollDeferred = createDeferred<OrderSessionResponse>();
+    const getOrderSession = vi.fn()
+      .mockResolvedValueOnce(restoredSession)
+      .mockImplementation(() => pollDeferred.promise);
+    const { renderer } = await renderScreen({
+      orderApi: createOrderApi({
+        getOrderSession,
+      }),
+    });
+
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(getOrderSession).toHaveBeenCalledWith('sess-restore-escalated');
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-manual-review')).toHaveLength(1);
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-manual-review'))).toContain(
+      '수동 확인',
+    );
+
+    await unmountRenderer(renderer);
+  });
+
   it('ignores a stale restore result after the user edits the draft first', async () => {
     const secureStoreRead = createDeferred<string | null>();
     __setOrderSessionStorageRuntimeForTests({
@@ -971,6 +1333,367 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     expect(getOrderSession).toHaveBeenCalledWith('sess-resume-001');
   });
 
+  it.each([
+    {
+      name: 'AUTHED Step C',
+      restoredSession: makeOrderSession({
+        orderSessionId: 'sess-resume-authed',
+        clOrdId: 'cl-sess-resume-authed',
+        status: 'AUTHED',
+        challengeRequired: true,
+        authorizationReason: 'ELEVATED_ORDER_RISK',
+        qty: 5,
+      }),
+      verify: (root: ReactTestInstance) => {
+        expect(findAllByTestId(root, 'mobile-order-session-execute')).toHaveLength(1);
+        expect(findAllByTestId(root, 'mobile-order-session-otp-input')).toHaveLength(0);
+        expect(getTextContent(findByTestId(root, 'mobile-order-session-summary'))).toContain(
+          '상태 AUTHED',
+        );
+      },
+    },
+    {
+      name: 'EXECUTING processing guidance',
+      keepsPolling: true,
+      restoredSession: makeOrderSession({
+        orderSessionId: 'sess-resume-executing',
+        clOrdId: 'cl-sess-resume-executing',
+        status: 'EXECUTING',
+        challengeRequired: true,
+        authorizationReason: 'ELEVATED_ORDER_RISK',
+        qty: 5,
+      }),
+      verify: (root: ReactTestInstance) => {
+        expect(findAllByTestId(root, 'mobile-order-session-processing')).toHaveLength(1);
+        expect(
+          getTextContent(findByTestId(root, 'mobile-order-session-processing-title')),
+        ).toContain(
+          sharedProcessingStateCases.find((candidate) => candidate.status === 'EXECUTING')?.title
+            ?? '주문을 거래소에 전송했어요',
+        );
+        expect(getTextContent(findByTestId(root, 'mobile-order-session-processing'))).toContain(
+          sharedProcessingStateCases.find((candidate) => candidate.status === 'EXECUTING')?.body
+            ?? '체결 결과가 아직 확정되지 않았습니다. 잠시 후 상태가 자동으로 갱신됩니다.',
+        );
+      },
+    },
+    {
+      name: 'REQUERYING processing guidance',
+      keepsPolling: true,
+      restoredSession: makeOrderSession({
+        orderSessionId: 'sess-resume-requery',
+        clOrdId: 'cl-sess-resume-requery',
+        status: 'REQUERYING',
+        challengeRequired: true,
+        authorizationReason: 'ELEVATED_ORDER_RISK',
+        qty: 5,
+      }),
+      verify: (root: ReactTestInstance) => {
+        expect(findAllByTestId(root, 'mobile-order-session-processing')).toHaveLength(1);
+        expect(getTextContent(findByTestId(root, 'mobile-order-session-processing-title'))).toContain(
+          sharedProcessingStateCases.find((candidate) => candidate.status === 'REQUERYING')?.title
+            ?? '주문 체결 결과를 다시 확인하고 있어요',
+        );
+        expect(getTextContent(findByTestId(root, 'mobile-order-session-processing'))).toContain(
+          sharedProcessingStateCases.find((candidate) => candidate.status === 'REQUERYING')?.body
+            ?? '체결 결과를 재조회하는 중입니다. 완료로 간주하지 말고 상태가 바뀔 때까지 기다려 주세요.',
+        );
+      },
+    },
+    {
+      name: 'ESCALATED manual review',
+      keepsPolling: true,
+      restoredSession: makeOrderSession({
+        orderSessionId: 'sess-resume-escalated',
+        clOrdId: 'cl-sess-resume-escalated',
+        status: 'ESCALATED',
+        challengeRequired: true,
+        authorizationReason: 'ELEVATED_ORDER_RISK',
+        qty: 5,
+        failureReason: 'ESCALATED_MANUAL_REVIEW',
+      }),
+      verify: (root: ReactTestInstance) => {
+        expect(findAllByTestId(root, 'mobile-order-session-manual-review')).toHaveLength(1);
+        const manualReviewText = getTextContent(findByTestId(root, 'mobile-order-session-manual-review'));
+        expect(manualReviewText).toContain('처리 중 문제가 발생해 수동 확인이 필요합니다.');
+        expect(manualReviewText).toContain('주문 번호를 확인한 뒤 고객센터에 문의해 주세요.');
+      },
+    },
+  ])('restores the saved order session into $name after session refresh completes', async ({
+    keepsPolling,
+    restoredSession,
+    verify,
+  }) => {
+    await persistOrderSessionForRestore(restoredSession.orderSessionId);
+
+    const pollDeferred = createDeferred<OrderSessionResponse>();
+    const getOrderSession = keepsPolling
+      ? vi.fn()
+        .mockResolvedValueOnce(restoredSession)
+        .mockImplementation(() => pollDeferred.promise)
+      : vi.fn().mockResolvedValue(restoredSession);
+    const orderApi = createOrderApi({
+      getOrderSession,
+    });
+    const accountApi = createAccountApi();
+
+    const { renderer } = await renderScreen({
+      accountApi,
+      isRefreshingSession: true,
+      orderApi,
+    });
+
+    expect(getOrderSession).not.toHaveBeenCalled();
+
+    await act(async () => {
+      renderer.update(
+        <AuthenticatedHomeScreen
+          accountApi={accountApi}
+          member={memberFixture}
+          orderApi={orderApi}
+          welcomeVariant={null}
+          sessionErrorMessage={null}
+          isRefreshingSession={false}
+          onOpenMfaRecovery={() => {}}
+          onRefreshSession={() => {}}
+        />,
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(getOrderSession).toHaveBeenCalledWith(restoredSession.orderSessionId);
+    verify(renderer.root);
+  });
+
+  it('transitions a resumed EXECUTING order session into a final result after polling', async () => {
+    await persistOrderSessionForRestore('sess-resume-transition');
+
+    const filledResult = sharedFinalResultCases.find(
+      (candidate) => candidate.executionResult === 'FILLED',
+    );
+    const processingDeferred = createDeferred<OrderSessionResponse>();
+    vi.useFakeTimers();
+    const getOrderSession = vi.fn()
+      .mockResolvedValueOnce(makeOrderSession({
+        orderSessionId: 'sess-resume-transition',
+        clOrdId: 'cl-sess-resume-transition',
+        status: 'EXECUTING',
+        challengeRequired: true,
+        authorizationReason: 'ELEVATED_ORDER_RISK',
+        qty: 5,
+        expiresAt: null,
+      }))
+      .mockImplementationOnce(() => processingDeferred.promise)
+      .mockResolvedValueOnce(makeOrderSession({
+        orderSessionId: 'sess-resume-transition',
+        clOrdId: 'cl-sess-resume-transition',
+        status: filledResult?.status ?? 'COMPLETED',
+        challengeRequired: true,
+        authorizationReason: 'ELEVATED_ORDER_RISK',
+        qty: 5,
+        executionResult: filledResult?.executionResult,
+        externalOrderId: filledResult?.externalOrderId,
+        executedPrice: filledResult?.executedPrice,
+        canceledAt: filledResult?.canceledAt,
+        expiresAt: null,
+      }));
+    const orderApi = createOrderApi({
+      getOrderSession,
+    });
+    const accountApi = createAccountApi();
+    const { renderer } = await renderScreen({
+      accountApi,
+      isRefreshingSession: true,
+      orderApi,
+    });
+
+    await act(async () => {
+      renderer.update(
+        <AuthenticatedHomeScreen
+          accountApi={accountApi}
+          member={memberFixture}
+          orderApi={orderApi}
+          welcomeVariant={null}
+          sessionErrorMessage={null}
+          isRefreshingSession={false}
+          onOpenMfaRecovery={() => {}}
+          onRefreshSession={() => {}}
+        />,
+      );
+      await flushMicrotasks();
+    });
+
+    expect(getOrderSession).toHaveBeenCalledWith('sess-resume-transition');
+
+    processingDeferred.resolve(makeOrderSession({
+      orderSessionId: 'sess-resume-transition',
+      clOrdId: 'cl-sess-resume-transition',
+      status: 'EXECUTING',
+      challengeRequired: true,
+      authorizationReason: 'ELEVATED_ORDER_RISK',
+      qty: 5,
+      expiresAt: null,
+    }));
+
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+      await flushMicrotasks();
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-result-title'))).toContain(
+      filledResult?.title ?? '주문이 체결되었습니다',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-result-clordid'))).toContain(
+      'cl-sess-resume-transition',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-result-execution-result'))).toContain(
+      filledResult?.executionResultLabel ?? 'FILLED',
+    );
+
+    vi.useRealTimers();
+  });
+
+  it.each(sharedFinalResultCases)('renders final result details for $name', async ({
+    executionResult,
+    executedQty,
+    failureReason,
+    leavesQty,
+    status,
+    title,
+    body,
+    executionResultLabel,
+    externalOrderId,
+    executedQtyLabel,
+    executedPrice,
+    executedPriceLabel,
+    failureReasonLabel,
+    leavesQtyLabel,
+    canceledAt,
+    canceledAtLabel,
+  }) => {
+    const orderApi = createOrderApi({
+      createOrderSession: vi.fn().mockResolvedValue({
+        orderSessionId: 'sess-final-result',
+        clOrdId: 'cl-final-result',
+        status: 'AUTHED',
+        challengeRequired: false,
+        authorizationReason: 'TRUSTED_AUTH_SESSION',
+        accountId: 1,
+        symbol: '005930',
+        side: 'BUY',
+        orderType: 'LIMIT',
+        qty: 10,
+        price: 70100,
+        expiresAt: futureIso(),
+      }),
+      executeOrderSession: vi.fn().mockResolvedValue({
+        orderSessionId: 'sess-final-result',
+        clOrdId: 'cl-final-result',
+        challengeRequired: false,
+        authorizationReason: 'TRUSTED_AUTH_SESSION',
+        accountId: 1,
+        symbol: '005930',
+        side: 'BUY',
+        orderType: 'LIMIT',
+        qty: 10,
+        price: 70100,
+        expiresAt: null,
+        status,
+        executionResult,
+        executedQty,
+        executedPrice,
+        externalOrderId,
+        failureReason,
+        leavesQty,
+        canceledAt,
+      }),
+    });
+    const { renderer } = await renderScreen({ orderApi });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-execute').props.onPress();
+      await flushMicrotasks();
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-result-title'))).toContain(
+      title,
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-result'))).toContain(
+      body,
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-result-clordid'))).toContain(
+      'cl-final-result',
+    );
+
+    if (executionResultLabel) {
+      expect(
+        getTextContent(findByTestId(renderer.root, 'mobile-order-result-execution-result')),
+      ).toContain(executionResultLabel);
+    } else {
+      expect(findAllByTestId(renderer.root, 'mobile-order-result-execution-result')).toHaveLength(0);
+    }
+
+    if (externalOrderId) {
+      expect(getTextContent(findByTestId(renderer.root, 'mobile-order-result-external-id'))).toContain(
+        externalOrderId,
+      );
+    } else {
+      expect(findAllByTestId(renderer.root, 'mobile-order-result-external-id')).toHaveLength(0);
+    }
+
+    if (executedQtyLabel) {
+      expect(getTextContent(findByTestId(renderer.root, 'mobile-order-result-executed-qty'))).toContain(
+        executedQtyLabel,
+      );
+    } else {
+      expect(findAllByTestId(renderer.root, 'mobile-order-result-executed-qty')).toHaveLength(0);
+    }
+
+    if (executedPriceLabel) {
+      expect(
+        getTextContent(findByTestId(renderer.root, 'mobile-order-result-executed-price')),
+      ).toContain(executedPriceLabel);
+    } else {
+      expect(findAllByTestId(renderer.root, 'mobile-order-result-executed-price')).toHaveLength(0);
+    }
+
+    if (leavesQtyLabel) {
+      expect(getTextContent(findByTestId(renderer.root, 'mobile-order-result-leaves-qty'))).toContain(
+        leavesQtyLabel,
+      );
+    } else {
+      expect(findAllByTestId(renderer.root, 'mobile-order-result-leaves-qty')).toHaveLength(0);
+    }
+
+    if (canceledAtLabel) {
+      expect(getTextContent(findByTestId(renderer.root, 'mobile-order-result-canceled-at'))).toContain(
+        canceledAtLabel,
+      );
+    } else {
+      expect(findAllByTestId(renderer.root, 'mobile-order-result-canceled-at')).toHaveLength(0);
+    }
+
+    if (failureReasonLabel) {
+      expect(getTextContent(findByTestId(renderer.root, 'mobile-order-result-failure-reason'))).toContain(
+        failureReasonLabel,
+      );
+    } else {
+      expect(findAllByTestId(renderer.root, 'mobile-order-result-failure-reason')).toHaveLength(0);
+    }
+  });
+
   it('locks scenario switching while execute is in flight', async () => {
     const executeDeferred = createDeferred<Awaited<ReturnType<OrderApi['executeOrderSession']>>>();
     const orderApi = createOrderApi({
@@ -994,12 +1717,12 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
 
     await act(async () => {
       await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
-      await Promise.resolve();
+      await flushMicrotasks();
     });
 
     await act(async () => {
       findByTestId(renderer.root, 'mobile-order-session-execute').props.onPress();
-      await Promise.resolve();
+      await flushMicrotasks();
     });
 
     expect(findByTestId(renderer.root, 'mobile-external-order-preset-krx-buy-5').props.disabled).toBe(true);
@@ -1020,7 +1743,7 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
         executionResult: 'FILLED',
         expiresAt: futureIso(),
       });
-      await Promise.resolve();
+      await flushMicrotasks();
     });
   });
 });

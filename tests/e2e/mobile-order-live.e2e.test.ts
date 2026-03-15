@@ -139,6 +139,8 @@ const delay = (milliseconds: number) =>
     setTimeout(resolve, milliseconds);
   });
 
+const millisUntilNextTotpWindow = (now = Date.now()) => 30_000 - (now % 30_000);
+
 const waitForNextTotp = async (
   manualEntryKey: string,
   previousCode: string,
@@ -146,7 +148,7 @@ const waitForNextTotp = async (
   const startedAt = Date.now();
   let nextCode = generateTotp(manualEntryKey);
 
-  while (nextCode === previousCode) {
+  while (nextCode === previousCode || millisUntilNextTotpWindow() < 10_000) {
     if (Date.now() - startedAt > 45_000) {
       throw new Error('Timed out waiting for the next TOTP window.');
     }
@@ -216,6 +218,96 @@ const createLiveHarness = (baseUrl: string) => {
   };
 };
 
+const registerEnrollAndLogin = async (baseUrl: string) => {
+  const identity = createLiveIdentity();
+  const registrationHarness = createLiveHarness(baseUrl);
+
+  const registerResult = await registrationHarness.viewModel.submitRegister({
+    email: identity.email,
+    name: identity.name,
+    password: identity.password,
+  });
+
+  expect(registerResult).toEqual({
+    success: true,
+  });
+
+  const pendingMfaAfterRegister = registrationHarness.viewModel.getState().pendingMfa;
+  expect(pendingMfaAfterRegister).toMatchObject({
+    nextAction: 'ENROLL_TOTP',
+  });
+  expect(pendingMfaAfterRegister?.loginToken).toBeTruthy();
+
+  const enrollmentBootstrap = await registrationHarness.viewModel.loadTotpEnrollment();
+  expect(enrollmentBootstrap.success).toBe(true);
+  if (!enrollmentBootstrap.success) {
+    throw enrollmentBootstrap.error;
+  }
+
+  const pendingMfa = registrationHarness.viewModel.getState().pendingMfa;
+  expect(pendingMfa?.loginToken).toBeTruthy();
+
+  const manualEntryKey = enrollmentBootstrap.enrollment.manualEntryKey;
+  const enrollmentCode = generateTotp(manualEntryKey);
+
+  const enrollmentResult = await registrationHarness.viewModel.submitTotpEnrollmentConfirmation({
+    loginToken: pendingMfa!.loginToken,
+    enrollmentToken: enrollmentBootstrap.enrollment.enrollmentToken,
+    otpCode: enrollmentCode,
+  });
+
+  expect(enrollmentResult).toEqual({
+    success: true,
+  });
+
+  resetAuthStore();
+  const loginHarness = createLiveHarness(baseUrl);
+
+  const loginResult = await loginHarness.viewModel.submitLogin({
+    email: identity.email,
+    password: identity.password,
+  });
+  expect(loginResult).toEqual({
+    success: true,
+  });
+
+  const loginToken = loginHarness.viewModel.getState().pendingMfa?.loginToken;
+  expect(loginToken).toBeTruthy();
+
+  const loginCode = await waitForNextTotp(manualEntryKey, enrollmentCode);
+  const mfaResult = await loginHarness.viewModel.submitLoginMfa({
+    loginToken: loginToken!,
+    otpCode: loginCode,
+  });
+  expect(mfaResult).toEqual({
+    success: true,
+  });
+
+  const member = authStore.getState().member;
+  expect(member?.accountId).toBeTruthy();
+
+  return {
+    accountId: Number(member!.accountId),
+    loginHarness,
+    manualEntryKey,
+    lastUsedTotp: loginCode,
+  };
+};
+
+const createHighRiskOrderSession = async (
+  loginHarness: ReturnType<typeof createLiveHarness>,
+  accountId: number,
+) => {
+  return loginHarness.orderApi.createOrderSession({
+    accountId,
+    clOrdId: randomUUID(),
+    symbol: '005930',
+    side: 'BUY',
+    quantity: 10,
+    price: 70_500,
+  });
+};
+
 describe.runIf(Boolean(LIVE_BASE_URL))('Live mobile order session against backend', () => {
   beforeAll(() => {
     authStore.initialize(null);
@@ -230,75 +322,14 @@ describe.runIf(Boolean(LIVE_BASE_URL))('Live mobile order session against backen
   });
 
   it('registers, enrolls TOTP, logs in with fresh MFA, and completes a challenged order session', async () => {
-    const identity = createLiveIdentity();
-    const registrationHarness = createLiveHarness(LIVE_BASE_URL);
+    const {
+      accountId,
+      loginHarness,
+      manualEntryKey,
+      lastUsedTotp,
+    } = await registerEnrollAndLogin(LIVE_BASE_URL);
 
-    const registerResult = await registrationHarness.viewModel.submitRegister({
-      email: identity.email,
-      name: identity.name,
-      password: identity.password,
-    });
-
-    expect(registerResult).toEqual({
-      success: true,
-    });
-
-    const enrollmentLoginToken = registrationHarness.viewModel.getState().pendingMfa?.loginToken;
-    expect(enrollmentLoginToken).toBeTruthy();
-
-    const enrollmentBootstrap = await registrationHarness.viewModel.loadTotpEnrollment();
-    expect(enrollmentBootstrap.success).toBe(true);
-    if (!enrollmentBootstrap.success) {
-      throw enrollmentBootstrap.error;
-    }
-
-    const manualEntryKey = enrollmentBootstrap.enrollment.manualEntryKey;
-    const enrollmentCode = generateTotp(manualEntryKey);
-
-    const enrollmentResult = await registrationHarness.viewModel.submitTotpEnrollmentConfirmation({
-      loginToken: enrollmentLoginToken ?? '',
-      enrollmentToken: enrollmentBootstrap.enrollment.enrollmentToken,
-      otpCode: enrollmentCode,
-    });
-
-    expect(enrollmentResult).toEqual({
-      success: true,
-    });
-
-    resetAuthStore();
-    const loginHarness = createLiveHarness(LIVE_BASE_URL);
-
-    const loginResult = await loginHarness.viewModel.submitLogin({
-      email: identity.email,
-      password: identity.password,
-    });
-    expect(loginResult).toEqual({
-      success: true,
-    });
-
-    const loginToken = loginHarness.viewModel.getState().pendingMfa?.loginToken;
-    expect(loginToken).toBeTruthy();
-
-    const loginCode = await waitForNextTotp(manualEntryKey, enrollmentCode);
-    const mfaResult = await loginHarness.viewModel.submitLoginMfa({
-      loginToken: loginToken!,
-      otpCode: loginCode,
-    });
-    expect(mfaResult).toEqual({
-      success: true,
-    });
-
-    const member = authStore.getState().member;
-    expect(member?.accountId).toBeTruthy();
-
-    const createdSession = await loginHarness.orderApi.createOrderSession({
-      accountId: Number(member!.accountId),
-      clOrdId: randomUUID(),
-      symbol: '005930',
-      side: 'BUY',
-      quantity: 10,
-      price: 70_500,
-    });
+    const createdSession = await createHighRiskOrderSession(loginHarness, accountId);
 
     expect(createdSession).toMatchObject({
       status: 'PENDING_NEW',
@@ -316,7 +347,7 @@ describe.runIf(Boolean(LIVE_BASE_URL))('Live mobile order session against backen
       authorizationReason: 'ELEVATED_ORDER_RISK',
     });
 
-    const orderOtpCode = await waitForNextTotp(manualEntryKey, loginCode);
+    const orderOtpCode = await waitForNextTotp(manualEntryKey, lastUsedTotp);
     const verifiedSession = await loginHarness.orderApi.verifyOrderSessionOtp(
       createdSession.orderSessionId,
       orderOtpCode,
@@ -335,4 +366,63 @@ describe.runIf(Boolean(LIVE_BASE_URL))('Live mobile order session against backen
     expect(executedSession.executionResult).toBeTruthy();
     expect(executedSession.externalOrderId).toBeTruthy();
   }, 150_000);
+
+  it('rejects same-window TOTP replay across order sessions and allows recovery on a fresh code', async () => {
+    const {
+      accountId,
+      loginHarness,
+      manualEntryKey,
+      lastUsedTotp,
+    } = await registerEnrollAndLogin(LIVE_BASE_URL);
+
+    const firstSession = await createHighRiskOrderSession(loginHarness, accountId);
+    const replayedCode = await waitForNextTotp(manualEntryKey, lastUsedTotp);
+
+    const firstVerified = await loginHarness.orderApi.verifyOrderSessionOtp(
+      firstSession.orderSessionId,
+      replayedCode,
+    );
+    expect(firstVerified).toMatchObject({
+      orderSessionId: firstSession.orderSessionId,
+      status: 'AUTHED',
+      challengeRequired: true,
+      authorizationReason: 'ELEVATED_ORDER_RISK',
+    });
+
+    const secondSession = await createHighRiskOrderSession(loginHarness, accountId);
+
+    await expect(
+      loginHarness.orderApi.verifyOrderSessionOtp(secondSession.orderSessionId, replayedCode),
+    ).rejects.toMatchObject({
+      code: 'AUTH-011',
+      status: 401,
+    });
+
+    const pendingSecondSession = await loginHarness.orderApi.getOrderSession(secondSession.orderSessionId);
+    expect(pendingSecondSession).toMatchObject({
+      orderSessionId: secondSession.orderSessionId,
+      status: 'PENDING_NEW',
+      challengeRequired: true,
+      authorizationReason: 'ELEVATED_ORDER_RISK',
+    });
+
+    const recoveryCode = await waitForNextTotp(manualEntryKey, replayedCode);
+    const recoveredSession = await loginHarness.orderApi.verifyOrderSessionOtp(
+      secondSession.orderSessionId,
+      recoveryCode,
+    );
+    expect(recoveredSession).toMatchObject({
+      orderSessionId: secondSession.orderSessionId,
+      status: 'AUTHED',
+      challengeRequired: true,
+      authorizationReason: 'ELEVATED_ORDER_RISK',
+    });
+
+    const executedRecoveredSession = await loginHarness.orderApi.executeOrderSession(
+      secondSession.orderSessionId,
+    );
+    expect(executedRecoveredSession.status).toBe('COMPLETED');
+    expect(executedRecoveredSession.executionResult).toBeTruthy();
+    expect(executedRecoveredSession.externalOrderId).toBeTruthy();
+  }, 180_000);
 });
