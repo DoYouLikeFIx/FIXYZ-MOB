@@ -87,8 +87,8 @@ The mock auth server validates the CSRF cookie/header contract and drives Story 
 - `reauth@fix.com` -> successful login, then deterministic re-auth on protected refresh
 - `stale@fix.com` -> successful login, then stale-session rejection on app resume
 - `kickout@fix.com` -> successful login, then forced re-auth after server-side invalidation by a newer login
-- `pending-order@fix.com` -> successful login, then `/api/v1/orders` returns `FEP-002` pending-confirmation guidance
-- `unknown-order@fix.com` -> successful login, then `/api/v1/orders` returns safe unknown external fallback guidance
+- `pending-order@fix.com` -> successful login, then order session execute returns `FEP-002` pending-confirmation guidance
+- `unknown-order@fix.com` -> successful login, then order session execute returns safe unknown external fallback guidance
 - `no-account@fix.com` -> successful login without a linked order account, so the order boundary stays gated
 - `valid-reset-token` -> successful password reset for local handoff automation
 
