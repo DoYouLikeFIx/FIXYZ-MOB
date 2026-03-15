@@ -22,6 +22,7 @@ interface DirectApiErrorPayload {
   correlationId?: string;
   operatorCode?: string;
   retryAfterSeconds?: unknown;
+  remainingAttempts?: unknown;
   enrollUrl?: string;
   recoveryUrl?: string;
   userMessageKey?: string;
@@ -68,6 +69,18 @@ const resolveRetryAfterSeconds = (
   parseRetryAfterSeconds(value)
   ?? parseRetryAfterSeconds(getHeaderValue(headers, 'Retry-After'));
 
+const parseRemainingAttempts = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return Math.trunc(value);
+  }
+
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    return Number.parseInt(value, 10);
+  }
+
+  return undefined;
+};
+
 export const createNormalizedHttpError = (
   message: string,
   options?: {
@@ -75,6 +88,7 @@ export const createNormalizedHttpError = (
     detail?: string;
     operatorCode?: string;
     retryAfterSeconds?: number;
+    remainingAttempts?: number;
     status?: number;
     retriable?: boolean;
     traceId?: string;
@@ -89,6 +103,7 @@ export const createNormalizedHttpError = (
   normalized.detail = options?.detail;
   normalized.operatorCode = options?.operatorCode;
   normalized.retryAfterSeconds = options?.retryAfterSeconds;
+  normalized.remainingAttempts = options?.remainingAttempts;
   normalized.status = options?.status;
   normalized.retriable = options?.retriable;
   normalized.traceId = options?.traceId;
@@ -160,6 +175,7 @@ export const normalizeHttpError = (
           input.data.error.retryAfterSeconds,
           input.headers,
         ),
+        remainingAttempts: parseRemainingAttempts(input.data.error.remainingAttempts),
         status: input.status,
         traceId: input.data.traceId,
         enrollUrl: input.data.error.enrollUrl ?? undefined,
@@ -180,6 +196,7 @@ export const normalizeHttpError = (
           input.data.retryAfterSeconds,
           input.headers,
         ),
+        remainingAttempts: parseRemainingAttempts(input.data.remainingAttempts),
         status: input.status,
         traceId: input.data.correlationId,
         enrollUrl: input.data.enrollUrl,
