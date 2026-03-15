@@ -1,12 +1,10 @@
-import type { OrderSessionResponse } from '../../api/order-api';
+import type { OrderFlowStep, OrderSessionResponse } from '../../types/order';
 import type {
   ExternalOrderPresetId,
   ExternalOrderPresetOption,
 } from '../../order/external-order-recovery';
 import type { ExternalOrderErrorPresentation } from '../../order/external-errors';
 import { formatKRW, formatQuantity } from '../../utils/formatters';
-
-type OrderFlowStep = 'A' | 'B' | 'C' | 'COMPLETE';
 
 interface ExternalOrderRecoverySectionModelInput {
   step: OrderFlowStep;
