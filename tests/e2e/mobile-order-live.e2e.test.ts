@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { URL as NodeURL, fileURLToPath } from 'node:url';
 
 import { createAuthApi } from '@/api/auth-api';
 import { createOrderApi } from '@/api/order-api';
@@ -19,7 +19,7 @@ const LIVE_BASE_URL = process.env.LIVE_API_BASE_URL?.trim() ?? '';
 const DEFAULT_REGISTER_PASSWORD = 'LiveMobOrder1!';
 const canonicalOrderSessionContract = JSON.parse(
   readFileSync(
-    fileURLToPath(new URL('../../../docs/contracts/order-session-ux.json', import.meta.url)),
+    fileURLToPath(new NodeURL('../../../docs/contracts/order-session-ux.json', import.meta.url)),
     'utf8',
   ),
 ) as {
