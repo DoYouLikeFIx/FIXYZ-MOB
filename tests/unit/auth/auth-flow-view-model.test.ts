@@ -4,6 +4,11 @@ import {
   enterAuthenticatedApp,
 } from '@/navigation/auth-navigation';
 import type { NormalizedHttpError } from '@/network/types';
+import {
+  persistOrderSessionId,
+  readPersistedOrderSessionId,
+  __resetOrderSessionStorageForTests,
+} from '@/order/order-session-storage';
 import { authStore, resetAuthStore } from '@/store/auth-store';
 import type { LoginChallenge, Member, TotpRebindBootstrap } from '@/types/auth';
 
@@ -95,6 +100,7 @@ describe('auth flow view model', () => {
 
   beforeEach(() => {
     resetAuthStore();
+    __resetOrderSessionStorageForTests();
     authService = createServiceStub();
   });
 
@@ -533,6 +539,7 @@ describe('auth flow view model', () => {
         source: 'login',
       }),
     });
+    await persistOrderSessionId(memberFixture.accountId, 'sess-reauth');
 
     const result = await viewModel.refreshProtectedSession();
 
@@ -545,6 +552,7 @@ describe('auth flow view model', () => {
       stack: 'auth',
       authRoute: 'login',
     });
+    await expect(readPersistedOrderSessionId(memberFixture.accountId)).resolves.toBeNull();
   });
 
   it('revalidates on app resume when the store is authenticated', async () => {
@@ -653,6 +661,48 @@ describe('auth flow view model', () => {
     });
   });
 
+  it('clears persisted order-session context when password reset requires reauthentication', async () => {
+    authStore.login({
+      ...memberFixture,
+      totpEnrolled: true,
+    });
+    authService.resetPassword.mockResolvedValue({
+      success: false,
+      error: createHttpError({
+        code: 'AUTH-003',
+        status: 401,
+        message: '세션이 만료되었습니다. 다시 로그인해 주세요.',
+      }),
+    });
+
+    const viewModel = createAuthFlowViewModel({
+      authService: authService as never,
+      authStore,
+      initialNavigationState: enterAuthenticatedApp(createAuthNavigationState(), {
+        source: 'login',
+      }),
+    });
+    await persistOrderSessionId(memberFixture.accountId, 'sess-reset-reauth');
+
+    const result = await viewModel.submitPasswordReset({
+      token: 'reset-token',
+      newPassword: 'Test1234!',
+    });
+
+    expect(result).toEqual({
+      success: false,
+      error: expect.objectContaining({
+        code: 'AUTH-003',
+      }),
+    });
+    expect(authStore.getState()).toMatchObject({
+      status: 'anonymous',
+      member: null,
+      reauthMessage: '세션이 만료되었습니다. 다시 로그인해 주세요.',
+    });
+    await expect(readPersistedOrderSessionId(memberFixture.accountId)).resolves.toBeNull();
+  });
+
   it('bootstraps authenticated MFA recovery and routes to the rebind screen', async () => {
     authStore.login({
       ...memberFixture,
@@ -716,6 +766,7 @@ describe('auth flow view model', () => {
         source: 'login',
       }),
     });
+    await persistOrderSessionId(memberFixture.accountId, 'sess-rebind');
 
     viewModel.openAuthenticatedMfaRecovery();
     await viewModel.bootstrapAuthenticatedMfaRecovery({
@@ -747,6 +798,7 @@ describe('auth flow view model', () => {
         authRoute: 'login',
       },
     });
+    await expect(readPersistedOrderSessionId(memberFixture.accountId)).resolves.toBeNull();
   });
 
   it('restarts MFA recovery with an error banner when a stale rebind must send the user back to entry', () => {

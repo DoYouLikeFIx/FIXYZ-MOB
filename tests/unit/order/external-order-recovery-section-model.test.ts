@@ -2,23 +2,50 @@ import { buildExternalOrderRecoverySectionModel } from '@/components/order/exter
 import { externalOrderPresetOptions } from '@/order/external-order-recovery';
 
 describe('external order recovery section model', () => {
-  it('shows the empty state before any external error or feedback exists', () => {
+  it('describes Step A before any session has been created', () => {
     const model = buildExternalOrderRecoverySectionModel({
+      step: 'A',
       feedbackMessage: null,
-      isSubmitting: false,
+      inlineError: null,
+      isInteractionLocked: false,
+      isCreating: false,
+      isExecuting: false,
+      isVerifyingOtp: false,
+      orderSession: null,
       presentation: null,
       presets: externalOrderPresetOptions,
       selectedPresetId: 'krx-buy-1',
+      draftSummary: '005930 · 삼성전자 · 1주',
     });
 
-    expect(model.emptyStateMessage).toContain('아직 대외 오류를 받지 않았습니다');
+    expect(model.title).toBe('주문 Step A 준비');
+    expect(model.description).toContain('주문 세션을 만들고');
     expect(model.clearAction.disabled).toBe(true);
   });
 
   it('keeps support reference compatible with the canonical guidance when an external error exists', () => {
     const model = buildExternalOrderRecoverySectionModel({
+      step: 'C',
       feedbackMessage: null,
-      isSubmitting: false,
+      inlineError: null,
+      isInteractionLocked: false,
+      isCreating: false,
+      isExecuting: false,
+      isVerifyingOtp: false,
+      orderSession: {
+        orderSessionId: 'sess-001',
+        clOrdId: 'cl-001',
+        status: 'AUTHED',
+        challengeRequired: false,
+        authorizationReason: 'RECENT_LOGIN_MFA',
+        accountId: 1,
+        symbol: '005930',
+        side: 'BUY',
+        orderType: 'LIMIT',
+        qty: 2,
+        price: 70100,
+        expiresAt: '2026-03-13T00:00:00Z',
+      },
       presentation: {
         code: 'FEP-002',
         semantic: 'pending-confirmation',
@@ -33,24 +60,45 @@ describe('external order recovery section model', () => {
       },
       presets: externalOrderPresetOptions,
       selectedPresetId: 'krx-buy-2',
+      draftSummary: '005930 · 삼성전자 · 2주',
     });
 
-    expect(model.selectedSummary).toBe('005930 · 2주 · 70,100원');
+    expect(model.selectedSummary).toBe('005930 · 삼성전자 · 2주');
     expect(model.clearAction.disabled).toBe(false);
-    expect(model.emptyStateMessage).toBeNull();
+    expect(model.orderSummary).toContain('상태 AUTHED');
   });
 
   it('shows inline feedback for non-external application errors', () => {
     const model = buildExternalOrderRecoverySectionModel({
-      feedbackMessage: '입력 값을 다시 확인해 주세요.',
-      isSubmitting: false,
+      step: 'B',
+      feedbackMessage: null,
+      inlineError: '입력 값을 다시 확인해 주세요.',
+      isInteractionLocked: true,
+      isCreating: false,
+      isExecuting: false,
+      isVerifyingOtp: true,
+      orderSession: {
+        orderSessionId: 'sess-001',
+        clOrdId: 'cl-001',
+        status: 'PENDING_NEW',
+        challengeRequired: true,
+        authorizationReason: 'ELEVATED_ORDER_RISK',
+        accountId: 1,
+        symbol: '005930',
+        side: 'BUY',
+        orderType: 'LIMIT',
+        qty: 5,
+        price: 70300,
+        expiresAt: '2026-03-13T00:00:00Z',
+      },
       presentation: null,
       presets: externalOrderPresetOptions,
       selectedPresetId: 'krx-buy-5',
+      draftSummary: '005930 · 삼성전자 · 5주',
     });
 
-    expect(model.feedbackMessage).toBe('입력 값을 다시 확인해 주세요.');
-    expect(model.emptyStateMessage).toBeNull();
+    expect(model.inlineError).toBe('입력 값을 다시 확인해 주세요.');
+    expect(model.otpInput.helperText).toBe('OTP 검증 중...');
     expect(model.clearAction.disabled).toBe(false);
   });
 });

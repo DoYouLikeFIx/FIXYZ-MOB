@@ -30,14 +30,16 @@ appId: org.reactjs.native.example.FIXYZMob
     timeout: 20000
 - scrollUntilVisible:
     element:
-      id: mobile-external-order-submit
+      id: mobile-order-session-create
     direction: DOWN
     timeout: 15000
     visibilityPercentage: 60
 - tapOn:
     id: mobile-external-order-preset-krx-buy-2
 - tapOn:
-    id: mobile-external-order-submit
+    id: mobile-order-session-create
+- tapOn:
+    id: mobile-order-session-execute
 - extendedWaitUntil:
     visible:
       id: external-order-error-title

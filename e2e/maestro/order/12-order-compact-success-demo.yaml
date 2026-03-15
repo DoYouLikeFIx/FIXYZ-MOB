@@ -6,6 +6,7 @@ appId: org.reactjs.native.example.FIXYZMob
     arguments:
       mobApiBaseUrl: http://localhost:18080
       mobDisableAnimations: true
+      mobHideDevWarningsOverlay: true
 - extendedWaitUntil:
     visible:
       id: login-email
@@ -13,17 +14,28 @@ appId: org.reactjs.native.example.FIXYZMob
 - tapOn:
     id: login-email
 - waitForAnimationToEnd:
-    timeout: 5000
-- inputText: demo@fix.com
+    timeout: 3000
+- inputText: mfa-verify@fix.com
 - tapOn:
     id: login-password
 - waitForAnimationToEnd:
-    timeout: 5000
+    timeout: 3000
 - inputText: Test1234!
-- pressKey: Enter
+- tapOn:
+    id: login-submit
 - tapOn:
     text: "지금 안 함"
     optional: true
+- extendedWaitUntil:
+    visible:
+      id: login-mfa-input
+    timeout: 20000
+- tapOn:
+    id: login-mfa-input
+- inputText: 123456
+- pressKey: Enter
+- tapOn:
+    id: login-mfa-submit
 - extendedWaitUntil:
     visible:
       id: protected-area-title
@@ -33,17 +45,30 @@ appId: org.reactjs.native.example.FIXYZMob
       id: mobile-order-session-create
     direction: DOWN
     timeout: 15000
-    visibilityPercentage: 60
+    visibilityPercentage: 70
 - tapOn:
+    text: "Open debugger to view warnings."
+    point: "95%,50%"
+    optional: true
+- assertVisible:
     id: mobile-order-session-create
 - tapOn:
-    id: mobile-order-session-execute
+    id: mobile-order-session-create
+    retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 1800
 - extendedWaitUntil:
-    visible: "주문이 접수되었습니다. 주문 요약을 확인해 주세요."
+    visible:
+      id: mobile-order-session-execute
+    timeout: 15000
+- assertVisible:
+    id: mobile-order-session-summary
+- tapOn:
+    id: mobile-order-session-execute
+    retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 1800
+- extendedWaitUntil:
+    visible:
+      id: mobile-order-session-feedback
     timeout: 15000
 - assertVisible:
     id: mobile-order-session-feedback
-- assertVisible:
-    id: mobile-order-session-reset
-- assertNotVisible:
-    id: external-order-error-card

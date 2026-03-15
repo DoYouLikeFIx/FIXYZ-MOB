@@ -37,4 +37,4 @@ appId: org.reactjs.native.example.FIXYZMob
 - assertVisible:
     id: mobile-external-order-unavailable
 - assertNotVisible:
-    id: mobile-external-order-submit
+    id: mobile-order-session-create

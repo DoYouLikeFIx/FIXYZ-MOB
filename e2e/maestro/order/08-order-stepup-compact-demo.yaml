@@ -1,0 +1,24 @@
+appId: org.reactjs.native.example.FIXYZMob
+---
+- assertVisible:
+    id: mobile-order-session-create
+- waitForAnimationToEnd:
+    timeout: 600
+- tapOn:
+    id: mobile-order-session-create
+- extendedWaitUntil:
+    visible:
+      id: mobile-order-session-otp-input
+    timeout: 15000
+- assertVisible:
+    id: mobile-order-session-summary
+- assertVisible:
+    id: mobile-order-session-authorization
+- scrollUntilVisible:
+    element:
+      id: mobile-order-session-otp-input
+    direction: DOWN
+    timeout: 10000
+    visibilityPercentage: 90
+- waitForAnimationToEnd:
+    timeout: 1800

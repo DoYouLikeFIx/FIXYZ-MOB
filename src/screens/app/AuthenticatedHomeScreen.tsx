@@ -44,6 +44,7 @@ export const AuthenticatedHomeScreen = ({
   });
   const externalOrderViewModel = useExternalOrderViewModel({
     accountId: member.accountId,
+    isRefreshingSession,
     orderApi,
   });
 
@@ -982,8 +983,9 @@ export const AuthenticatedHomeScreen = ({
                 color: palette.ink,
               }}
             >
-              실제 `/api/v1/orders` 응답에서 FEP 오류가 수신되면 아래 카드가 재시도, 대기,
-              문의 안내를 같은 의미로 보여줍니다.
+              주문은 `/api/v1/orders/sessions`에서 시작하고, 필요할 때만 OTP Step B를 거쳐
+              Step C execute로 이어집니다. 외부 주문 오류는 execute 단계에서 같은 의미로
+              복구 안내를 보여줍니다.
             </Text>
           </View>
           <Text
@@ -1023,13 +1025,37 @@ export const AuthenticatedHomeScreen = ({
         {hasOrderAccount ? (
           <ExternalOrderRecoverySection
             feedbackMessage={externalOrderViewModel.feedbackMessage}
-            isSubmitting={externalOrderViewModel.isSubmitting}
+            inlineError={externalOrderViewModel.inlineError}
+            symbolValue={externalOrderViewModel.symbolValue}
+            quantityValue={externalOrderViewModel.quantityValue}
+            symbolError={externalOrderViewModel.symbolError}
+            quantityError={externalOrderViewModel.quantityError}
+            draftSummary={externalOrderViewModel.draftSummary}
+            canSubmit={externalOrderViewModel.canSubmit}
+            isInteractionLocked={externalOrderViewModel.isInteractionLocked}
+            isCreating={externalOrderViewModel.isCreating}
+            isExtending={externalOrderViewModel.isExtending}
+            isExecuting={externalOrderViewModel.isExecuting}
+            isRestoring={externalOrderViewModel.isRestoring}
+            isVerifyingOtp={externalOrderViewModel.isVerifyingOtp}
+            orderSession={externalOrderViewModel.orderSession}
+            authorizationReasonMessage={externalOrderViewModel.authorizationReasonMessage}
+            otpValue={externalOrderViewModel.otpValue}
             presentation={externalOrderViewModel.presentation}
             presets={externalOrderViewModel.presets}
             selectedPresetId={externalOrderViewModel.selectedPresetId}
+            step={externalOrderViewModel.step}
             onClear={externalOrderViewModel.clear}
+            onBackToDraft={externalOrderViewModel.backToDraft}
+            onExecute={externalOrderViewModel.execute}
+            onReset={externalOrderViewModel.reset}
+            onRestartExpiredSession={externalOrderViewModel.restartExpiredSession}
             onSelectPreset={externalOrderViewModel.selectPreset}
+            onSetSymbolValue={externalOrderViewModel.setSymbolValue}
+            onSetQuantityValue={externalOrderViewModel.setQuantityValue}
+            onSetOtpValue={externalOrderViewModel.setOtpValue}
             onSubmit={externalOrderViewModel.submit}
+            onExtend={externalOrderViewModel.extend}
           />
         ) : (
           <View
@@ -1074,8 +1100,8 @@ export const AuthenticatedHomeScreen = ({
                 color: palette.inkSoft,
               }}
             >
-              현재 세션에는 `/api/v1/orders`에 전달할 주문 계좌 ID가 없습니다. 계좌 연동이
-              완료된 사용자에게만 주문 경계를 활성화합니다.
+              현재 세션에는 주문 세션 생성에 사용할 계좌 ID가 없습니다. 계좌 연동이 완료된
+              사용자에게만 주문 경계를 활성화합니다.
             </Text>
           </View>
         )}
