@@ -8,6 +8,7 @@ import type {
   ExternalOrderPresetOption,
 } from '../../order/external-order-recovery';
 import type { ExternalOrderErrorPresentation } from '../../order/external-errors';
+import { formatKRW, formatQuantity } from '../../utils/formatters';
 import { ExternalOrderErrorCard } from './ExternalOrderErrorCard';
 import { buildExternalOrderRecoverySectionModel } from './external-order-recovery-section-model';
 
@@ -29,6 +30,7 @@ interface ExternalOrderRecoverySectionProps {
   isRestoring: boolean;
   presentation: ExternalOrderErrorPresentation | null;
   orderSession: OrderSessionResponse | null;
+  hasDetectedSessionExpiry?: boolean;
   authorizationReasonMessage: string | null;
   otpValue: string;
   presets: readonly ExternalOrderPresetOption[];
@@ -48,6 +50,76 @@ interface ExternalOrderRecoverySectionProps {
 
 const EMPTY_EXPIRY = '1970-01-01T00:00:00Z';
 
+const isProcessingStatus = (status?: string) =>
+  status === 'EXECUTING' || status === 'REQUERYING';
+
+const isManualReviewStatus = (status?: string) => status === 'ESCALATED';
+
+const isFinalResultStatus = (status?: string) =>
+  status === 'COMPLETED'
+  || status === 'FAILED'
+  || status === 'CANCELED';
+
+const resolveProcessingTitle = (status?: string) => {
+  if (status === 'REQUERYING') {
+    return '주문 체결 결과를 다시 확인하고 있어요';
+  }
+
+  return '주문을 거래소에 전송했어요';
+};
+
+const resolveProcessingBody = (status?: string) => {
+  if (status === 'REQUERYING') {
+    return '체결 결과를 재조회하는 중입니다. 완료로 간주하지 말고 상태가 바뀔 때까지 기다려 주세요.';
+  }
+
+  return '체결 결과가 아직 확정되지 않았습니다. 잠시 후 상태가 자동으로 갱신됩니다.';
+};
+
+const resolveResultTitle = (session: OrderSessionResponse) => {
+  if (session.status === 'FAILED') {
+    return '주문이 실패했습니다';
+  }
+
+  if (session.status === 'CANCELED') {
+    if (session.executionResult === 'PARTIAL_FILL_CANCEL') {
+      return '일부 체결 후 나머지 수량이 취소되었습니다';
+    }
+
+    return '주문이 취소되었습니다';
+  }
+
+  if (session.executionResult === 'PARTIAL_FILL') {
+    return '주문이 일부 체결되었습니다';
+  }
+
+  if (session.executionResult === 'VIRTUAL_FILL') {
+    return '주문이 승인 처리되었습니다';
+  }
+
+  return '주문이 체결되었습니다';
+};
+
+const resolveResultBody = (session: OrderSessionResponse) => {
+  if (session.status === 'FAILED') {
+    return '실패 사유를 확인한 뒤 주문 조건을 조정해 다시 시도해 주세요.';
+  }
+
+  if (session.status === 'CANCELED') {
+    if (session.executionResult === 'PARTIAL_FILL_CANCEL') {
+      return '체결된 수량과 취소된 잔여 수량을 함께 확인해 주세요.';
+    }
+
+    return '취소 결과를 확인한 뒤 필요하면 새 주문을 시작해 주세요.';
+  }
+
+  if (session.executionResult === 'PARTIAL_FILL') {
+    return '체결 수량과 남은 수량을 확인한 뒤 필요하면 새 주문을 시작해 주세요.';
+  }
+
+  return '주문 결과 요약을 확인해 주세요.';
+};
+
 export const ExternalOrderRecoverySection = ({
   step,
   feedbackMessage,
@@ -66,6 +138,7 @@ export const ExternalOrderRecoverySection = ({
   isRestoring,
   presentation,
   orderSession,
+  hasDetectedSessionExpiry = false,
   authorizationReasonMessage,
   otpValue,
   presets,
@@ -83,11 +156,21 @@ export const ExternalOrderRecoverySection = ({
   onExtend,
 }: ExternalOrderRecoverySectionProps) => {
   const countdown = useExpiryCountdown(orderSession?.expiresAt ?? EMPTY_EXPIRY);
-  const hasActiveSession = orderSession !== null && step !== 'COMPLETE';
-  const showExpiredModal = hasActiveSession && countdown.isExpired;
+  const hasActiveSession = orderSession != null && step !== 'COMPLETE';
+  const showExpiredModal =
+    hasActiveSession && (countdown.isExpired || hasDetectedSessionExpiry);
   const showExpiryWarning = hasActiveSession && countdown.isExpiringSoon && !showExpiredModal;
   const isExpiredInteractionLocked = isInteractionLocked || showExpiredModal;
   const isCompactExpiryWarning = showExpiryWarning && step === 'B';
+  const showProcessingState =
+    step === 'COMPLETE' && orderSession != null && isProcessingStatus(orderSession.status);
+  const showManualReviewState =
+    step === 'COMPLETE' && orderSession != null && isManualReviewStatus(orderSession.status);
+  const showResultState =
+    step === 'COMPLETE' && orderSession != null && isFinalResultStatus(orderSession.status);
+  const expiredModalMessage = countdown.isExpired
+    ? `${countdown.expiresAtLabel}에 세션이 종료되었습니다. 입력한 주문을 확인한 뒤 다시 시작해 주세요.`
+    : '주문 세션이 더 이상 유효하지 않습니다. 입력한 주문을 확인한 뒤 다시 시작해 주세요.';
   const model = buildExternalOrderRecoverySectionModel({
     step,
     feedbackMessage,
@@ -513,6 +596,217 @@ export const ExternalOrderRecoverySection = ({
         </View>
       ) : null}
 
+      {showProcessingState ? (
+        <View
+          style={{
+            borderRadius: 18,
+            borderWidth: 1,
+            borderColor: '#E8D9CC',
+            backgroundColor: '#FFF8F2',
+            paddingHorizontal: 14,
+            paddingVertical: 14,
+            gap: 6,
+          }}
+          testID="mobile-order-session-processing"
+        >
+          <Text
+            style={{
+              fontSize: 14,
+              fontWeight: '800',
+              color: palette.ink,
+            }}
+            testID="mobile-order-session-processing-title"
+          >
+            {resolveProcessingTitle(orderSession.status)}
+          </Text>
+          <Text
+            style={{
+              fontSize: 14,
+              lineHeight: 20,
+              color: palette.inkSoft,
+            }}
+          >
+            {resolveProcessingBody(orderSession.status)}
+          </Text>
+          <Text
+            style={{
+              fontSize: 13,
+              fontWeight: '700',
+              color: palette.ink,
+            }}
+            testID="mobile-order-result-clordid"
+          >
+            ClOrdID · {orderSession.clOrdId}
+          </Text>
+        </View>
+      ) : null}
+
+      {showManualReviewState ? (
+        <View
+          style={{
+            borderRadius: 18,
+            borderWidth: 1,
+            borderColor: '#F2C38C',
+            backgroundColor: '#FFF7ED',
+            paddingHorizontal: 14,
+            paddingVertical: 14,
+            gap: 6,
+          }}
+          testID="mobile-order-session-manual-review"
+        >
+          <Text
+            style={{
+              fontSize: 14,
+              fontWeight: '800',
+              color: palette.ink,
+            }}
+          >
+            처리 중 문제가 발생해 수동 확인이 필요합니다.
+          </Text>
+          <Text
+            style={{
+              fontSize: 14,
+              lineHeight: 20,
+              color: palette.inkSoft,
+            }}
+          >
+            주문 번호를 확인한 뒤 고객센터에 문의해 주세요.
+          </Text>
+          <Text
+            style={{
+              fontSize: 13,
+              fontWeight: '700',
+              color: palette.ink,
+            }}
+            testID="mobile-order-result-clordid"
+          >
+            ClOrdID · {orderSession.clOrdId}
+          </Text>
+        </View>
+      ) : null}
+
+      {showResultState ? (
+        <View
+          style={{
+            borderRadius: 18,
+            borderWidth: 1,
+            borderColor: '#E8D9CC',
+            backgroundColor: '#FFF8F2',
+            paddingHorizontal: 14,
+            paddingVertical: 14,
+            gap: 6,
+          }}
+          testID="mobile-order-session-result"
+        >
+          <Text
+            style={{
+              fontSize: 14,
+              fontWeight: '800',
+              color: palette.ink,
+            }}
+            testID="mobile-order-session-result-title"
+          >
+            {resolveResultTitle(orderSession)}
+          </Text>
+          <Text
+            style={{
+              fontSize: 14,
+              lineHeight: 20,
+              color: palette.inkSoft,
+            }}
+          >
+            {resolveResultBody(orderSession)}
+          </Text>
+          <Text
+            style={{
+              fontSize: 13,
+              fontWeight: '700',
+              color: palette.ink,
+            }}
+            testID="mobile-order-result-clordid"
+          >
+            ClOrdID · {orderSession.clOrdId}
+          </Text>
+          {orderSession.externalOrderId ? (
+            <Text
+              style={{
+                fontSize: 13,
+                color: palette.ink,
+              }}
+              testID="mobile-order-result-external-id"
+            >
+              거래소 주문번호 · {orderSession.externalOrderId}
+            </Text>
+          ) : null}
+          {orderSession.executionResult ? (
+            <Text
+              style={{
+                fontSize: 13,
+                color: palette.ink,
+              }}
+              testID="mobile-order-result-execution-result"
+            >
+              실행 결과 · {orderSession.executionResult}
+            </Text>
+          ) : null}
+          {orderSession.executedQty !== null && orderSession.executedQty !== undefined ? (
+            <Text
+              style={{
+                fontSize: 13,
+                color: palette.ink,
+              }}
+              testID="mobile-order-result-executed-qty"
+            >
+              체결 수량 · {formatQuantity(orderSession.executedQty)}주
+            </Text>
+          ) : null}
+          {orderSession.executedPrice !== null && orderSession.executedPrice !== undefined ? (
+            <Text
+              style={{
+                fontSize: 13,
+                color: palette.ink,
+              }}
+              testID="mobile-order-result-executed-price"
+            >
+              체결 단가 · {formatKRW(orderSession.executedPrice)}
+            </Text>
+          ) : null}
+          {orderSession.leavesQty !== null && orderSession.leavesQty !== undefined ? (
+            <Text
+              style={{
+                fontSize: 13,
+                color: palette.ink,
+              }}
+              testID="mobile-order-result-leaves-qty"
+            >
+              잔여 수량 · {formatQuantity(orderSession.leavesQty)}주
+            </Text>
+          ) : null}
+          {orderSession.canceledAt ? (
+            <Text
+              style={{
+                fontSize: 13,
+                color: palette.ink,
+              }}
+              testID="mobile-order-result-canceled-at"
+            >
+              취소 시각 · {orderSession.canceledAt}
+            </Text>
+          ) : null}
+          {orderSession.failureReason ? (
+            <Text
+              style={{
+                fontSize: 13,
+                color: palette.ink,
+              }}
+              testID="mobile-order-result-failure-reason"
+            >
+              실패 사유 · {orderSession.failureReason}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
       <View style={{ flexDirection: 'row', gap: 10 }}>
         {step === 'A' ? (
           <Pressable
@@ -667,8 +961,7 @@ export const ExternalOrderRecoverySection = ({
                 color: palette.inkSoft,
               }}
             >
-              {countdown.expiresAtLabel}에 세션이 종료되었습니다. 입력한 주문을 확인한 뒤
-              다시 시작해 주세요.
+              {expiredModalMessage}
             </Text>
             <Pressable
               onPress={onRestartExpiredSession}
