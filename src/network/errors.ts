@@ -1,4 +1,7 @@
-import type { ApiResponseEnvelope, NormalizedHttpError } from './types';
+import type {
+  LenientApiResponseEnvelope,
+  NormalizedHttpError,
+} from './types';
 
 export const DEFAULT_SERVER_ERROR_MESSAGE =
   'Unexpected server response. Please try again.';
@@ -116,7 +119,7 @@ export const createNormalizedHttpError = (
 
 const isApiResponseEnvelope = (
   value: unknown,
-): value is ApiResponseEnvelope<unknown> => {
+): value is LenientApiResponseEnvelope<unknown> => {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
