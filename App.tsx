@@ -1,7 +1,9 @@
 import {
-  LogBox,
   useRef,
 } from 'react';
+import {
+  LogBox,
+} from 'react-native';
 
 import { createMobileAuthRuntime } from './src/auth/create-mobile-auth-runtime';
 import { useAuthFlowViewModel } from './src/auth/use-auth-flow-view-model';
