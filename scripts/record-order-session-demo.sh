@@ -15,7 +15,7 @@ METRO_LOG="/tmp/${OUTPUT_BASENAME}-metro.log"
 SERVER_LOG="/tmp/${OUTPUT_BASENAME}-auth-server.log"
 RECORDER_LOG="/tmp/${OUTPUT_BASENAME}-record.log"
 FFMPEG_LOG="/tmp/${OUTPUT_BASENAME}-ffmpeg.log"
-FLOW_PATH="${MOB_ORDER_DEMO_FLOW_PATH:-$ROOT_DIR/e2e/maestro/order/10-order-success-full-flow-demo.yaml}"
+FLOW_PATH="${MOB_ORDER_DEMO_FLOW_PATH:-$ROOT_DIR/e2e/maestro/order/14-order-success-full-flow-swipe-compact.yaml}"
 SETUP_FLOW_PATH="${MOB_ORDER_DEMO_SETUP_FLOW_PATH:-}"
 
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
