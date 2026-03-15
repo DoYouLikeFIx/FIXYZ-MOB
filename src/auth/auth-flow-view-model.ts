@@ -48,6 +48,7 @@ import {
   isReauthError,
   resolveMfaErrorPresentation,
 } from './auth-errors';
+import { clearPersistedOrderSessionId } from '../order/order-session-storage';
 
 type Listener = () => void;
 type PendingMfaSource = 'login' | 'register';
@@ -211,6 +212,23 @@ export const createAuthFlowViewModel = ({
     });
   };
 
+  const clearOrderSessionContextForCurrentMember = async () => {
+    const currentAccountId = authStore.getState().member?.accountId;
+    if (!currentAccountId) {
+      return;
+    }
+
+    await clearPersistedOrderSessionId(currentAccountId);
+  };
+
+  const clearOrderSessionContextForCurrentMemberSafely = async () => {
+    try {
+      await clearOrderSessionContextForCurrentMember();
+    } catch (error) {
+      console.error('Failed to clear persisted order session context', error);
+    }
+  };
+
   const openPendingMfaRoute = (
     navigationState: AuthNavigationState,
     challenge: LoginChallenge,
@@ -218,7 +236,7 @@ export const createAuthFlowViewModel = ({
     ? openTotpEnrollRoute(navigationState)
     : openLoginRoute(navigationState);
 
-  const applyProtectedRequestResult = (
+  const applyProtectedRequestResult = async (
     result: ProtectedRequestResult,
   ) => {
     if (result.status === 'authenticated') {
@@ -235,6 +253,7 @@ export const createAuthFlowViewModel = ({
     }
 
     if (result.status === 'reauth') {
+      await clearOrderSessionContextForCurrentMemberSafely();
       authStore.requireReauth(getReauthMessage(result.error));
       setState((current) => ({
         ...current,
@@ -298,6 +317,7 @@ export const createAuthFlowViewModel = ({
 
     requireEnrollmentRestart(message: string) {
       clearTransientErrors();
+      void clearOrderSessionContextForCurrentMemberSafely();
       authStore.requireReauth(message);
       setState((current) => ({
         ...current,
@@ -446,6 +466,7 @@ export const createAuthFlowViewModel = ({
       }
 
       if (presentation.restartLogin) {
+        await clearOrderSessionContextForCurrentMemberSafely();
         authStore.requireReauth(presentation.message);
         setState((current) => ({
           ...current,
@@ -502,6 +523,7 @@ export const createAuthFlowViewModel = ({
         const presentation = resolveMfaErrorPresentation(result.error);
 
         if (presentation.restartLogin) {
+          await clearOrderSessionContextForCurrentMemberSafely();
           authStore.requireReauth(presentation.message);
           setState((current) => ({
             ...current,
@@ -543,6 +565,7 @@ export const createAuthFlowViewModel = ({
       const presentation = resolveMfaErrorPresentation(result.error);
 
       if (presentation.restartLogin) {
+        await clearOrderSessionContextForCurrentMemberSafely();
         authStore.requireReauth(presentation.message);
         setState((current) => ({
           ...current,
@@ -612,6 +635,7 @@ export const createAuthFlowViewModel = ({
       }
 
       if (isReauthError(result.error)) {
+        await clearOrderSessionContextForCurrentMemberSafely();
         authStore.requireReauth(getReauthMessage(result.error));
         setState((current) => ({
           ...current,
@@ -748,6 +772,7 @@ export const createAuthFlowViewModel = ({
       const result = await authService.confirmMfaRecoveryRebind(payload);
 
       if (result.success && result.response.rebindCompleted) {
+        await clearOrderSessionContextForCurrentMemberSafely();
         authStore.logout();
         setState((current) => ({
           ...current,
@@ -779,8 +804,8 @@ export const createAuthFlowViewModel = ({
           ? authService.revalidateSessionOnResume()
           : authService.refreshProtectedSession()
       )
-        .then((result) => {
-          applyProtectedRequestResult(result);
+        .then(async (result) => {
+          await applyProtectedRequestResult(result);
           return result;
         })
         .finally(() => {
