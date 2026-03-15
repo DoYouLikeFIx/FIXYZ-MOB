@@ -18,18 +18,21 @@ import {
 import { AppNavigator } from './src/navigation/AppNavigator';
 
 const App = () => {
-  resetMobileLaunchArgumentsCache();
   const runtimeRef = useRef<ReturnType<typeof createMobileAuthRuntime> | null>(null);
-  const animationsDisabledRef = useRef(isMotionDisabled());
+  const animationsDisabledRef = useRef(false);
+  const hideDevWarningsOverlayRef = useRef(false);
   const warningsHiddenRef = useRef(false);
 
   if (runtimeRef.current === null) {
+    resetMobileLaunchArgumentsCache();
     runtimeRef.current = createMobileAuthRuntime();
+    animationsDisabledRef.current = isMotionDisabled();
+    hideDevWarningsOverlayRef.current = shouldHideDevWarningsOverlay();
   }
 
   if (
     !warningsHiddenRef.current
-    && shouldHideDevWarningsOverlay()
+    && hideDevWarningsOverlayRef.current
     && LogBox
     && typeof LogBox.ignoreAllLogs === 'function'
   ) {
