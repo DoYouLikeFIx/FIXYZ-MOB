@@ -4,6 +4,7 @@ import type {
   ExternalOrderPresetOption,
 } from '../../order/external-order-recovery';
 import type { ExternalOrderErrorPresentation } from '../../order/external-errors';
+import { formatKRW, formatQuantity } from '../../utils/formatters';
 
 type OrderFlowStep = 'A' | 'B' | 'C' | 'COMPLETE';
 
@@ -70,8 +71,8 @@ export const buildExternalOrderRecoverySectionModel = ({
     inlineError,
     selectedSummary: draftSummary,
     orderSummary: orderSession
-      ? `${orderSession.symbol} · ${orderSession.qty}주 · ${
-        orderSession.price === null ? '시장가' : `${orderSession.price.toLocaleString()}원`
+      ? `${orderSession.symbol} · ${formatQuantity(orderSession.qty)}주 · ${
+        orderSession.price === null ? '시장가' : formatKRW(orderSession.price)
       } · 상태 ${orderSession.status}`
       : null,
     scenarios: presets.map((preset) => ({

@@ -15,6 +15,7 @@ import { ExternalOrderRecoverySection } from '../../components/order/ExternalOrd
 import { hasExternalOrderAccountId } from '../../order/external-order-recovery';
 import { useExternalOrderViewModel } from '../../order/use-external-order-view-model';
 import type { Member } from '../../types/auth';
+import { formatKRW, formatQuantity } from '../../utils/formatters';
 
 interface AuthenticatedHomeScreenProps {
   accountApi: AccountApi;
@@ -543,17 +544,13 @@ export const AuthenticatedHomeScreen = ({
                   }}
                   testID="mobile-dashboard-balance"
                 >
-                  {new Intl.NumberFormat('ko-KR', {
-                    style: 'currency',
-                    currency: 'KRW',
-                    maximumFractionDigits: 0,
-                  }).format(accountDashboard.position.balance)}
+                  {formatKRW(accountDashboard.position.balance)}
                 </Text>
               </View>
 
               {[
-                ['가용 수량', `${accountDashboard.position.availableQuantity}주`],
-                ['보유 수량', `${accountDashboard.position.quantity}주`],
+                ['가용 수량', `${formatQuantity(accountDashboard.position.availableQuantity)}주`],
+                ['보유 수량', `${formatQuantity(accountDashboard.position.quantity)}주`],
                 ...(accountDashboard.position.symbol
                   ? [['조회 종목', accountDashboard.position.symbol] as const]
                   : []),
@@ -843,7 +840,7 @@ export const AuthenticatedHomeScreen = ({
                       color: palette.inkSoft,
                     }}
                   >
-                    {item.symbol} / {item.qty}주 / {item.status}
+                    {item.symbol} / {formatQuantity(item.qty)}주 / {item.status}
                   </Text>
                   <Text
                     style={{
@@ -852,11 +849,7 @@ export const AuthenticatedHomeScreen = ({
                       color: palette.inkSoft,
                     }}
                   >
-                    {new Intl.NumberFormat('ko-KR', {
-                      style: 'currency',
-                      currency: 'KRW',
-                      maximumFractionDigits: 0,
-                    }).format(item.totalAmount)}
+                    {formatKRW(item.totalAmount)}
                   </Text>
                   <Text
                     style={{
@@ -1039,6 +1032,7 @@ export const AuthenticatedHomeScreen = ({
             isRestoring={externalOrderViewModel.isRestoring}
             isVerifyingOtp={externalOrderViewModel.isVerifyingOtp}
             orderSession={externalOrderViewModel.orderSession}
+            hasDetectedSessionExpiry={externalOrderViewModel.hasDetectedSessionExpiry}
             authorizationReasonMessage={externalOrderViewModel.authorizationReasonMessage}
             otpValue={externalOrderViewModel.otpValue}
             presentation={externalOrderViewModel.presentation}
