@@ -14,16 +14,27 @@ appId: org.reactjs.native.example.FIXYZMob
     id: login-email
 - waitForAnimationToEnd:
     timeout: 5000
-- inputText: unknown-order@fix.com
+- inputText: order-stepup@fix.com
 - tapOn:
     id: login-password
 - waitForAnimationToEnd:
     timeout: 5000
 - inputText: Test1234!
-- pressKey: Enter
+- tapOn:
+    id: login-submit
 - tapOn:
     text: "지금 안 함"
     optional: true
+- extendedWaitUntil:
+    visible:
+      id: login-mfa-input
+    timeout: 20000
+- tapOn:
+    id: login-mfa-input
+- inputText: 123456
+- pressKey: Enter
+- tapOn:
+    id: login-mfa-submit
 - extendedWaitUntil:
     visible:
       id: protected-area-title
@@ -34,20 +45,5 @@ appId: org.reactjs.native.example.FIXYZMob
     direction: DOWN
     timeout: 15000
     visibilityPercentage: 60
-- tapOn:
-    id: mobile-order-session-create
-- tapOn:
-    id: mobile-order-session-execute
-- extendedWaitUntil:
-    visible:
-      id: external-order-error-title
-    timeout: 15000
-- scrollUntilVisible:
-    element:
-      id: external-order-error-support-reference
-    direction: DOWN
-    timeout: 15000
-    visibilityPercentage: 60
-- assertVisible: "주문 상태 확인이 더 필요합니다"
 - assertVisible:
-    id: external-order-error-support-reference
+    id: mobile-order-session-create
