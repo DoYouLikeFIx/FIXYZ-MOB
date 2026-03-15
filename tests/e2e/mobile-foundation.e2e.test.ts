@@ -46,12 +46,12 @@ describe('E2E tests: mobile foundation workflow', () => {
           });
         }
 
-        if (url.endsWith('/api/v1/orders') && method === 'POST') {
+        if (url.endsWith('/api/v1/orders/sessions') && method === 'POST') {
           return jsonResponse(200, {
             success: true,
             data: {
-              orderId: 'ord-1',
-              result: 'CREATED',
+              orderSessionId: 'sess-1',
+              status: 'AUTHED',
             },
             error: null,
           });
@@ -85,16 +85,20 @@ describe('E2E tests: mobile foundation workflow', () => {
 
     await csrfManager.onAppColdStart();
     await checkHealth(client);
-    const orderResponse = await client.post<{ orderId: string; result: string }>(
-      '/api/v1/orders',
+    const orderResponse = await client.post<{ orderSessionId: string; status: string }>(
+      '/api/v1/orders/sessions',
       {
+        accountId: 1,
         symbol: '005930',
+        side: 'BUY',
+        orderType: 'LIMIT',
         qty: 1,
+        price: 70100,
       },
     );
 
     expect(orderResponse.statusCode).toBe(200);
-    expect(orderResponse.body.orderId).toBe('ord-1');
+    expect(orderResponse.body.orderSessionId).toBe('sess-1');
 
     const csrfCall = calls.find(
       (call) => call.method === 'GET' && call.url.endsWith('/api/v1/auth/csrf'),
@@ -107,7 +111,7 @@ describe('E2E tests: mobile foundation workflow', () => {
     expect(healthCall).toBeDefined();
 
     const orderCall = calls.find(
-      (call) => call.method === 'POST' && call.url.endsWith('/api/v1/orders'),
+      (call) => call.method === 'POST' && call.url.endsWith('/api/v1/orders/sessions'),
     );
     expect(orderCall).toBeDefined();
     expect(orderCall?.headers['X-XSRF-TOKEN']).toBe('csrf-boot-token');

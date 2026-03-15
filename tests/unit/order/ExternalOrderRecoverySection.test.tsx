@@ -28,15 +28,47 @@ const getTextContent = (node: ReactTestInstance | string | number | null | undef
   return node.children.map((child) => getTextContent(child as ReactTestInstance)).join('');
 };
 
+const futureIso = (seconds = 3600) =>
+  new Date(Date.now() + seconds * 1000).toISOString();
+
 describe('ExternalOrderRecoverySection', () => {
-  it('renders visible support reference and selected scenario state for an external error', () => {
+  it('renders visible support reference and selected scenario state for an external execute error', () => {
     let renderer!: ReturnType<typeof create>;
 
     act(() => {
       renderer = create(
         <ExternalOrderRecoverySection
+          step="C"
           feedbackMessage={null}
-          isSubmitting={false}
+          inlineError={null}
+          symbolValue="005930"
+          quantityValue="2"
+          symbolError={null}
+          quantityError={null}
+          draftSummary="005930 · 삼성전자 · 2주"
+          canSubmit
+          isInteractionLocked={false}
+          isCreating={false}
+          isExecuting={false}
+          isExtending={false}
+          isRestoring={false}
+          isVerifyingOtp={false}
+          orderSession={{
+            orderSessionId: 'sess-001',
+            clOrdId: 'cl-001',
+            status: 'AUTHED',
+            challengeRequired: false,
+            authorizationReason: 'TRUSTED_AUTH_SESSION',
+            accountId: 1,
+            symbol: '005930',
+            side: 'BUY',
+            orderType: 'LIMIT',
+            qty: 2,
+            price: 70100,
+            expiresAt: futureIso(),
+          }}
+          authorizationReasonMessage="최근 로그인 MFA가 확인되어 추가 인증 없이 바로 주문을 실행할 수 있습니다."
+          otpValue=""
           presentation={{
             code: 'FEP-002',
             semantic: 'pending-confirmation',
@@ -52,8 +84,16 @@ describe('ExternalOrderRecoverySection', () => {
           presets={externalOrderPresetOptions}
           selectedPresetId="krx-buy-2"
           onClear={() => {}}
+          onBackToDraft={() => {}}
+          onExecute={() => {}}
+          onReset={() => {}}
+          onRestartExpiredSession={() => {}}
           onSelectPreset={() => {}}
+          onSetSymbolValue={() => {}}
+          onSetQuantityValue={() => {}}
+          onSetOtpValue={() => {}}
           onSubmit={() => {}}
+          onExtend={() => {}}
         />,
       );
     });
@@ -66,6 +106,7 @@ describe('ExternalOrderRecoverySection', () => {
 
     expect(getTextContent(supportReference)).toBe('문의 코드: trace-fep-002');
     expect(selectedPreset.props.accessibilityState).toEqual({
+      disabled: false,
       selected: true,
     });
   });
@@ -76,21 +117,228 @@ describe('ExternalOrderRecoverySection', () => {
     act(() => {
       renderer = create(
         <ExternalOrderRecoverySection
-          feedbackMessage="입력 값을 다시 확인해 주세요."
-          isSubmitting={false}
+          step="A"
+          feedbackMessage={null}
+          inlineError="입력 값을 다시 확인해 주세요."
+          symbolValue="005930"
+          quantityValue="1"
+          symbolError={null}
+          quantityError={null}
+          draftSummary="005930 · 삼성전자 · 1주"
+          canSubmit
+          isInteractionLocked={false}
+          isCreating={false}
+          isExecuting={false}
+          isExtending={false}
+          isRestoring={false}
+          isVerifyingOtp={false}
+          orderSession={null}
+          authorizationReasonMessage={null}
+          otpValue=""
           presentation={null}
           presets={externalOrderPresetOptions}
           selectedPresetId="krx-buy-1"
           onClear={() => {}}
+          onBackToDraft={() => {}}
+          onExecute={() => {}}
+          onReset={() => {}}
+          onRestartExpiredSession={() => {}}
           onSelectPreset={() => {}}
+          onSetSymbolValue={() => {}}
+          onSetQuantityValue={() => {}}
+          onSetOtpValue={() => {}}
           onSubmit={() => {}}
+          onExtend={() => {}}
         />,
       );
     });
 
-    const feedback = findByTestId(renderer.root, 'mobile-external-order-feedback');
+    const feedback = findByTestId(renderer.root, 'mobile-order-session-error');
 
     expect(getTextContent(feedback)).toContain('입력 값을 다시 확인해 주세요.');
     expect(findAllByTestId(renderer.root, 'external-order-error-card')).toHaveLength(0);
+  });
+
+  it('disables scenario chips while interaction is locked', () => {
+    let renderer!: ReturnType<typeof create>;
+
+    act(() => {
+      renderer = create(
+        <ExternalOrderRecoverySection
+          step="C"
+          feedbackMessage={null}
+          inlineError={null}
+          symbolValue="005930"
+          quantityValue="2"
+          symbolError={null}
+          quantityError={null}
+          draftSummary="005930 · 삼성전자 · 2주"
+          canSubmit={false}
+          isInteractionLocked
+          isCreating={false}
+          isExecuting
+          isExtending={false}
+          isRestoring={false}
+          isVerifyingOtp={false}
+          orderSession={{
+            orderSessionId: 'sess-001',
+            clOrdId: 'cl-001',
+            status: 'AUTHED',
+            challengeRequired: false,
+            authorizationReason: 'TRUSTED_AUTH_SESSION',
+            accountId: 1,
+            symbol: '005930',
+            side: 'BUY',
+            orderType: 'LIMIT',
+            qty: 2,
+            price: 70100,
+            expiresAt: futureIso(),
+          }}
+          authorizationReasonMessage="최근 로그인 MFA가 확인되어 추가 인증 없이 바로 주문을 실행할 수 있습니다."
+          otpValue=""
+          presentation={null}
+          presets={externalOrderPresetOptions}
+          selectedPresetId="krx-buy-2"
+          onClear={() => {}}
+          onBackToDraft={() => {}}
+          onExecute={() => {}}
+          onReset={() => {}}
+          onRestartExpiredSession={() => {}}
+          onSelectPreset={() => {}}
+          onSetSymbolValue={() => {}}
+          onSetQuantityValue={() => {}}
+          onSetOtpValue={() => {}}
+          onSubmit={() => {}}
+          onExtend={() => {}}
+        />,
+      );
+    });
+
+    const selectedPreset = findByTestId(renderer.root, 'mobile-external-order-preset-krx-buy-2');
+
+    expect(selectedPreset.props.disabled).toBe(true);
+    expect(selectedPreset.props.accessibilityState).toEqual({
+      disabled: true,
+      selected: true,
+    });
+  });
+
+  it('renders the compact expiry warning in Step B when the session is within 60 seconds', () => {
+    let renderer!: ReturnType<typeof create>;
+
+    act(() => {
+      renderer = create(
+        <ExternalOrderRecoverySection
+          step="B"
+          feedbackMessage={null}
+          inlineError={null}
+          symbolValue="005930"
+          quantityValue="2"
+          symbolError={null}
+          quantityError={null}
+          draftSummary="005930 · 삼성전자 · 2주"
+          canSubmit={false}
+          isInteractionLocked={false}
+          isCreating={false}
+          isExecuting={false}
+          isExtending={false}
+          isRestoring={false}
+          isVerifyingOtp={false}
+          orderSession={{
+            orderSessionId: 'sess-warning',
+            clOrdId: 'cl-warning',
+            status: 'PENDING_NEW',
+            challengeRequired: true,
+            authorizationReason: 'ELEVATED_ORDER_RISK',
+            accountId: 1,
+            symbol: '005930',
+            side: 'BUY',
+            orderType: 'LIMIT',
+            qty: 2,
+            price: 70100,
+            expiresAt: futureIso(45),
+          }}
+          authorizationReasonMessage="고위험 주문으로 분류되어 주문 실행 전에 OTP 인증이 필요합니다."
+          otpValue=""
+          presentation={null}
+          presets={externalOrderPresetOptions}
+          selectedPresetId="krx-buy-2"
+          onClear={() => {}}
+          onBackToDraft={() => {}}
+          onExecute={() => {}}
+          onReset={() => {}}
+          onRestartExpiredSession={() => {}}
+          onSelectPreset={() => {}}
+          onSetSymbolValue={() => {}}
+          onSetQuantityValue={() => {}}
+          onSetOtpValue={() => {}}
+          onSubmit={() => {}}
+          onExtend={() => {}}
+        />,
+      );
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-warning'))).toContain(
+      '세션 곧 만료',
+    );
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-extend')).toHaveLength(1);
+  });
+
+  it('renders the expired-session modal when the order session has expired', () => {
+    let renderer!: ReturnType<typeof create>;
+
+    act(() => {
+      renderer = create(
+        <ExternalOrderRecoverySection
+          step="C"
+          feedbackMessage={null}
+          inlineError={null}
+          symbolValue="005930"
+          quantityValue="2"
+          symbolError={null}
+          quantityError={null}
+          draftSummary="005930 · 삼성전자 · 2주"
+          canSubmit={false}
+          isInteractionLocked={false}
+          isCreating={false}
+          isExecuting={false}
+          isExtending={false}
+          isRestoring={false}
+          isVerifyingOtp={false}
+          orderSession={{
+            orderSessionId: 'sess-expired',
+            clOrdId: 'cl-expired',
+            status: 'AUTHED',
+            challengeRequired: false,
+            authorizationReason: 'TRUSTED_AUTH_SESSION',
+            accountId: 1,
+            symbol: '005930',
+            side: 'BUY',
+            orderType: 'LIMIT',
+            qty: 2,
+            price: 70100,
+            expiresAt: new Date(Date.now() - 1000).toISOString(),
+          }}
+          authorizationReasonMessage="현재 신뢰 세션이 유효하여 추가 OTP 없이 바로 주문을 실행할 수 있습니다."
+          otpValue=""
+          presentation={null}
+          presets={externalOrderPresetOptions}
+          selectedPresetId="krx-buy-2"
+          onClear={() => {}}
+          onBackToDraft={() => {}}
+          onExecute={() => {}}
+          onReset={() => {}}
+          onRestartExpiredSession={() => {}}
+          onSelectPreset={() => {}}
+          onSetSymbolValue={() => {}}
+          onSetQuantityValue={() => {}}
+          onSetOtpValue={() => {}}
+          onSubmit={() => {}}
+          onExtend={() => {}}
+        />,
+      );
+    });
+
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-expired-modal')).toHaveLength(1);
   });
 });
