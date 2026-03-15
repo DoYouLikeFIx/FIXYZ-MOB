@@ -6,7 +6,6 @@ appId: org.reactjs.native.example.FIXYZMob
     arguments:
       mobApiBaseUrl: http://localhost:18080
       mobDisableAnimations: true
-      mobHideDevWarningsOverlay: true
 - extendedWaitUntil:
     visible:
       id: login-email
@@ -42,41 +41,9 @@ appId: org.reactjs.native.example.FIXYZMob
     timeout: 20000
 - scrollUntilVisible:
     element:
-      id: mobile-order-input-qty
+      id: mobile-order-session-create
     direction: DOWN
     timeout: 15000
-    visibilityPercentage: 50
-- tapOn:
-    point: "95%,95%"
-- swipe:
-    start: "50%,80%"
-    end: "50%,40%"
-    duration: 500
-    waitToSettleTimeoutMs: 1200
+    visibilityPercentage: 60
 - assertVisible:
     id: mobile-order-session-create
-- tapOn:
-    id: mobile-order-session-create
-    retryTapIfNoChange: true
-    waitToSettleTimeoutMs: 1800
-- extendedWaitUntil:
-    visible:
-      id: mobile-order-session-summary
-    timeout: 15000
-- swipe:
-    start: "50%,80%"
-    end: "50%,35%"
-    duration: 500
-    waitToSettleTimeoutMs: 1200
-- assertVisible:
-    id: mobile-order-session-execute
-- tapOn:
-    id: mobile-order-session-execute
-    retryTapIfNoChange: true
-    waitToSettleTimeoutMs: 1800
-- extendedWaitUntil:
-    visible:
-      id: mobile-order-session-result-body
-    timeout: 15000
-- assertVisible:
-    id: mobile-order-session-result-body

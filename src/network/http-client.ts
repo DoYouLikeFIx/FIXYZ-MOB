@@ -5,8 +5,8 @@ import {
 import type { CsrfTokenManager } from './csrf';
 import { normalizeHttpError } from './errors';
 import type {
-  ApiResponseEnvelope,
   HttpClientResponse,
+  LenientApiResponseEnvelope,
   NormalizedHttpError,
 } from './types';
 
@@ -36,7 +36,7 @@ interface HttpClientInput {
 
 const isApiResponseEnvelope = (
   value: unknown,
-): value is ApiResponseEnvelope<unknown> => {
+): value is LenientApiResponseEnvelope<unknown> => {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
@@ -45,8 +45,7 @@ const isApiResponseEnvelope = (
 
   return (
     typeof candidate.success === 'boolean' &&
-    Object.hasOwn(candidate, 'data') &&
-    Object.hasOwn(candidate, 'error')
+    Object.hasOwn(candidate, 'data')
   );
 };
 

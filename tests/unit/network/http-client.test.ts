@@ -44,6 +44,31 @@ describe('API tests: HttpClient contract', () => {
     );
   });
 
+  it('unwraps success envelopes even when the backend omits the error field', async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, {
+        success: true,
+        data: {
+          token: 'csrf-token',
+          headerName: 'X-CSRF-TOKEN',
+        },
+        timestamp: '2026-03-16T00:00:00Z',
+      }),
+    );
+
+    const client = new HttpClient({
+      baseUrl: 'http://localhost:8080',
+      fetchFn: fetchMock as unknown as typeof fetch,
+    });
+
+    const response = await client.get<{ token: string; headerName: string }>('/api/v1/auth/csrf');
+
+    expect(response.body).toEqual({
+      token: 'csrf-token',
+      headerName: 'X-CSRF-TOKEN',
+    });
+  });
+
   it('normalizes HTTP 400 API envelope errors', async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse(400, {

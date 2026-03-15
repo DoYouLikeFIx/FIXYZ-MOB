@@ -18,6 +18,10 @@ export interface ApiResponseEnvelope<T> {
   traceId?: string;
 }
 
+export type LenientApiResponseEnvelope<T> = Omit<ApiResponseEnvelope<T>, 'error'> & {
+  error?: ApiErrorPayload | null;
+};
+
 export interface NormalizedHttpError extends Error {
   code?: string;
   status?: number;
