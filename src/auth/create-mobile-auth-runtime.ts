@@ -1,5 +1,6 @@
 import { createAuthApi } from '../api/auth-api';
 import { createAccountApi } from '../api/account-api';
+import { createNotificationApi } from '../api/notification-api';
 import { createOrderApi } from '../api/order-api';
 import { shouldEnforceStrictCsrfBootstrap } from '../config/runtime-options';
 import { createMobileNetworkRuntime } from '../network/create-mobile-network-runtime';
@@ -26,6 +27,10 @@ export const createMobileAuthRuntime = () => {
       },
     }),
     accountApi: createAccountApi({
+      client: runtime.client,
+    }),
+    notificationApi: createNotificationApi({
+      baseUrl: runtime.baseUrl,
       client: runtime.client,
     }),
     orderApi: createOrderApi({
