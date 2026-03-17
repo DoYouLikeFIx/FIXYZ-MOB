@@ -5,6 +5,7 @@ import type { ReactTestInstance } from 'react-test-renderer';
 import { act, create } from 'react-test-renderer';
 
 import type { AccountApi } from '@/api/account-api';
+import type { NotificationApi, NotificationItem } from '@/api/notification-api';
 import type { OrderApi, OrderSessionResponse } from '@/api/order-api';
 import { createNormalizedHttpError } from '@/network/errors';
 import { __resetPersistedOrderSessionForTests } from '@/order/use-external-order-view-model';
@@ -222,6 +223,95 @@ const unmountRenderer = async (renderer: ReturnType<typeof create>) => {
   });
 };
 
+type MockEventHandler = (event: { data?: string }) => void;
+
+class MockEventSource {
+  static instances: MockEventSource[] = [];
+
+  static reset() {
+    MockEventSource.instances = [];
+  }
+
+  onopen: ((event: unknown) => void) | null = null;
+
+  onerror: ((event: unknown) => void) | null = null;
+
+  onmessage: ((event: { data?: string }) => void) | null = null;
+
+  readonly url: string;
+
+  readonly withCredentials: boolean;
+
+  private readonly listeners = new Map<string, Set<MockEventHandler>>();
+
+  constructor(url: string, init?: EventSourceInit) {
+    this.url = url;
+    this.withCredentials = Boolean(init?.withCredentials);
+    MockEventSource.instances.push(this);
+  }
+
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+    const nextListener = (
+      typeof listener === 'function'
+        ? listener
+        : (event: { data?: string }) => listener.handleEvent(event as unknown as Event)
+    ) as MockEventHandler;
+
+    const target = this.listeners.get(type) ?? new Set<MockEventHandler>();
+    target.add(nextListener);
+    this.listeners.set(type, target);
+  }
+
+  removeEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+    const target = this.listeners.get(type);
+    if (!target) {
+      return;
+    }
+
+    const deletingListener = (
+      typeof listener === 'function'
+        ? listener
+        : (event: { data?: string }) => listener.handleEvent(event as unknown as Event)
+    ) as MockEventHandler;
+    target.delete(deletingListener);
+  }
+
+  close() {
+    // No-op for test double.
+  }
+
+  emitOpen() {
+    this.onopen?.({});
+  }
+
+  emitMessage(data: unknown) {
+    this.onmessage?.({
+      data: JSON.stringify(data),
+    });
+  }
+
+  emitRawMessage(data: string) {
+    this.onmessage?.({ data });
+  }
+
+  emitNotification(data: unknown) {
+    const target = this.listeners.get('notification');
+    if (!target) {
+      return;
+    }
+
+    for (const listener of target) {
+      listener({
+        data: JSON.stringify(data),
+      });
+    }
+  }
+
+  emitError() {
+    this.onerror?.({});
+  }
+}
+
 const createAccountApi = (overrides?: Partial<AccountApi>): AccountApi => ({
   fetchAccountPosition: overrides?.fetchAccountPosition ?? vi.fn().mockResolvedValue(positionsFixture[0]),
   fetchAccountSummary: overrides?.fetchAccountSummary ?? vi.fn().mockResolvedValue({
@@ -289,14 +379,30 @@ const createOrderApi = (overrides?: Partial<OrderApi>): OrderApi => ({
   }),
 });
 
+const createNotificationApi = (overrides?: Partial<NotificationApi>): NotificationApi => ({
+  listNotifications: overrides?.listNotifications ?? vi.fn().mockResolvedValue([]),
+  markNotificationRead: overrides?.markNotificationRead
+    ?? vi.fn().mockImplementation(async (notificationId: number): Promise<NotificationItem> => ({
+      notificationId,
+      channel: 'ORDER',
+      message: 'read',
+      delivered: true,
+      read: true,
+      readAt: '2026-03-17T00:00:00Z',
+    })),
+  getStreamUrl: overrides?.getStreamUrl ?? vi.fn().mockReturnValue('http://localhost:8080/api/v1/notifications/stream'),
+});
+
 const renderScreen = async (overrides?: {
   accountApi?: AccountApi;
   isRefreshingSession?: boolean;
   member?: Member;
+  notificationApi?: NotificationApi;
   orderApi?: OrderApi;
 }) => {
   const orderApi = overrides?.orderApi ?? createOrderApi();
   const accountApi = overrides?.accountApi ?? createAccountApi();
+  const notificationApi = overrides?.notificationApi ?? createNotificationApi();
   let renderer!: ReturnType<typeof create>;
 
   await act(async () => {
@@ -304,6 +410,7 @@ const renderScreen = async (overrides?: {
       <AuthenticatedHomeScreen
         accountApi={accountApi}
         member={overrides?.member ?? memberFixture}
+          notificationApi={notificationApi}
         orderApi={orderApi}
         welcomeVariant={null}
         sessionErrorMessage={null}
@@ -318,6 +425,7 @@ const renderScreen = async (overrides?: {
 
   return {
     accountApi,
+    notificationApi,
     orderApi,
     renderer,
   };
@@ -345,11 +453,18 @@ const persistOrderSessionForRestore = async (orderSessionId: string) => {
 };
 
 describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
+  const originalEventSource = globalThis.EventSource;
+
   beforeEach(() => {
     __resetPersistedOrderSessionForTests();
+    MockEventSource.reset();
+    globalThis.EventSource = MockEventSource as unknown as typeof EventSource;
   });
 
   afterEach(async () => {
+    globalThis.EventSource = originalEventSource;
+    vi.useRealTimers();
+
     while (mountedRenderers.length > 0) {
       const renderer = mountedRenderers.pop();
       if (renderer) {
@@ -543,6 +658,228 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     expect(getTextContent(findByTestId(renderer.root, 'mobile-history-row-cl-refresh'))).toContain(
       'cl-refresh',
     );
+  });
+
+  it('stores live notification updates in UI state when the module receives stream events', async () => {
+    const notificationApi = createNotificationApi({
+      listNotifications: vi.fn().mockResolvedValue([]),
+    });
+    const { renderer } = await renderScreen({ notificationApi });
+
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    const stream = MockEventSource.instances[0];
+    expect(stream).toBeDefined();
+    expect(notificationApi.getStreamUrl).toHaveBeenCalled();
+
+    await act(async () => {
+      stream.emitOpen();
+      stream.emitNotification({
+        notificationId: 401,
+        channel: 'ORDER',
+        message: '주문이 체결되었습니다.',
+        delivered: true,
+        read: false,
+        readAt: null,
+      });
+      await flushMicrotasks();
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-notification-item-401'))).toContain(
+      '주문이 체결되었습니다.',
+    );
+    expect(findAllByTestId(renderer.root, 'mobile-notification-mark-read-401')).toHaveLength(1);
+  });
+
+  it('ignores heartbeat payload and still accepts standard SSE message payload', async () => {
+    const notificationApi = createNotificationApi({
+      listNotifications: vi.fn().mockResolvedValue([]),
+    });
+    const { renderer } = await renderScreen({ notificationApi });
+
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    const stream = MockEventSource.instances[0];
+    await act(async () => {
+      stream.emitOpen();
+      stream.emitRawMessage('ok');
+      stream.emitMessage({
+        notificationId: 404,
+        channel: 'ORDER',
+        message: 'message-channel event',
+        delivered: true,
+        read: false,
+        readAt: null,
+      });
+      await flushMicrotasks();
+    });
+
+    expect(findAllByTestId(renderer.root, 'mobile-notification-empty')).toHaveLength(0);
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-notification-item-404'))).toContain(
+      'message-channel event',
+    );
+  });
+
+  it('synchronizes missed notifications after stream reconnection', async () => {
+    vi.useFakeTimers();
+    const notificationApi = createNotificationApi({
+      listNotifications: vi.fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            notificationId: 402,
+            channel: 'ORDER',
+            message: '재연결 후 누락 알림 동기화',
+            delivered: true,
+            read: false,
+            readAt: null,
+          },
+        ]),
+    });
+    const { renderer } = await renderScreen({ notificationApi });
+
+    const firstStream = MockEventSource.instances[0];
+    await act(async () => {
+      firstStream.emitOpen();
+      firstStream.emitError();
+      vi.advanceTimersByTime(3_000);
+      await flushMicrotasks();
+    });
+
+    const reconnectedStream = MockEventSource.instances[1];
+    expect(reconnectedStream).toBeDefined();
+
+    await act(async () => {
+      reconnectedStream.emitOpen();
+      await flushMicrotasks();
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-notification-item-402'))).toContain(
+      '재연결 후 누락 알림 동기화',
+    );
+    expect(notificationApi.listNotifications).toHaveBeenCalledTimes(2);
+  });
+
+  it('reflects mark-as-read state in app after backend read API succeeds', async () => {
+    const notificationApi = createNotificationApi({
+      listNotifications: vi.fn().mockResolvedValue([
+        {
+          notificationId: 403,
+          channel: 'ORDER',
+          message: '읽음 처리 대상',
+          delivered: true,
+          read: false,
+          readAt: null,
+        },
+      ]),
+      markNotificationRead: vi.fn().mockResolvedValue({
+        notificationId: 403,
+        channel: 'ORDER',
+        message: '읽음 처리 대상',
+        delivered: true,
+        read: true,
+        readAt: '2026-03-17T00:00:00Z',
+      }),
+    });
+    const { renderer } = await renderScreen({ notificationApi });
+
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-notification-mark-read-403').props.onPress();
+      await flushMicrotasks();
+    });
+
+    expect(notificationApi.markNotificationRead).toHaveBeenCalledWith(403);
+    expect(findAllByTestId(renderer.root, 'mobile-notification-mark-read-403')).toHaveLength(0);
+    expect(findAllByTestId(renderer.root, 'mobile-notification-read-403')).toHaveLength(1);
+  });
+
+  it('does not drop newer notifications when mark-read API fails and rollback executes', async () => {
+    const markReadDeferred = createDeferred<NotificationItem>();
+    const notificationApi = createNotificationApi({
+      listNotifications: vi.fn().mockResolvedValue([
+        {
+          notificationId: 405,
+          channel: 'ORDER',
+          message: 'rollback target',
+          delivered: true,
+          read: false,
+          readAt: null,
+        },
+      ]),
+      markNotificationRead: vi.fn().mockReturnValue(markReadDeferred.promise),
+    });
+    const { renderer } = await renderScreen({ notificationApi });
+
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    const stream = MockEventSource.instances[0];
+    await act(async () => {
+      stream.emitOpen();
+      await findByTestId(renderer.root, 'mobile-notification-mark-read-405').props.onPress();
+      stream.emitNotification({
+        notificationId: 406,
+        channel: 'ORDER',
+        message: 'concurrent arrival',
+        delivered: true,
+        read: false,
+        readAt: null,
+      });
+      markReadDeferred.reject(new Error('read failed'));
+      await flushMicrotasks();
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-notification-item-406'))).toContain(
+      'concurrent arrival',
+    );
+    expect(findAllByTestId(renderer.root, 'mobile-notification-mark-read-405')).toHaveLength(1);
+  });
+
+  it('shows retry guidance when repeated disconnects exceed retry threshold', async () => {
+    vi.useFakeTimers();
+    const notificationApi = createNotificationApi({
+      listNotifications: vi.fn().mockResolvedValue([]),
+    });
+    const { renderer } = await renderScreen({ notificationApi });
+
+    const stream0 = MockEventSource.instances[0];
+    await act(async () => {
+      stream0.emitOpen();
+      stream0.emitError();
+      vi.advanceTimersByTime(3_000);
+      await flushMicrotasks();
+    });
+
+    const stream1 = MockEventSource.instances[1];
+    await act(async () => {
+      stream1.emitError();
+      vi.advanceTimersByTime(6_000);
+      await flushMicrotasks();
+    });
+
+    const stream2 = MockEventSource.instances[2];
+    await act(async () => {
+      stream2.emitError();
+      vi.advanceTimersByTime(12_000);
+      await flushMicrotasks();
+    });
+
+    const stream3 = MockEventSource.instances[3];
+    await act(async () => {
+      stream3.emitError();
+      await flushMicrotasks();
+    });
+
+    expect(findAllByTestId(renderer.root, 'mobile-notification-retry-guidance')).toHaveLength(1);
   });
 
   it('gates the order boundary when the authenticated member has no linked order account', async () => {
@@ -1467,10 +1804,12 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
       getOrderSession,
     });
     const accountApi = createAccountApi();
+    const notificationApi = createNotificationApi();
 
     const { renderer } = await renderScreen({
       accountApi,
       isRefreshingSession: true,
+      notificationApi,
       orderApi,
     });
 
@@ -1481,6 +1820,7 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
         <AuthenticatedHomeScreen
           accountApi={accountApi}
           member={memberFixture}
+          notificationApi={notificationApi}
           orderApi={orderApi}
           welcomeVariant={null}
           sessionErrorMessage={null}
@@ -1601,10 +1941,12 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
       getOrderSession,
     });
     const accountApi = createAccountApi();
+    const notificationApi = createNotificationApi();
 
     const { renderer } = await renderScreen({
       accountApi,
       isRefreshingSession: true,
+      notificationApi,
       orderApi,
     });
 
@@ -1615,6 +1957,7 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
         <AuthenticatedHomeScreen
           accountApi={accountApi}
           member={memberFixture}
+          notificationApi={notificationApi}
           orderApi={orderApi}
           welcomeVariant={null}
           sessionErrorMessage={null}
@@ -1669,9 +2012,11 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
       getOrderSession,
     });
     const accountApi = createAccountApi();
+    const notificationApi = createNotificationApi();
     const { renderer } = await renderScreen({
       accountApi,
       isRefreshingSession: true,
+      notificationApi,
       orderApi,
     });
 
@@ -1680,6 +2025,7 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
         <AuthenticatedHomeScreen
           accountApi={accountApi}
           member={memberFixture}
+          notificationApi={notificationApi}
           orderApi={orderApi}
           welcomeVariant={null}
           sessionErrorMessage={null}
