@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { NotificationApi, NotificationItem } from '../api/notification-api';
 
@@ -266,11 +266,11 @@ export const useNotificationFeedViewModel = ({
     }
   };
 
-  return useMemo(() => ({
+  return {
     connectionState,
     isInitialLoading,
     items,
     markAsRead,
     retryGuidance,
-  }), [connectionState, isInitialLoading, items, retryGuidance]);
+  };
 };
