@@ -8,9 +8,11 @@ import {
 } from 'react-native';
 
 import type { AccountApi } from '../../api/account-api';
+import type { NotificationApi } from '../../api/notification-api';
 import type { OrderApi } from '../../api/order-api';
 import { useAccountDashboardViewModel } from '../../account/use-account-dashboard-view-model';
 import { palette } from '../../components/auth/auth-styles';
+import { useNotificationFeedViewModel } from '../../notification/use-notification-feed-view-model';
 import { ExternalOrderRecoverySection } from '../../components/order/ExternalOrderRecoverySection';
 import { hasExternalOrderAccountId } from '../../order/external-order-recovery';
 import { useExternalOrderViewModel } from '../../order/use-external-order-view-model';
@@ -20,6 +22,7 @@ import { formatKRW, formatQuantity } from '../../utils/formatters';
 interface AuthenticatedHomeScreenProps {
   accountApi: AccountApi;
   member: Member;
+  notificationApi: NotificationApi;
   orderApi: OrderApi;
   welcomeVariant: 'login' | 'register' | null;
   sessionErrorMessage?: string | null;
@@ -31,6 +34,7 @@ interface AuthenticatedHomeScreenProps {
 export const AuthenticatedHomeScreen = ({
   accountApi,
   member,
+  notificationApi,
   orderApi,
   welcomeVariant,
   sessionErrorMessage,
@@ -43,6 +47,22 @@ export const AuthenticatedHomeScreen = ({
     accountApi,
     accountId: member.accountId,
   });
+  const notificationFeed = useNotificationFeedViewModel({
+    accountId: member.accountId,
+    notificationApi,
+  });
+  const notificationConnectionLabel = (() => {
+    switch (notificationFeed.connectionState) {
+      case 'connected':
+        return '실시간 연결됨';
+      case 'retrying':
+        return '재연결 중';
+      case 'retry-exhausted':
+        return '연결 필요';
+      default:
+        return '연결 중';
+    }
+  })();
   const externalOrderViewModel = useExternalOrderViewModel({
     accountId: member.accountId,
     isRefreshingSession,
@@ -860,6 +880,178 @@ export const AuthenticatedHomeScreen = ({
                   >
                     주문 ID {item.clOrdId}
                   </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </View>
+
+        <View
+          style={{
+            borderRadius: 26,
+            backgroundColor: '#FFFFFF',
+            paddingHorizontal: 18,
+            paddingVertical: 18,
+            gap: 14,
+            shadowColor: '#0F172A',
+            shadowOpacity: 0.08,
+            shadowRadius: 16,
+            shadowOffset: { width: 0, height: 12 },
+            elevation: 7,
+          }}
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 17,
+                fontWeight: '800',
+                color: palette.ink,
+              }}
+            >
+              알림 피드
+            </Text>
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: '700',
+                color: palette.inkSoft,
+              }}
+              testID="mobile-notification-connection"
+            >
+              {notificationConnectionLabel}
+            </Text>
+          </View>
+
+          {notificationFeed.retryGuidance ? (
+            <View
+              style={{
+                borderRadius: 18,
+                backgroundColor: palette.dangerSoft,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+              }}
+              testID="mobile-notification-retry-guidance"
+            >
+              <Text
+                style={{
+                  fontSize: 13,
+                  lineHeight: 19,
+                  color: palette.ink,
+                }}
+              >
+                {notificationFeed.retryGuidance}
+              </Text>
+            </View>
+          ) : null}
+
+          {notificationFeed.isInitialLoading && notificationFeed.items.length === 0 ? (
+            <Text
+              style={{
+                fontSize: 14,
+                lineHeight: 20,
+                color: palette.inkSoft,
+              }}
+              testID="mobile-notification-loading"
+            >
+              알림을 불러오는 중입니다.
+            </Text>
+          ) : null}
+
+          {!notificationFeed.isInitialLoading && notificationFeed.items.length === 0 ? (
+            <Text
+              style={{
+                fontSize: 14,
+                lineHeight: 20,
+                color: palette.inkSoft,
+              }}
+              testID="mobile-notification-empty"
+            >
+              아직 도착한 알림이 없습니다.
+            </Text>
+          ) : null}
+
+          {notificationFeed.items.length > 0 ? (
+            <View
+              style={{
+                gap: 10,
+              }}
+            >
+              {notificationFeed.items.map((item) => (
+                <View
+                  key={item.notificationId}
+                  style={{
+                    borderRadius: 16,
+                    backgroundColor: item.read ? '#F7F3EF' : '#FFF6EE',
+                    borderWidth: 1,
+                    borderColor: item.read ? '#E9DED2' : '#F6D5BA',
+                    paddingHorizontal: 14,
+                    paddingVertical: 12,
+                    gap: 6,
+                  }}
+                  testID={`mobile-notification-item-${item.notificationId}`}
+                >
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: '700',
+                      color: palette.accentDeep,
+                    }}
+                  >
+                    {item.channel}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      lineHeight: 20,
+                      color: palette.ink,
+                    }}
+                  >
+                    {item.message}
+                  </Text>
+
+                  {!item.read ? (
+                    <Pressable
+                      onPress={() => {
+                        void notificationFeed.markAsRead(item.notificationId);
+                      }}
+                      style={{
+                        alignSelf: 'flex-start',
+                        minHeight: 34,
+                        borderRadius: 12,
+                        paddingHorizontal: 12,
+                        justifyContent: 'center',
+                        backgroundColor: palette.accentSoft,
+                      }}
+                      testID={`mobile-notification-mark-read-${item.notificationId}`}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: '800',
+                          color: palette.accentDeep,
+                        }}
+                      >
+                        읽음 처리
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: '700',
+                        color: palette.success,
+                      }}
+                      testID={`mobile-notification-read-${item.notificationId}`}
+                    >
+                      읽음 완료
+                    </Text>
+                  )}
                 </View>
               ))}
             </View>

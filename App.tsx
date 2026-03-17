@@ -49,6 +49,7 @@ const App = () => {
     <AppNavigator
       accountApi={runtimeRef.current.accountApi}
       animationsDisabled={animationsDisabledRef.current}
+      notificationApi={runtimeRef.current.notificationApi}
       orderApi={runtimeRef.current.orderApi}
       {...authFlow}
     />

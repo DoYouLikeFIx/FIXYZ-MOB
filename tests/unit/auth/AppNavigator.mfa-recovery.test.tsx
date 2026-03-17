@@ -44,6 +44,7 @@ import {
 } from '@/navigation/auth-navigation';
 import type { MfaRecoveryState } from '@/auth/auth-flow-view-model';
 import type { AccountApi } from '@/api/account-api';
+import type { NotificationApi } from '@/api/notification-api';
 import type { OrderApi } from '@/api/order-api';
 import type { MfaRecoveryRebindConfirmationResult } from '@/types/auth-ui';
 
@@ -102,6 +103,7 @@ const renderNavigator = (
       <AppNavigator
         accountApi={{} as AccountApi}
         animationsDisabled
+        notificationApi={{} as NotificationApi}
         orderApi={{} as OrderApi}
         authStatus="anonymous"
         member={null}

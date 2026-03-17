@@ -1,0 +1,34 @@
+appId: org.reactjs.native.example.FIXYZMob
+---
+- scrollUntilVisible:
+    element:
+      id: mobile-notification-connection
+    direction: UP
+    timeout: 25000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible:
+    id: mobile-notification-connection
+- extendedWaitUntil:
+    visible:
+      id: mobile-notification-item-101
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: mobile-notification-item-101
+    direction: UP
+    timeout: 15000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible:
+    id: mobile-notification-mark-read-101
+- tapOn:
+    id: mobile-notification-mark-read-101
+    retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 1200
+- extendedWaitUntil:
+    visible:
+      id: mobile-notification-read-101
+    timeout: 10000
+- assertVisible:
+    id: mobile-notification-read-101

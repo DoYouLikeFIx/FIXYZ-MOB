@@ -17,6 +17,39 @@ if (!Number.isInteger(port) || port <= 0) {
 const VALID_PASSWORD = 'Test1234!';
 let nextOrderId = 1;
 
+const notificationItemsBySession = new Map();
+
+const createDefaultNotificationItems = () => [
+  {
+    notificationId: 101,
+    channel: 'ORDER_SESSION',
+    message: '초기 주문 알림이 도착했습니다.',
+    delivered: true,
+    read: false,
+    readAt: null,
+  },
+  {
+    notificationId: 99,
+    channel: 'ORDER_SESSION',
+    message: '이전 주문 결과가 반영되었습니다.',
+    delivered: true,
+    read: true,
+    readAt: '2026-03-17T00:00:00.000Z',
+  },
+];
+
+const getNotificationItemsForSession = (sessionId) => {
+  const existing = notificationItemsBySession.get(sessionId);
+
+  if (existing) {
+    return existing;
+  }
+
+  const created = createDefaultNotificationItems();
+  notificationItemsBySession.set(sessionId, created);
+  return created;
+};
+
 const normalizeIdentifier = (value) => value.trim().toLowerCase();
 
 const scriptedLoginErrors = new Map([
@@ -1323,6 +1356,132 @@ const server = http.createServer(async (request, response) => {
     }
 
     writeJson(response, 200, successEnvelope(profile.member));
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/api/v1/notifications') {
+    const profile = readAuthenticatedProfile(cookies, response);
+
+    if (!profile) {
+      return;
+    }
+
+    const sessionId = cookies.JSESSIONID;
+    if (!sessionId) {
+      writeForbidden(response);
+      return;
+    }
+
+    const limit = parsePositiveIntegerOrDefault(url.searchParams.get('limit'), 20);
+    const cursorId = parseNonNegativeIntegerOrDefault(url.searchParams.get('cursorId'), 0);
+    const items = getNotificationItemsForSession(sessionId)
+      .slice()
+      .sort((left, right) => right.notificationId - left.notificationId)
+      .filter((item) => (cursorId > 0 ? item.notificationId < cursorId : true))
+      .slice(0, limit);
+
+    writeJson(response, 200, successEnvelope({ items }));
+    return;
+  }
+
+  const notificationReadMatch = method === 'PATCH'
+    ? url.pathname.match(/^\/api\/v1\/notifications\/(\d+)\/read$/)
+    : null;
+
+  if (notificationReadMatch) {
+    if (!ensureCsrf(request, response, cookies)) {
+      return;
+    }
+
+    const profile = readAuthenticatedProfile(cookies, response);
+
+    if (!profile) {
+      return;
+    }
+
+    const sessionId = cookies.JSESSIONID;
+    if (!sessionId) {
+      writeForbidden(response);
+      return;
+    }
+
+    const [, rawNotificationId] = notificationReadMatch;
+    const notificationId = Number.parseInt(rawNotificationId, 10);
+    const items = getNotificationItemsForSession(sessionId);
+    const itemIndex = items.findIndex((item) => item.notificationId === notificationId);
+
+    if (itemIndex < 0) {
+      writeJson(
+        response,
+        404,
+        errorEnvelope(
+          'CHANNEL-007',
+          'Notification not found',
+          'The requested notification was not found for this session.',
+        ),
+      );
+      return;
+    }
+
+    const updated = {
+      ...items[itemIndex],
+      read: true,
+      readAt: new Date().toISOString(),
+    };
+
+    items[itemIndex] = updated;
+    writeJson(response, 200, successEnvelope(updated));
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/api/v1/notifications/stream') {
+    const profile = readAuthenticatedProfile(cookies, response);
+
+    if (!profile) {
+      return;
+    }
+
+    const sessionId = cookies.JSESSIONID;
+    if (!sessionId) {
+      writeForbidden(response);
+      return;
+    }
+
+    response.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-store',
+      Connection: 'keep-alive',
+    });
+
+    response.write('data: ok\\n\\n');
+
+    const streamNotification = {
+      notificationId: 202,
+      channel: 'ORDER_SESSION',
+      message: '실시간 주문 체결 알림이 도착했습니다.',
+      delivered: true,
+      read: false,
+      readAt: null,
+    };
+
+    const existingItems = getNotificationItemsForSession(sessionId);
+    if (!existingItems.some((item) => item.notificationId === streamNotification.notificationId)) {
+      existingItems.unshift(streamNotification);
+    }
+
+    const emitTimer = setTimeout(() => {
+      response.write(`event: notification\\ndata: ${JSON.stringify(streamNotification)}\\n\\n`);
+    }, 1200);
+
+    const heartbeatTimer = setInterval(() => {
+      response.write('data: ok\\n\\n');
+    }, 5000);
+
+    request.on('close', () => {
+      clearTimeout(emitTimer);
+      clearInterval(heartbeatTimer);
+      response.end();
+    });
     return;
   }
 

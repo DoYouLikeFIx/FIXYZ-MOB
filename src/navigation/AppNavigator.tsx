@@ -12,6 +12,7 @@ import { ResetPasswordScreen } from '../screens/auth/ResetPasswordScreen';
 import { TotpEnrollmentScreen } from '../screens/auth/TotpEnrollmentScreen';
 import { AuthenticatedHomeScreen } from '../screens/app/AuthenticatedHomeScreen';
 import type { AccountApi } from '../api/account-api';
+import type { NotificationApi } from '../api/notification-api';
 import type { OrderApi } from '../api/order-api';
 import type {
   MfaRecoveryState,
@@ -48,6 +49,7 @@ import type { AuthNavigationState } from './auth-navigation';
 interface AppNavigatorProps {
   accountApi: AccountApi;
   animationsDisabled: boolean;
+  notificationApi: NotificationApi;
   orderApi: OrderApi;
   authStatus: AuthStatus;
   member: Member | null;
@@ -147,6 +149,7 @@ const getTransitionOffset = (previousKey: string, nextKey: string): number => {
 export const AppNavigator = ({
   accountApi,
   animationsDisabled,
+  notificationApi,
   orderApi,
   authStatus,
   member,
@@ -241,6 +244,7 @@ export const AppNavigator = ({
         accountApi={accountApi}
         isRefreshingSession={isRefreshingSession}
         member={member}
+        notificationApi={notificationApi}
         orderApi={orderApi}
         onOpenMfaRecovery={onOpenAuthenticatedMfaRecovery}
         onRefreshSession={onRefreshProtectedSession}
