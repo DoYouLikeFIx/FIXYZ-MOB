@@ -20,6 +20,7 @@ interface ExternalOrderRecoverySectionProps {
   step: OrderFlowStep;
   feedbackMessage: string | null;
   inlineError: string | null;
+  errorReasonCategoryLabel?: string | null;
   symbolValue: string;
   quantityValue: string;
   symbolError: string | null;
@@ -34,6 +35,8 @@ interface ExternalOrderRecoverySectionProps {
   isRestoring: boolean;
   presentation: ExternalOrderErrorPresentation | null;
   orderSession: OrderSessionResponse | null;
+  updatedPositionQuantity?: number | null;
+  updatedPositionQuantityMessage?: string | null;
   hasDetectedSessionExpiry?: boolean;
   authorizationReasonMessage: string | null;
   otpValue: string;
@@ -68,6 +71,7 @@ export const ExternalOrderRecoverySection = ({
   step,
   feedbackMessage,
   inlineError,
+  errorReasonCategoryLabel = null,
   symbolValue,
   quantityValue,
   symbolError,
@@ -82,6 +86,8 @@ export const ExternalOrderRecoverySection = ({
   isRestoring,
   presentation,
   orderSession,
+  updatedPositionQuantity = null,
+  updatedPositionQuantityMessage = null,
   hasDetectedSessionExpiry = false,
   authorizationReasonMessage,
   otpValue,
@@ -152,6 +158,7 @@ export const ExternalOrderRecoverySection = ({
         shadowOffset: { width: 0, height: 12 },
         elevation: 7,
       }}
+      testID="mobile-order-session-section"
     >
       <View style={{ gap: 6 }}>
         <Text
@@ -171,6 +178,7 @@ export const ExternalOrderRecoverySection = ({
             fontWeight: '800',
             color: palette.ink,
           }}
+          testID="mobile-order-session-title"
         >
           {model.title}
         </Text>
@@ -256,6 +264,18 @@ export const ExternalOrderRecoverySection = ({
           }}
           testID="mobile-order-session-feedback"
         >
+          {errorReasonCategoryLabel ? (
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: '800',
+                color: palette.accentDeep,
+              }}
+              testID="mobile-order-session-error-category"
+            >
+              {errorReasonCategoryLabel}
+            </Text>
+          ) : null}
           <Text
             style={{
               fontSize: 14,
@@ -280,6 +300,19 @@ export const ExternalOrderRecoverySection = ({
           }}
           testID="mobile-order-session-error"
         >
+          {!model.feedbackMessage && errorReasonCategoryLabel ? (
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: '800',
+                color: '#B45309',
+                marginBottom: 4,
+              }}
+              testID="mobile-order-session-error-category"
+            >
+              {errorReasonCategoryLabel}
+            </Text>
+          ) : null}
           <Text
             style={{
               fontSize: 14,
@@ -757,6 +790,28 @@ export const ExternalOrderRecoverySection = ({
               testID="mobile-order-result-failure-reason"
             >
               실패 사유 · {orderSession.failureReason}
+            </Text>
+          ) : null}
+          {updatedPositionQuantity !== null ? (
+            <Text
+              style={{
+                fontSize: 13,
+                color: palette.ink,
+              }}
+              testID="mobile-order-result-position-qty"
+            >
+              현재 보유 수량 · {formatQuantity(updatedPositionQuantity)}주
+            </Text>
+          ) : null}
+          {updatedPositionQuantity === null && updatedPositionQuantityMessage ? (
+            <Text
+              style={{
+                fontSize: 13,
+                color: palette.inkSoft,
+              }}
+              testID="mobile-order-result-position-qty-message"
+            >
+              {updatedPositionQuantityMessage}
             </Text>
           ) : null}
         </View>

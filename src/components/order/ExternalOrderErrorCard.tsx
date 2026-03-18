@@ -56,8 +56,9 @@ export const ExternalOrderErrorCard = ({
             color: palette.inkSoft,
             letterSpacing: 0.4,
           }}
+          testID="external-order-error-category"
         >
-          EXTERNAL ORDER STATUS
+          {presentation.reasonCategoryLabel}
         </Text>
         <Text
           style={{
