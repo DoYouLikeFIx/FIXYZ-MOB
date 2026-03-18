@@ -48,6 +48,8 @@ describe('external order recovery section model', () => {
       },
       presentation: {
         code: 'FEP-002',
+        reasonCategory: 'external',
+        reasonCategoryLabel: '대외',
         semantic: 'pending-confirmation',
         recoveryAction: 'wait-for-update',
         severity: 'info',
