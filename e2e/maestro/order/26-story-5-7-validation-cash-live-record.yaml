@@ -1,0 +1,79 @@
+appId: org.reactjs.native.example.FIXYZMob
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    arguments:
+      mobApiBaseUrl: http://localhost:18080
+      mobDisableAnimations: true
+      mobHideDevWarningsOverlay: true
+- extendedWaitUntil:
+    visible:
+      id: login-email
+    timeout: 20000
+- tapOn:
+    id: login-email
+- inputText: cash-order@fix.com
+- tapOn:
+    id: login-password
+- inputText: Test1234!
+- tapOn:
+    id: login-submit
+- tapOn:
+    text: "지금 안 함"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: login-mfa-input
+    timeout: 20000
+- tapOn:
+    id: login-mfa-input
+- inputText: 123456
+- pressKey: Enter
+- tapOn:
+    id: login-mfa-submit
+- extendedWaitUntil:
+    visible:
+      id: protected-area-title
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: mobile-order-session-title
+    direction: DOWN
+    timeout: 20000
+    visibilityPercentage: 40
+    centerElement: true
+- scrollUntilVisible:
+    element:
+      id: mobile-order-session-create
+    direction: DOWN
+    timeout: 15000
+    visibilityPercentage: 40
+    centerElement: true
+- tapOn:
+    id: mobile-order-session-create
+    retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 1500
+- extendedWaitUntil:
+    visible:
+      id: mobile-order-session-error-category
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 1200
+- scrollUntilVisible:
+    element:
+      id: mobile-order-session-feedback
+    direction: DOWN
+    timeout: 15000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible:
+    id: mobile-order-session-feedback
+- assertVisible:
+    id: mobile-order-session-error
+- assertVisible:
+    text: "매수 가능 금액을 확인하거나 수량을 조정한 뒤 다시 시도해 주세요."
+- assertVisible:
+    text: "주문 가능 금액이 부족합니다."
+- waitForAnimationToEnd:
+    timeout: 3000

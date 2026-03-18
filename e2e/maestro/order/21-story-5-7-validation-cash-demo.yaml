@@ -1,0 +1,38 @@
+appId: org.reactjs.native.example.FIXYZMob
+---
+- scrollUntilVisible:
+    element:
+      id: mobile-order-session-create
+    direction: DOWN
+    timeout: 15000
+    visibilityPercentage: 40
+    centerElement: true
+- assertVisible:
+    id: mobile-order-session-create
+- tapOn:
+    id: mobile-order-session-create
+    retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 1500
+- extendedWaitUntil:
+    visible:
+      id: mobile-order-session-error-category
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 1200
+- scrollUntilVisible:
+    element:
+      id: mobile-order-session-feedback
+    direction: DOWN
+    timeout: 15000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible:
+    id: mobile-order-session-feedback
+- assertVisible:
+    id: mobile-order-session-error
+- assertVisible:
+    text: "매수 가능 금액을 확인하거나 수량을 조정한 뒤 다시 시도해 주세요."
+- assertVisible:
+    text: "주문 가능 금액이 부족합니다."
+- waitForAnimationToEnd:
+    timeout: 3000

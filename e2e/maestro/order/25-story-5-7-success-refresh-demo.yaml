@@ -1,0 +1,60 @@
+appId: org.reactjs.native.example.FIXYZMob
+---
+- scrollUntilVisible:
+    element:
+      id: mobile-order-session-create
+    direction: DOWN
+    timeout: 15000
+    visibilityPercentage: 40
+    centerElement: true
+- assertVisible:
+    id: mobile-order-session-create
+- tapOn:
+    id: mobile-order-session-create
+    retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 1500
+- extendedWaitUntil:
+    visible:
+      id: mobile-order-session-execute
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 1200
+- scrollUntilVisible:
+    element:
+      id: mobile-order-session-execute
+    direction: DOWN
+    timeout: 15000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible:
+    id: mobile-order-session-summary
+- assertVisible:
+    id: mobile-order-session-authorization
+- tapOn:
+    id: mobile-order-session-execute
+    retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 1800
+- waitForAnimationToEnd:
+    timeout: 1200
+- scrollUntilVisible:
+    element:
+      id: mobile-order-session-result-body
+    direction: DOWN
+    timeout: 15000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible:
+    id: mobile-order-session-result-body
+- scrollUntilVisible:
+    element:
+      id: mobile-order-result-position-qty
+    direction: DOWN
+    timeout: 15000
+    visibilityPercentage: 60
+    centerElement: true
+- assertVisible:
+    id: mobile-order-result-clordid
+- assertVisible:
+    id: mobile-order-result-position-qty
+- waitForAnimationToEnd:
+    timeout: 1200
