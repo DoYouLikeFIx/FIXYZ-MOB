@@ -71,6 +71,8 @@ describe('ExternalOrderRecoverySection', () => {
           otpValue=""
           presentation={{
             code: 'FEP-002',
+            reasonCategory: 'external',
+            reasonCategoryLabel: '대외',
             semantic: 'pending-confirmation',
             recoveryAction: 'wait-for-update',
             severity: 'info',
@@ -105,6 +107,9 @@ describe('ExternalOrderRecoverySection', () => {
     const selectedPreset = findByTestId(renderer.root, 'mobile-external-order-preset-krx-buy-2');
 
     expect(getTextContent(supportReference)).toBe('문의 코드: trace-fep-002');
+    expect(getTextContent(findByTestId(renderer.root, 'external-order-error-category'))).toBe(
+      '대외',
+    );
     expect(selectedPreset.props.accessibilityState).toEqual({
       disabled: false,
       selected: true,

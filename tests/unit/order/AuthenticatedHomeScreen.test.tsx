@@ -73,12 +73,21 @@ type SharedFinalResultCase = {
   executionResult?: string;
   title: string;
   body: string;
+  referenceField?: string;
+  referenceLabel?: string;
+  referenceVisible?: boolean;
   externalOrderId?: string;
   executionResultLabel?: string;
   executedQty?: number;
   executedQtyLabel?: string;
   executedPrice?: number;
   executedPriceLabel?: string;
+  positionQuantityVisible?: boolean;
+  positionQuantityLabel?: string;
+  updatedPositionQuantity?: number;
+  updatedPositionQuantityLabel?: string;
+  positionQuantitySource?: string;
+  positionQuantitySourceStory?: string;
   failureReason?: string;
   failureReasonLabel?: string;
   leavesQty?: number;
@@ -967,6 +976,9 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
       getTextContent(findByTestId(renderer.root, 'external-order-error-title')),
     ).toBe('주문 결과를 확인하고 있습니다');
     expect(
+      getTextContent(findByTestId(renderer.root, 'external-order-error-category')),
+    ).toBe('대외');
+    expect(
       getTextContent(findByTestId(renderer.root, 'external-order-error-support-reference')),
     ).toBe('문의 코드: trace-fep-002');
   });
@@ -1098,8 +1110,11 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
       await flushMicrotasks();
     });
 
-    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error'))).toBe(
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error'))).toContain(
       '이미 사용한 OTP 코드입니다. 새 코드가 표시되면 다시 입력해 주세요.',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error-category'))).toBe(
+      '내부',
     );
   });
 
@@ -1138,8 +1153,11 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
       await flushMicrotasks();
     });
 
-    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error'))).toBe(
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error'))).toContain(
       'OTP를 너무 빠르게 연속 제출했습니다. 잠시 후 다시 시도해 주세요.',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error-category'))).toBe(
+      '내부',
     );
   });
 
@@ -1179,8 +1197,11 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
       await flushMicrotasks();
     });
 
-    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error'))).toBe(
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error'))).toContain(
       'OTP 코드가 일치하지 않습니다. 남은 시도 2회',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error-category'))).toBe(
+      '내부',
     );
   });
 
@@ -1385,7 +1406,7 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
   it('maps server-side Step A rejects back to quantity guidance', async () => {
     const createOrderSession = vi.fn().mockRejectedValue(
       createNormalizedHttpError('가용 수량을 다시 확인해 주세요.', {
-        code: 'ORD-003',
+        code: 'ORD-005',
         status: 422,
       }),
     );
@@ -1401,8 +1422,71 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     expect(getTextContent(findByTestId(renderer.root, 'mobile-order-input-qty-error'))).toBe(
       '가용 수량을 다시 확인해 주세요.',
     );
-    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-feedback'))).toBe(
-      '수량을 수정한 뒤 다시 시도해 주세요.',
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-feedback'))).toContain(
+      '보유 수량 또는 일일 매도 가능 한도를 확인한 뒤 수량을 조정해 주세요.',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error-category'))).toBe(
+      '검증',
+    );
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-error')).toHaveLength(0);
+  });
+
+  it('prefers machine-readable insufficient-position semantics for quantity guidance', async () => {
+    const createOrderSession = vi.fn().mockRejectedValue(
+      createNormalizedHttpError('insufficient position quantity', {
+        code: 'ORD-003',
+        status: 422,
+        userMessageKey: 'error.order.insufficient_position',
+        operatorCode: 'INSUFFICIENT_POSITION',
+      }),
+    );
+    const orderApi = createOrderApi({
+      createOrderSession,
+    });
+    const { renderer } = await renderScreen({ orderApi });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-input-qty-error'))).toBe(
+      '보유 수량을 다시 확인해 주세요.',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-feedback'))).toContain(
+      '보유 수량을 확인한 뒤 수량을 조정해 주세요.',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error-category'))).toBe(
+      '검증',
+    );
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-error')).toHaveLength(0);
+  });
+
+  it('prefers machine-readable daily-sell-limit semantics for quantity guidance', async () => {
+    const createOrderSession = vi.fn().mockRejectedValue(
+      createNormalizedHttpError('Daily sell limit exceeded', {
+        code: 'ORD-005',
+        status: 422,
+        userMessageKey: 'error.order.daily_sell_limit_exceeded',
+        operatorCode: 'DAILY_SELL_LIMIT_EXCEEDED',
+      }),
+    );
+    const orderApi = createOrderApi({
+      createOrderSession,
+    });
+    const { renderer } = await renderScreen({ orderApi });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-input-qty-error'))).toBe(
+      '일일 매도 가능 한도를 초과했습니다.',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-feedback'))).toContain(
+      '일일 매도 가능 한도를 확인한 뒤 수량을 조정해 주세요.',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error-category'))).toBe(
+      '검증',
     );
     expect(findAllByTestId(renderer.root, 'mobile-order-session-error')).toHaveLength(0);
   });
@@ -1410,7 +1494,7 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
   it('shows account-level guidance for insufficient cash without pinning the quantity field', async () => {
     const createOrderSession = vi.fn().mockRejectedValue(
       createNormalizedHttpError('available cash is insufficient', {
-        code: 'ORD-001',
+        code: 'ORD-006',
         status: 422,
       }),
     );
@@ -1426,9 +1510,34 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error'))).toBe(
       'available cash is insufficient',
     );
-    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-feedback'))).toBe(
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-feedback'))).toContain(
       '매수 가능 금액을 확인하거나 수량을 조정한 뒤 다시 시도해 주세요.',
     );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error-category'))).toBe(
+      '검증',
+    );
+    expect(findAllByTestId(renderer.root, 'mobile-order-input-qty-error')).toHaveLength(0);
+  });
+
+  it('does not classify uncoded create failures from message text alone', async () => {
+    const orderApi = createOrderApi({
+      createOrderSession: vi.fn().mockRejectedValue(
+        createNormalizedHttpError('available cash is insufficient', {
+          status: 422,
+        }),
+      ),
+    });
+    const { renderer } = await renderScreen({ orderApi });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error'))).toBe(
+      'available cash is insufficient',
+    );
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-error-category')).toHaveLength(0);
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-feedback')).toHaveLength(0);
     expect(findAllByTestId(renderer.root, 'mobile-order-input-qty-error')).toHaveLength(0);
   });
 
@@ -2085,11 +2194,29 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     executedQtyLabel,
     executedPrice,
     executedPriceLabel,
+    positionQuantityVisible,
+    positionQuantityLabel,
+    updatedPositionQuantity,
+    updatedPositionQuantityLabel,
     failureReasonLabel,
     leavesQtyLabel,
     canceledAt,
     canceledAtLabel,
   }) => {
+    const accountApi = createAccountApi({
+      fetchAccountPosition: vi.fn().mockResolvedValue({
+        accountId: 1,
+        memberId: 1,
+        symbol: '005930',
+        quantity: updatedPositionQuantity ?? 120,
+        availableQuantity: 20,
+        availableQty: 20,
+        balance: 100_000_000,
+        availableBalance: 100_000_000,
+        currency: 'KRW',
+        asOf: '2026-03-18T09:00:00Z',
+      }),
+    });
     const orderApi = createOrderApi({
       createOrderSession: vi.fn().mockResolvedValue({
         orderSessionId: 'sess-final-result',
@@ -2127,7 +2254,7 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
         canceledAt,
       }),
     });
-    const { renderer } = await renderScreen({ orderApi });
+    const { renderer } = await renderScreen({ accountApi, orderApi });
 
     await act(async () => {
       await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
@@ -2204,6 +2331,72 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     } else {
       expect(findAllByTestId(renderer.root, 'mobile-order-result-failure-reason')).toHaveLength(0);
     }
+
+    if (positionQuantityVisible && updatedPositionQuantityLabel) {
+      expect(
+        getTextContent(findByTestId(renderer.root, 'mobile-order-result-position-qty')),
+      ).toContain(`${positionQuantityLabel} · ${updatedPositionQuantityLabel}`);
+      expect(accountApi.fetchAccountPosition).toHaveBeenCalledWith({
+        accountId: '1',
+        symbol: '005930',
+      });
+    } else {
+      expect(findAllByTestId(renderer.root, 'mobile-order-result-position-qty')).toHaveLength(0);
+      expect(accountApi.fetchAccountPosition).not.toHaveBeenCalled();
+    }
+  });
+
+  it('shows a fallback message when refreshed position inquiry fails after a filled result', async () => {
+    const accountApi = createAccountApi({
+      fetchAccountPosition: vi.fn().mockRejectedValue(new Error('downstream unavailable')),
+    });
+    const orderApi = createOrderApi({
+      createOrderSession: vi.fn().mockResolvedValue({
+        orderSessionId: 'sess-final-result',
+        clOrdId: 'cl-final-result',
+        status: 'AUTHED',
+        challengeRequired: false,
+        authorizationReason: 'TRUSTED_AUTH_SESSION',
+        accountId: 1,
+        symbol: '005930',
+        side: 'BUY',
+        orderType: 'LIMIT',
+        qty: 10,
+        price: 70100,
+        expiresAt: futureIso(),
+      }),
+      executeOrderSession: vi.fn().mockResolvedValue({
+        orderSessionId: 'sess-final-result',
+        clOrdId: 'cl-final-result',
+        challengeRequired: false,
+        authorizationReason: 'TRUSTED_AUTH_SESSION',
+        accountId: 1,
+        symbol: '005930',
+        side: 'BUY',
+        orderType: 'LIMIT',
+        qty: 10,
+        price: 70100,
+        expiresAt: null,
+        status: 'COMPLETED',
+        executionResult: 'FILLED',
+      }),
+    });
+    const { renderer } = await renderScreen({ accountApi, orderApi });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-execute').props.onPress();
+      await flushMicrotasks();
+    });
+
+    expect(
+      getTextContent(findByTestId(renderer.root, 'mobile-order-result-position-qty-message')),
+    ).toContain('현재 보유 수량을 불러오지 못했습니다. 잠시 후 다시 확인해 주세요.');
+    expect(findAllByTestId(renderer.root, 'mobile-order-result-position-qty')).toHaveLength(0);
   });
 
   it('locks scenario switching while execute is in flight', async () => {
