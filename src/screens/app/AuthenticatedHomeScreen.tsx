@@ -65,6 +65,7 @@ export const AuthenticatedHomeScreen = ({
   })();
   const externalOrderViewModel = useExternalOrderViewModel({
     accountId: member.accountId,
+    accountApi,
     isRefreshingSession,
     orderApi,
   });
@@ -1211,6 +1212,7 @@ export const AuthenticatedHomeScreen = ({
           <ExternalOrderRecoverySection
             feedbackMessage={externalOrderViewModel.feedbackMessage}
             inlineError={externalOrderViewModel.inlineError}
+            errorReasonCategoryLabel={externalOrderViewModel.errorReasonCategoryLabel}
             symbolValue={externalOrderViewModel.symbolValue}
             quantityValue={externalOrderViewModel.quantityValue}
             symbolError={externalOrderViewModel.symbolError}
@@ -1224,6 +1226,8 @@ export const AuthenticatedHomeScreen = ({
             isRestoring={externalOrderViewModel.isRestoring}
             isVerifyingOtp={externalOrderViewModel.isVerifyingOtp}
             orderSession={externalOrderViewModel.orderSession}
+            updatedPositionQuantity={externalOrderViewModel.updatedPositionQuantity}
+            updatedPositionQuantityMessage={externalOrderViewModel.updatedPositionQuantityMessage}
             hasDetectedSessionExpiry={externalOrderViewModel.hasDetectedSessionExpiry}
             authorizationReasonMessage={externalOrderViewModel.authorizationReasonMessage}
             otpValue={externalOrderViewModel.otpValue}
