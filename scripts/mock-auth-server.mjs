@@ -18,6 +18,7 @@ const VALID_PASSWORD = 'Test1234!';
 let nextOrderId = 1;
 
 const notificationItemsBySession = new Map();
+const portfolioFixturesByAccountId = new Map();
 
 const createDefaultNotificationItems = () => [
   {
@@ -168,6 +169,8 @@ const indexProfile = (profile) => {
     name: 'Pending Order',
     accountId: '7',
     orderScenario: 'fep-002',
+    mfaScenario: 'verify',
+    totpEnrolled: true,
   }),
   createProfile({
     memberUuid: 'member-008',
@@ -203,6 +206,15 @@ const indexProfile = (profile) => {
     name: 'Order Step-Up Demo',
     accountId: '12',
     orderScenario: 'step-up',
+    mfaScenario: 'verify',
+    totpEnrolled: true,
+  }),
+  createProfile({
+    memberUuid: 'member-013',
+    email: 'cash-order@fix.com',
+    name: 'Insufficient Cash Demo',
+    accountId: '13',
+    orderScenario: 'insufficient-cash',
     mfaScenario: 'verify',
     totpEnrolled: true,
   }),
@@ -314,13 +326,16 @@ const successEnvelope = (data) => ({
   error: null,
 });
 
-const errorEnvelope = (code, message, detail) => ({
+const errorEnvelope = (code, message, detail, options = {}) => ({
   success: false,
   data: null,
   error: {
     code,
     message,
     detail,
+    operatorCode: options.operatorCode,
+    retryAfterSeconds: options.retryAfterSeconds,
+    userMessageKey: options.userMessageKey,
     timestamp: new Date().toISOString(),
   },
 });
@@ -345,6 +360,12 @@ const ORDER_FIXTURE_EXPECTATIONS = {
     symbol: '005930',
   },
   'step-up': {
+    quantity: 1,
+    price: 70_100,
+    side: 'BUY',
+    symbol: '005930',
+  },
+  'insufficient-cash': {
     quantity: 1,
     price: 70_100,
     side: 'BUY',
@@ -537,7 +558,17 @@ const createPortfolioFixture = (accountId) => {
   };
 };
 
-const getPortfolioFixture = (accountId) => createPortfolioFixture(accountId);
+const getPortfolioFixture = (accountId) => {
+  const existing = portfolioFixturesByAccountId.get(accountId);
+
+  if (existing) {
+    return existing;
+  }
+
+  const created = createPortfolioFixture(accountId);
+  portfolioFixturesByAccountId.set(accountId, created);
+  return created;
+};
 
 const readAuthenticatedProfile = (cookies, response) => {
   const sessionId = cookies.JSESSIONID;
@@ -680,6 +711,20 @@ const validateOrderRequest = ({ body, profile, request, response }) => {
     symbol,
     quantity,
   };
+};
+
+const applyExecutedOrderToPortfolio = (session) => {
+  const fixture = getPortfolioFixture(String(session.accountId));
+  const matchedPosition = fixture.positions.find((position) => position.symbol === session.symbol);
+
+  if (!matchedPosition) {
+    return;
+  }
+
+  const delta = session.side === 'SELL'
+    ? -session.qty
+    : session.qty;
+  matchedPosition.quantity += delta;
 };
 
 const buildOrderSessionResponse = (session, overrides = {}) => ({
@@ -1590,6 +1635,23 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (profile.orderScenario === 'insufficient-cash') {
+      writeJson(
+        response,
+        422,
+        errorEnvelope(
+          'ORD-006',
+          '주문 가능 금액이 부족합니다.',
+          'The mock order endpoint rejected the request because the account cash is insufficient.',
+          {
+            operatorCode: 'INSUFFICIENT_CASH',
+            userMessageKey: 'error.order.insufficient_cash',
+          },
+        ),
+      );
+      return;
+    }
+
     const orderSession = createOrderSession(profile, validatedOrder);
 
     writeJson(
@@ -1784,6 +1846,7 @@ const server = http.createServer(async (request, response) => {
     orderSession.externalOrderId = `ord-${nextOrderId++}`;
     orderSession.executedAt = new Date().toISOString();
     orderSession.updatedAt = orderSession.executedAt;
+    applyExecutedOrderToPortfolio(orderSession);
 
     writeJson(
       response,
