@@ -116,7 +116,7 @@ describe('API tests: HttpClient contract', () => {
   it('captures the response-header correlation id for direct auth error payloads that omit correlationId', async () => {
     const fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({
-        code: 'AUTH_001',
+        code: 'AUTH-001',
         message: 'invalid credentials',
         path: '/api/v1/auth/login',
         timestamp: '2026-03-19T00:00:00Z',
@@ -135,7 +135,7 @@ describe('API tests: HttpClient contract', () => {
     });
 
     await expect(client.get('/api/v1/gateway')).rejects.toMatchObject({
-      code: 'AUTH_001',
+      code: 'AUTH-001',
       status: 401,
       message: 'invalid credentials',
       detail: '/api/v1/auth/login',
