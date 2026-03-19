@@ -65,6 +65,15 @@ const parseRetryAfterSeconds = (value: unknown) => {
 const getHeaderValue = (headers: Headers | undefined, key: string) =>
   headers?.get(key) ?? headers?.get(key.toLowerCase()) ?? undefined;
 
+const toNonEmptyString = (value: unknown) => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  return normalized ? normalized : undefined;
+};
+
 const resolveRetryAfterSeconds = (
   value: unknown,
   headers: Headers | undefined,
@@ -132,6 +141,29 @@ const isApiResponseEnvelope = (
   );
 };
 
+const resolveTraceId = (
+  data: unknown,
+  headers: Headers | undefined,
+) => {
+  if (isApiResponseEnvelope(data)) {
+    const envelopeTraceId = toNonEmptyString(data.traceId);
+    if (envelopeTraceId) {
+      return envelopeTraceId;
+    }
+  }
+
+  if (typeof data === 'object' && data !== null) {
+    const directCorrelationId = toNonEmptyString(
+      (data as Record<string, unknown>).correlationId,
+    );
+    if (directCorrelationId) {
+      return directCorrelationId;
+    }
+  }
+
+  return toNonEmptyString(getHeaderValue(headers, 'X-Correlation-Id'));
+};
+
 const isDirectApiErrorPayload = (
   value: unknown,
 ): value is DirectApiErrorPayload => {
@@ -151,11 +183,13 @@ export const normalizeHttpError = (
   input: NormalizeHttpErrorInput,
 ): NormalizedHttpError => {
   const retryAfterSeconds = resolveRetryAfterSeconds(undefined, input.headers);
+  const traceId = resolveTraceId(input.data, input.headers);
 
   if (input.timeout) {
     return createNormalizedHttpError(TIMEOUT_ERROR_MESSAGE, {
       status: input.status,
       retriable: true,
+      traceId,
     });
   }
 
@@ -163,6 +197,7 @@ export const normalizeHttpError = (
     return createNormalizedHttpError(NETWORK_ERROR_MESSAGE, {
       status: input.status,
       retriable: true,
+      traceId,
     });
   }
 
@@ -179,7 +214,7 @@ export const normalizeHttpError = (
         ),
         remainingAttempts: parseRemainingAttempts(input.data.error.remainingAttempts),
         status: input.status,
-        traceId: input.data.traceId,
+        traceId,
         enrollUrl: input.data.error.enrollUrl ?? undefined,
         recoveryUrl: input.data.error.recoveryUrl ?? undefined,
         userMessageKey: input.data.error.userMessageKey ?? undefined,
@@ -200,7 +235,7 @@ export const normalizeHttpError = (
         ),
         remainingAttempts: parseRemainingAttempts(input.data.remainingAttempts),
         status: input.status,
-        traceId: input.data.correlationId,
+        traceId,
         enrollUrl: input.data.enrollUrl,
         recoveryUrl: input.data.recoveryUrl,
         userMessageKey: input.data.userMessageKey,
@@ -211,5 +246,6 @@ export const normalizeHttpError = (
   return createNormalizedHttpError(DEFAULT_SERVER_ERROR_MESSAGE, {
     status: input.status,
     retryAfterSeconds,
+    traceId,
   });
 };
