@@ -7,7 +7,10 @@ import { act, create } from 'react-test-renderer';
 import type { AccountApi } from '@/api/account-api';
 import type { NotificationApi, NotificationItem } from '@/api/notification-api';
 import type { OrderApi, OrderSessionResponse } from '@/api/order-api';
-import { createNormalizedHttpError } from '@/network/errors';
+import {
+  createNormalizedHttpError,
+  normalizeHttpError,
+} from '@/network/errors';
 import { __resetPersistedOrderSessionForTests } from '@/order/use-external-order-view-model';
 import { __setOrderSessionStorageRuntimeForTests } from '@/order/order-session-storage';
 import { AuthenticatedHomeScreen } from '@/screens/app/AuthenticatedHomeScreen';
@@ -982,6 +985,83 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
 
     expect(findAllByTestId(renderer.root, 'external-order-error-card')).toHaveLength(0);
     expect(findAllByTestId(renderer.root, 'mobile-order-session-create')).toHaveLength(1);
+  });
+
+  it('surfaces a header-derived support reference after execute returns an external envelope without traceId', async () => {
+    const createOrderSession = vi.fn().mockResolvedValue({
+      orderSessionId: 'sess-fep-header-001',
+      clOrdId: 'cl-fep-header-001',
+      status: 'AUTHED',
+      challengeRequired: false,
+      authorizationReason: 'TRUSTED_AUTH_SESSION',
+      accountId: 1,
+      symbol: '005930',
+      side: 'BUY',
+      orderType: 'LIMIT',
+      qty: 1,
+      price: 70100,
+      expiresAt: futureIso(),
+    });
+    const executeOrderSession = vi.fn().mockRejectedValue(
+      normalizeHttpError({
+        status: 422,
+        data: {
+          success: false,
+          data: null,
+          error: {
+            code: 'FEP-001',
+            message: '주문 서비스를 잠시 사용할 수 없습니다',
+            detail: '거래소 연결이 일시적으로 불안정합니다. 주문이 접수되지 않았을 수 있습니다.',
+            operatorCode: 'CIRCUIT_OPEN',
+            retryAfterSeconds: 10,
+            timestamp: '2026-03-09T00:00:00Z',
+          },
+        },
+        headers: new Headers({
+          'Retry-After': '10',
+          'X-Correlation-Id': 'trace-fep-header-001',
+        }),
+      }),
+    );
+    const getOrderSession = vi.fn().mockResolvedValue({
+      orderSessionId: 'sess-fep-header-001',
+      clOrdId: 'cl-fep-header-001',
+      status: 'AUTHED',
+      challengeRequired: false,
+      authorizationReason: 'TRUSTED_AUTH_SESSION',
+      accountId: 1,
+      symbol: '005930',
+      side: 'BUY',
+      orderType: 'LIMIT',
+      qty: 1,
+      price: 70100,
+      expiresAt: futureIso(),
+    });
+    const orderApi = createOrderApi({
+      createOrderSession,
+      executeOrderSession,
+      getOrderSession,
+    });
+    const { renderer } = await renderScreen({ orderApi });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-execute').props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(executeOrderSession).toHaveBeenCalledWith('sess-fep-header-001');
+    expect(getOrderSession).toHaveBeenCalledWith('sess-fep-header-001');
+    expect(
+      getTextContent(findByTestId(renderer.root, 'external-order-error-title')),
+    ).toBe('주문 서비스를 잠시 사용할 수 없습니다');
+    expect(
+      getTextContent(findByTestId(renderer.root, 'external-order-error-support-reference')),
+    ).toBe('문의 코드: trace-fep-header-001');
   });
 
   it('clears execute-time external timeout guidance when refresh resolves to a final result', async () => {

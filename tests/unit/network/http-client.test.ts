@@ -113,6 +113,36 @@ describe('API tests: HttpClient contract', () => {
     });
   });
 
+  it('captures the response-header correlation id for direct auth error payloads that omit correlationId', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({
+        code: 'AUTH_001',
+        message: 'invalid credentials',
+        path: '/api/v1/auth/login',
+        timestamp: '2026-03-19T00:00:00Z',
+      }), {
+        status: 401,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Correlation-Id': 'trace-header-auth-001',
+        },
+      }),
+    );
+
+    const client = new HttpClient({
+      baseUrl: 'http://localhost:8080',
+      fetchFn: fetchMock as unknown as typeof fetch,
+    });
+
+    await expect(client.get('/api/v1/gateway')).rejects.toMatchObject({
+      code: 'AUTH_001',
+      status: 401,
+      message: 'invalid credentials',
+      detail: '/api/v1/auth/login',
+      traceId: 'trace-header-auth-001',
+    } satisfies Partial<NormalizedHttpError>);
+  });
+
   it('normalizes HTTP 500 API envelope errors with server code', async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse(500, {

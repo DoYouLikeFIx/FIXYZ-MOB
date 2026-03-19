@@ -4,10 +4,13 @@ import {
   getRegisterErrorFeedback,
   getReauthMessage,
   isReauthError,
-  resolveMfaErrorPresentation,
   resolveAuthErrorPresentation,
+  resolveMfaErrorPresentation,
 } from '@/auth/auth-errors';
-import { NETWORK_ERROR_MESSAGE } from '@/network/errors';
+import {
+  NETWORK_ERROR_MESSAGE,
+  normalizeHttpError,
+} from '@/network/errors';
 import { authErrorContract } from '../../fixtures/auth-error-contract';
 import { recoveryChallengeAuthErrorContract } from '../../fixtures/recovery-challenge-auth-error-contract';
 
@@ -125,6 +128,27 @@ describe('mobile auth error presentation', () => {
     );
     expect(presentation.message).toBe(
       `${authErrorContract.unknownFallback.message} ${authErrorContract.supportReferenceLabel}: corr-123`,
+    );
+  });
+
+  it('uses the response-header correlation id in the unknown auth fallback copy', () => {
+    const presentation = resolveAuthErrorPresentation(
+      normalizeHttpError({
+        status: 502,
+        data: {
+          code: 'AUTH-999',
+          message: 'Raw backend exception should not leak',
+        },
+        headers: new Headers({
+          'X-Correlation-Id': 'corr-header-unknown-auth',
+        }),
+      }),
+    );
+
+    expect(presentation.semantic).toBe('unknown');
+    expect(presentation.traceId).toBe('corr-header-unknown-auth');
+    expect(presentation.message).toBe(
+      `${authErrorContract.unknownFallback.message} ${authErrorContract.supportReferenceLabel}: corr-header-unknown-auth`,
     );
   });
 
