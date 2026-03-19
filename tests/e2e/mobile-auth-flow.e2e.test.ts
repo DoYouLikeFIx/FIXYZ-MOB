@@ -48,7 +48,7 @@ const errorResponse = (
   status: number,
   code: string,
   message: string,
-  detail: string,
+  path: string,
   options?: {
     correlationId?: string;
     retryAfterSeconds?: number;
@@ -63,7 +63,7 @@ const errorResponse = (
     {
       code,
       message,
-      path: detail,
+      path,
       correlationId: options?.correlationId,
       operatorCode: options?.operatorCode,
       retryAfterSeconds: options?.retryAfterSeconds,
@@ -207,7 +207,7 @@ const notFoundResponse = (request: RecordedCall): Response =>
     404,
     'SYS-404',
     `Unhandled request: ${request.method} ${getPathname(request.url)}`,
-    'Test harness request handler is missing a route',
+    getPathname(request.url),
   );
 
 describe('Backend-driven mobile auth workflow contract tests', () => {
@@ -447,7 +447,7 @@ describe('Backend-driven mobile auth workflow contract tests', () => {
           401,
           'AUTH-001',
           'Credential mismatch',
-          'Username or password was invalid',
+          '/api/v1/auth/login',
           {
             correlationId: 'corr-auth-invalid-001',
           },
@@ -508,7 +508,7 @@ describe('Backend-driven mobile auth workflow contract tests', () => {
           403,
           'AUTH-009',
           'TOTP enrollment required',
-          'User must enroll before OTP verification',
+          '/api/v1/auth/otp/verify',
           {
             enrollUrl: '/settings/totp/enroll',
           },
@@ -565,7 +565,7 @@ describe('Backend-driven mobile auth workflow contract tests', () => {
           429,
           'RATE-001',
           'Too many attempts',
-          'Too many OTP verification attempts',
+          '/api/v1/auth/otp/verify',
           {
             retryAfterSeconds: 30,
           },
@@ -627,7 +627,7 @@ describe('Backend-driven mobile auth workflow contract tests', () => {
           409,
           'AUTH-017',
           'Email already exists',
-          'Duplicate email',
+          '/api/v1/auth/register',
         );
       }
 
@@ -778,7 +778,7 @@ describe('Backend-driven mobile auth workflow contract tests', () => {
           401,
           'AUTH-003',
           'Authentication required',
-          'Session is missing or invalid',
+          '/api/v1/auth/session',
         );
       }
 
@@ -819,7 +819,7 @@ describe('Backend-driven mobile auth workflow contract tests', () => {
           401,
           'AUTH-003',
           'Authentication required',
-          'Session is missing or invalid',
+          '/api/v1/auth/session',
         );
       }
 
