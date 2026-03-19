@@ -731,7 +731,8 @@ export const useExternalOrderViewModel = ({
         return true;
       }
       applySessionState(session, {
-        preservePresentation: options?.preservePresentation,
+        preservePresentation:
+          options?.preservePresentation && !isFinalResultStatus(session.status),
       });
       return true;
     } catch (error) {
