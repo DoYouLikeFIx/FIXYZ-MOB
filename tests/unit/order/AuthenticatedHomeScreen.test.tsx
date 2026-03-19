@@ -903,7 +903,88 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     expect(findAllByTestId(renderer.root, 'mobile-order-session-create')).toHaveLength(0);
   });
 
-  it('renders visible external-order guidance after execute returns an external failure', async () => {
+  it('shows circuit-breaker retry guidance after execute returns a service-unavailable external failure', async () => {
+    const createOrderSession = vi.fn().mockResolvedValue({
+      orderSessionId: 'sess-fep-001',
+      clOrdId: 'cl-fep-001',
+      status: 'AUTHED',
+      challengeRequired: false,
+      authorizationReason: 'TRUSTED_AUTH_SESSION',
+      accountId: 1,
+      symbol: '005930',
+      side: 'BUY',
+      orderType: 'LIMIT',
+      qty: 1,
+      price: 70100,
+      expiresAt: futureIso(),
+    });
+    const executeOrderSession = vi.fn().mockRejectedValue(
+      createNormalizedHttpError(
+        '거래소 연결이 일시적으로 불안정합니다. 주문이 접수되지 않았을 수 있습니다.',
+        {
+          code: 'FEP-001',
+          operatorCode: 'CIRCUIT_OPEN',
+          retryAfterSeconds: 10,
+          traceId: 'trace-fep-001',
+        },
+      ),
+    );
+    const getOrderSession = vi.fn().mockResolvedValue({
+      orderSessionId: 'sess-fep-001',
+      clOrdId: 'cl-fep-001',
+      status: 'AUTHED',
+      challengeRequired: false,
+      authorizationReason: 'TRUSTED_AUTH_SESSION',
+      accountId: 1,
+      symbol: '005930',
+      side: 'BUY',
+      orderType: 'LIMIT',
+      qty: 1,
+      price: 70100,
+      expiresAt: futureIso(),
+    });
+    const orderApi = createOrderApi({
+      createOrderSession,
+      executeOrderSession,
+      getOrderSession,
+    });
+    const { renderer } = await renderScreen({ orderApi });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-execute').props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(executeOrderSession).toHaveBeenCalledWith('sess-fep-001');
+    expect(getOrderSession).toHaveBeenCalledWith('sess-fep-001');
+    expect(
+      getTextContent(findByTestId(renderer.root, 'external-order-error-title')),
+    ).toBe('주문 서비스를 잠시 사용할 수 없습니다');
+    expect(
+      getTextContent(findByTestId(renderer.root, 'external-order-error-message')),
+    ).toBe('거래소 연결이 일시적으로 불안정합니다. 주문이 접수되지 않았을 수 있습니다.');
+    expect(
+      getTextContent(findByTestId(renderer.root, 'external-order-error-next-step')),
+    ).toBe('약 10초 후 다시 주문해 주세요.');
+    expect(
+      getTextContent(findByTestId(renderer.root, 'external-order-error-support-reference')),
+    ).toBe('문의 코드: trace-fep-001');
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-reset').props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(findAllByTestId(renderer.root, 'external-order-error-card')).toHaveLength(0);
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-create')).toHaveLength(1);
+  });
+
+  it('clears execute-time external timeout guidance when refresh resolves to a final result', async () => {
     const createOrderSession = vi.fn().mockResolvedValue({
       orderSessionId: 'sess-001',
       clOrdId: 'cl-001',
@@ -972,15 +1053,7 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     expect(executeOrderSession).toHaveBeenCalledWith('sess-001');
     expect(getOrderSession).toHaveBeenCalledWith('sess-001');
     expect(findAllByTestId(renderer.root, 'mobile-order-session-result')).toHaveLength(1);
-    expect(
-      getTextContent(findByTestId(renderer.root, 'external-order-error-title')),
-    ).toBe('주문 결과를 확인하고 있습니다');
-    expect(
-      getTextContent(findByTestId(renderer.root, 'external-order-error-category')),
-    ).toBe('대외');
-    expect(
-      getTextContent(findByTestId(renderer.root, 'external-order-error-support-reference')),
-    ).toBe('문의 코드: trace-fep-002');
+    expect(findAllByTestId(renderer.root, 'external-order-error-card')).toHaveLength(0);
   });
 
   it('shows contextual Step A validation errors before creating a session', async () => {
