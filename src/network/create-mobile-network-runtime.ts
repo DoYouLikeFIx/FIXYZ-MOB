@@ -18,6 +18,41 @@ interface CreateMobileNetworkRuntimeInput {
   overrideUrl?: string;
 }
 
+type CookieManagerBridge = {
+  getFromResponse?: (url: string) => Promise<unknown>;
+};
+
+let cookieManagerBridge: CookieManagerBridge | undefined;
+
+const resolveCookieManagerBridge = (): CookieManagerBridge | undefined => {
+  if (cookieManagerBridge !== undefined) {
+    return cookieManagerBridge;
+  }
+
+  try {
+    const cookieModule = require('@react-native-cookies/cookies');
+    cookieManagerBridge = (cookieModule?.default ?? cookieModule) as CookieManagerBridge;
+  } catch {
+    cookieManagerBridge = undefined;
+  }
+
+  return cookieManagerBridge;
+};
+
+const primeSessionCookie = async (url: string): Promise<void> => {
+  const cookieManager = resolveCookieManagerBridge();
+
+  if (!cookieManager?.getFromResponse) {
+    return;
+  }
+
+  try {
+    await cookieManager.getFromResponse(url);
+  } catch {
+    // Ignore cookie priming failures and fall back to the standard bootstrap fetch.
+  }
+};
+
 export const createMobileNetworkRuntime = (
   input: CreateMobileNetworkRuntimeInput = {},
 ) => {
@@ -38,6 +73,7 @@ export const createMobileNetworkRuntime = (
     baseUrl,
     cookieManager: cookieReader,
     bootstrapCsrf: async () => {
+      await primeSessionCookie(`${baseUrl}/api/v1/auth/csrf`);
       const response = await bootstrapClient.get<CsrfBootstrapPayload>('/api/v1/auth/csrf');
       return response.body;
     },
