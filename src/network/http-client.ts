@@ -1,3 +1,5 @@
+import CookieManager from '@react-native-cookies/cookies';
+
 import {
   DEFAULT_HEALTH_TIMEOUT_MS,
   type SessionCookiePolicy,
@@ -64,8 +66,7 @@ const resolveCookieManagerBridge = (): CookieManagerBridge | undefined => {
   }
 
   try {
-    const cookieModule = require('@react-native-cookies/cookies');
-    cookieManagerBridge = (cookieModule?.default ?? cookieModule) as CookieManagerBridge;
+    cookieManagerBridge = CookieManager as CookieManagerBridge;
   } catch {
     cookieManagerBridge = undefined;
   }
