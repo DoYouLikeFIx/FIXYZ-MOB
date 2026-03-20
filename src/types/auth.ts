@@ -82,6 +82,10 @@ export interface PasswordForgotRequest {
   challengeAnswer?: string;
 }
 
+export interface PasswordRecoveryChallengeRequest {
+  email: string;
+}
+
 export interface PasswordRecoveryMetadata {
   challengeEndpoint: string;
   challengeMayBeRequired: boolean;
