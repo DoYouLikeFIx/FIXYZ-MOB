@@ -636,18 +636,21 @@ test("run-security-baseline surfaces upstream non-JSON failures clearly", async 
       },
     });
 
+    const repoContext = getRepoContext();
+
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /503 Service Unavailable while requesting/);
-    assert.match(result.stderr, /upstream alerts unavailable/);
-    assert.doesNotMatch(result.stderr, /SyntaxError|Unexpected token/);
+    assert.equal(result.stderr, "");
     assert.equal(fs.existsSync(path.join(outputRoot, "index.json")), true);
 
-    const summary = readJson(path.join(outputRoot, `scan-summary-${getRepoContext().repoKey}.json`));
-    const rawAlerts = readJson(path.join(outputRoot, `dependabot-alerts-${getRepoContext().repoKey}.json`));
+    const summary = readJson(path.join(outputRoot, `scan-summary-${repoContext.repoKey}.json`));
+    const rawAlerts = readJson(path.join(outputRoot, `dependabot-alerts-${repoContext.repoKey}.json`));
 
     assert.equal(summary.summary.scanErrorFindings, 1);
     assert.equal(summary.summary.status, "blocked");
     assert.match(summary.findings[0].reason, /Dependency security scan failed/);
+    assert.match(summary.findings[0].reason, /503 Service Unavailable while requesting/);
+    assert.match(summary.findings[0].reason, /upstream alerts unavailable/);
+    assert.doesNotMatch(summary.findings[0].reason, /SyntaxError|Unexpected token/);
     assert.equal(rawAlerts.status, "capture-failed");
     assert.match(rawAlerts.reason, /503 Service Unavailable/);
   });
