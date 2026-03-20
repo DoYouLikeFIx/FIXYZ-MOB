@@ -19,6 +19,7 @@ export PATH="$PATH:$HOME/.maestro/bin"
 metro_pid=""
 started_metro=0
 recorder_pid=""
+SIMULATOR_UDID=""
 
 cleanup() {
   if [[ -n "$recorder_pid" ]] && kill -0 "$recorder_pid" >/dev/null 2>&1; then
@@ -69,6 +70,30 @@ wait_for_healthcheck() {
   exit 1
 }
 
+resolve_simulator_udid() {
+  local simulator_name="$1"
+  local udid
+
+  udid="$(
+    DEVELOPER_DIR="$DEVELOPER_DIR" xcrun simctl list devices available \
+      | awk -v target="$simulator_name" '
+        $0 ~ target " \\(" && $0 !~ /unavailable/ {
+          if (match($0, /\(([A-F0-9-]{36})\)/)) {
+            print substr($0, RSTART + 1, RLENGTH - 2);
+            exit;
+          }
+        }
+      '
+  )"
+
+  if [[ -z "$udid" ]]; then
+    echo "Unable to resolve simulator UDID for: $simulator_name" >&2
+    exit 1
+  fi
+
+  printf '%s\n' "$udid"
+}
+
 require_cmd curl
 require_cmd ffmpeg
 require_cmd maestro
@@ -78,6 +103,7 @@ require_cmd npx
 
 mkdir -p "$OUTPUT_DIR"
 rm -f "$TMP_MOV" "$OUTPUT_PATH"
+SIMULATOR_UDID="$(resolve_simulator_udid "$IOS_SIMULATOR_NAME")"
 
 if ! nc -z 127.0.0.1 "$METRO_PORT" >/dev/null 2>&1; then
   pushd "$ROOT_DIR" >/dev/null
@@ -95,17 +121,17 @@ pushd "$ROOT_DIR" >/dev/null
 npx react-native run-ios --port "$METRO_PORT" --simulator "$IOS_SIMULATOR_NAME" --no-packager
 popd >/dev/null
 
-xcrun simctl launch --terminate-running-process booted "$APP_ID" \
+DEVELOPER_DIR="$DEVELOPER_DIR" xcrun simctl launch --terminate-running-process "$SIMULATOR_UDID" "$APP_ID" \
   -mobApiBaseUrl "$LIVE_API_BASE_URL" \
   -mobDisableAnimations true >/dev/null
 
-xcrun simctl io booted recordVideo --force --codec=h264 "$TMP_MOV" >/tmp/fixyz-mob-live-recovery-record.log 2>&1 &
+DEVELOPER_DIR="$DEVELOPER_DIR" xcrun simctl io "$SIMULATOR_UDID" recordVideo --force --codec=h264 "$TMP_MOV" >/tmp/fixyz-mob-live-recovery-record.log 2>&1 &
 recorder_pid="$!"
 sleep 1
 
 pushd "$ROOT_DIR" >/dev/null
 LIVE_API_BASE_URL="$LIVE_API_BASE_URL" LIVE_EMAIL="$LIVE_EMAIL" \
-  maestro test "$ROOT_DIR/e2e/maestro/auth-live/09-password-recovery-challenge-submit-live-be.yaml"
+  maestro test --udid "$SIMULATOR_UDID" "$ROOT_DIR/e2e/maestro/auth-live/09-password-recovery-challenge-submit-live-be.yaml"
 popd >/dev/null
 
 if [[ -n "$recorder_pid" ]] && kill -0 "$recorder_pid" >/dev/null 2>&1; then

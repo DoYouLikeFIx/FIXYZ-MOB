@@ -33,6 +33,7 @@ describe('mobile auth service', () => {
     registerMember: vi.fn(),
     requestPasswordResetEmail: vi.fn(),
     requestPasswordRecoveryChallenge: vi.fn(),
+    reportPasswordRecoveryChallengeFailClosed: vi.fn(),
     resetPassword: vi.fn(),
     bootstrapAuthenticatedTotpRebind: vi.fn(),
     bootstrapRecoveryTotpRebind: vi.fn(),
@@ -72,6 +73,7 @@ describe('mobile auth service', () => {
     vi.mocked(authApi.registerMember).mockReset();
     vi.mocked(authApi.requestPasswordResetEmail).mockReset();
     vi.mocked(authApi.requestPasswordRecoveryChallenge).mockReset();
+    vi.mocked(authApi.reportPasswordRecoveryChallengeFailClosed).mockReset();
     vi.mocked(authApi.resetPassword).mockReset();
     vi.mocked(authApi.bootstrapAuthenticatedTotpRebind).mockReset();
     vi.mocked(authApi.bootstrapRecoveryTotpRebind).mockReset();

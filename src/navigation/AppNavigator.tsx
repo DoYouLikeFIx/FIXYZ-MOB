@@ -43,6 +43,7 @@ import type {
   TotpRebindBootstrapResult,
   TotpEnrollmentBootstrapResult,
 } from '../types/auth-ui';
+import type { RecoveryChallengeFailClosedTelemetryEvent } from '../auth/recovery-challenge';
 
 import type { AuthNavigationState } from './auth-navigation';
 
@@ -80,6 +81,9 @@ interface AppNavigatorProps {
   onPasswordChallengeSubmit: (
     payload: PasswordRecoveryChallengeRequest,
   ) => Promise<PasswordRecoveryChallengeResult>;
+  onPasswordChallengeFailClosedTelemetry: (
+    event: RecoveryChallengeFailClosedTelemetryEvent,
+  ) => void;
   onPasswordResetSubmit: (payload: PasswordResetRequest) => Promise<PasswordResetResult>;
   onAuthenticatedMfaRecoveryBootstrap: (
     payload: MemberTotpRebindRequest,
@@ -176,6 +180,7 @@ export const AppNavigator = ({
   onSubmitTotpEnrollment,
   onPasswordForgotSubmit,
   onPasswordChallengeSubmit,
+  onPasswordChallengeFailClosedTelemetry,
   onPasswordResetSubmit,
   onAuthenticatedMfaRecoveryBootstrap,
   onRecoveryMfaRecoveryBootstrap,
@@ -289,6 +294,7 @@ export const AppNavigator = ({
         onResetPasswordPress={onOpenResetPassword}
         onSubmit={onPasswordForgotSubmit}
         onSubmitChallenge={onPasswordChallengeSubmit}
+        onChallengeFailClosedTelemetry={onPasswordChallengeFailClosedTelemetry}
       />
     );
   } else if (

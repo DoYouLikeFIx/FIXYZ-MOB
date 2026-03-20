@@ -54,7 +54,7 @@ export const AuthScaffold = ({
   const cardMaxHeight = isKeyboardVisible
     ? Math.max(Math.min(height - keyboardHeight - 118, 460), 320)
     : undefined;
-  const outerScrollEnabled = !isKeyboardVisible && mode === 'register';
+  const outerScrollEnabled = !isKeyboardVisible && (mode === 'register' || isCompactHeight);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';

@@ -21,6 +21,7 @@ import {
   type RestartMfaRecoveryOptions,
 } from './auth-flow-view-model';
 import { extractPasswordResetTokenFromUrl } from './password-reset-handoff';
+import type { RecoveryChallengeFailClosedTelemetryEvent } from './recovery-challenge';
 
 interface UseAuthFlowViewModelInput {
   authService: AuthServiceAdapter;
@@ -135,6 +136,11 @@ export const useAuthFlowViewModel = ({
       viewModelRef.current!.submitPasswordResetEmail(payload),
     onPasswordChallengeSubmit: (payload: PasswordRecoveryChallengeRequest) =>
       viewModelRef.current!.submitPasswordRecoveryChallenge(payload),
+    onPasswordChallengeFailClosedTelemetry: (
+      event: RecoveryChallengeFailClosedTelemetryEvent,
+    ) => {
+      void viewModelRef.current?.reportPasswordRecoveryChallengeFailClosed(event);
+    },
     onPasswordResetSubmit: (payload: PasswordResetRequest) =>
       viewModelRef.current!.submitPasswordReset(payload),
     onAuthenticatedMfaRecoveryBootstrap: (payload: MemberTotpRebindRequest) =>

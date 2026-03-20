@@ -30,6 +30,7 @@ import type {
 import type { AuthApi } from '../api/auth-api';
 
 import { isReauthError } from './auth-errors';
+import type { RecoveryChallengeFailClosedTelemetryEvent } from './recovery-challenge';
 
 export type { AuthApi } from '../api/auth-api';
 
@@ -219,6 +220,12 @@ export const createMobileAuthService = ({
         error,
       };
     }
+  },
+
+  async reportPasswordRecoveryChallengeFailClosed(
+    event: RecoveryChallengeFailClosedTelemetryEvent,
+  ) {
+    await authApi.reportPasswordRecoveryChallengeFailClosed(event);
   },
 
   async resetPassword(

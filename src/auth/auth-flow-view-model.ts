@@ -48,6 +48,7 @@ import {
   isReauthError,
   resolveMfaErrorPresentation,
 } from './auth-errors';
+import type { RecoveryChallengeFailClosedTelemetryEvent } from './recovery-challenge';
 import { clearPersistedOrderSessionId } from '../order/order-session-storage';
 
 type Listener = () => void;
@@ -93,6 +94,9 @@ export interface AuthServiceAdapter {
   requestPasswordRecoveryChallenge: (
     payload: PasswordRecoveryChallengeRequest,
   ) => Promise<PasswordRecoveryChallengeResult>;
+  reportPasswordRecoveryChallengeFailClosed: (
+    event: RecoveryChallengeFailClosedTelemetryEvent,
+  ) => Promise<void>;
   resetPassword: (payload: PasswordResetRequest) => Promise<PasswordResetResult>;
   bootstrapAuthenticatedTotpRebind: (
     payload: MemberTotpRebindRequest,
@@ -599,6 +603,12 @@ export const createAuthFlowViewModel = ({
     ): Promise<PasswordRecoveryChallengeResult> {
       clearTransientErrors();
       return authService.requestPasswordRecoveryChallenge(payload);
+    },
+
+    async reportPasswordRecoveryChallengeFailClosed(
+      event: RecoveryChallengeFailClosedTelemetryEvent,
+    ): Promise<void> {
+      await authService.reportPasswordRecoveryChallengeFailClosed(event);
     },
 
     async submitPasswordReset(

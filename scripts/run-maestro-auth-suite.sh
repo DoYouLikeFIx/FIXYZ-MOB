@@ -22,6 +22,7 @@ export MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED="${MAESTRO_CLI_ANALYSIS_NOTIFI
 metro_pid=""
 server_pid=""
 started_metro=0
+SIMULATOR_UDID=""
 
 cleanup() {
   if [[ -n "$server_pid" ]] && kill -0 "$server_pid" >/dev/null 2>&1; then
@@ -80,6 +81,30 @@ wait_for_healthcheck() {
   exit 1
 }
 
+resolve_simulator_udid() {
+  local simulator_name="$1"
+  local udid
+
+  udid="$(
+    DEVELOPER_DIR="$DEVELOPER_DIR" xcrun simctl list devices available \
+      | awk -v target="$simulator_name" '
+        $0 ~ target " \\(" && $0 !~ /unavailable/ {
+          if (match($0, /\(([A-F0-9-]{36})\)/)) {
+            print substr($0, RSTART + 1, RLENGTH - 2);
+            exit;
+          }
+        }
+      '
+  )"
+
+  if [[ -z "$udid" ]]; then
+    echo "Unable to resolve simulator UDID for: $simulator_name" >&2
+    exit 1
+  fi
+
+  printf '%s\n' "$udid"
+}
+
 launch_app_with_deeplink_args_if_requested() {
   local launch_args=()
 
@@ -102,8 +127,8 @@ launch_app_with_deeplink_args_if_requested() {
     -mobQaPlaintextPasswords true
   )
 
-  xcrun simctl terminate booted "$APP_ID" >/dev/null 2>&1 || true
-  xcrun simctl launch --terminate-running-process booted "$APP_ID" "${launch_args[@]}" >/dev/null
+  DEVELOPER_DIR="$DEVELOPER_DIR" xcrun simctl terminate "$SIMULATOR_UDID" "$APP_ID" >/dev/null 2>&1 || true
+  DEVELOPER_DIR="$DEVELOPER_DIR" xcrun simctl launch --terminate-running-process "$SIMULATOR_UDID" "$APP_ID" "${launch_args[@]}" >/dev/null
 }
 
 open_deeplink_if_requested() {
@@ -112,7 +137,7 @@ open_deeplink_if_requested() {
   fi
 
   sleep "${MOB_MAESTRO_DEEPLINK_DELAY_SECONDS:-5}"
-  xcrun simctl openurl booted "$DEEPLINK_URL"
+  DEVELOPER_DIR="$DEVELOPER_DIR" xcrun simctl openurl "$SIMULATOR_UDID" "$DEEPLINK_URL"
   sleep 2
 }
 
@@ -237,6 +262,7 @@ if [[ "$RESOLVED_FLOW_TARGET" == *"/auth-live"* ]]; then
   FLOW_IS_LIVE=1
 fi
 RESOLVED_FLOW_TARGET="$(render_flow_target_if_needed "$RESOLVED_FLOW_TARGET")"
+SIMULATOR_UDID="$(resolve_simulator_udid "$IOS_SIMULATOR_NAME")"
 
 use_mock_auth_server=1
 if [[ "$FLOW_IS_LIVE" -eq 1 ]]; then
@@ -271,7 +297,7 @@ pushd "$ROOT_DIR" >/dev/null
 npx react-native run-ios --port "$METRO_PORT" --simulator "$IOS_SIMULATOR_NAME" --no-packager
 launch_app_with_deeplink_args_if_requested
 open_deeplink_if_requested
-maestro test "$RESOLVED_FLOW_TARGET"
+maestro test --udid "$SIMULATOR_UDID" "$RESOLVED_FLOW_TARGET"
 popd >/dev/null
 
 echo "Maestro suite passed for ${FLOW_TARGET} on ${IOS_SIMULATOR_NAME}."
