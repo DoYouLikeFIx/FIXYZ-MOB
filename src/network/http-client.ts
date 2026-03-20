@@ -83,7 +83,7 @@ const persistResponseCookies = async (url: string, headers: Headers): Promise<vo
 
   try {
     await cookieManager.setFromResponse(url, rawCookie);
-    await cookieManager.flush?.().catch(() => undefined);
+    await cookieManager.flush?.();
   } catch {
     // Ignore cookie bridge failures and fall back to the platform fetch behavior.
   }

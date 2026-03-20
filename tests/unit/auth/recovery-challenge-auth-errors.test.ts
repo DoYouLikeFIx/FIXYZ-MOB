@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveAuthErrorPresentation } from '../../../src/auth/auth-errors';
+import { resolveAuthErrorPresentation } from '@/auth/auth-errors';
 
 describe('resolveAuthErrorPresentation', () => {
   it('adds retry-after guidance for recovery challenge bootstrap failures', () => {
