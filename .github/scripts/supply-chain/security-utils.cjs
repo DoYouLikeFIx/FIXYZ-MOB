@@ -544,6 +544,8 @@ function summarizeFindings(findings) {
     manualTriageFindings: 0,
     exceptionBackedFindings: 0,
     exceptionValidationFindings: 0,
+    configurationErrorFindings: 0,
+    scanErrorFindings: 0,
     actionPinningFindings: 0,
     dependabotFindings: 0,
   };
@@ -561,6 +563,12 @@ function summarizeFindings(findings) {
     }
     if (finding.type === "exception-validation") {
       summary.exceptionValidationFindings += 1;
+    }
+    if (finding.type === "configuration-error") {
+      summary.configurationErrorFindings += 1;
+    }
+    if (finding.type === "scan-error") {
+      summary.scanErrorFindings += 1;
     }
     if (finding.type === "action-pinning") {
       summary.actionPinningFindings += 1;

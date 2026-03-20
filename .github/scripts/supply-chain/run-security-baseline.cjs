@@ -386,6 +386,38 @@ function emitGithubOutput(name, value) {
   fs.appendFileSync(outputPath, `${name}=${String(value)}\n`, "utf8");
 }
 
+function createBlockingErrorFinding({
+  type,
+  repo,
+  manifestPath = null,
+  fixedVersion,
+  reason,
+  metadata = {},
+}) {
+  return {
+    type,
+    repo,
+    package: null,
+    manifestPath,
+    currentVersion: null,
+    fixedVersion,
+    severity: "high",
+    cvss: null,
+    cvssSource: "policy",
+    decision: "block",
+    exceptionId: null,
+    triageRequired: false,
+    blocker: true,
+    advisoryId: null,
+    cveIds: [],
+    workflowFile: null,
+    lineNumber: null,
+    uses: null,
+    reason,
+    ...metadata,
+  };
+}
+
 async function main() {
   const repoRoot = process.cwd();
   const nowDate = new Date();
@@ -431,20 +463,29 @@ async function main() {
   emitGithubOutput("output_directory", outputDirectoryRelative);
   emitGithubOutput("output_base_directory", outputBaseDirectoryRelative);
   const workflowEntries = collectWorkflowUses(path.join(repoRoot, ".github", "workflows"));
-  const exceptionRegistry = fs.existsSync(exceptionsPath)
-    ? readJsonFile(exceptionsPath)
-    : { policyVersion, records: [] };
   const exceptionsRelativePath = relativeToRepo(repoRoot, exceptionsPath);
+  let exceptionRegistry = { policyVersion, records: [] };
+  const preflightFindings = [];
 
-  const dependabotAlerts = await loadDependabotAlerts(repoSlug, alertsToken);
-  const nvdLookup = await buildNvdLookup();
-  const dependabotFindings = await evaluateDependabotAlerts({
-    repo: repoKey,
-    alerts: dependabotAlerts,
-    exceptionRecords: exceptionRegistry.records,
-    nvdLookup,
-    now,
-  });
+  if (fs.existsSync(exceptionsPath)) {
+    try {
+      exceptionRegistry = readJsonFile(exceptionsPath);
+    } catch (error) {
+      preflightFindings.push(
+        createBlockingErrorFinding({
+          type: "configuration-error",
+          repo: repoKey,
+          manifestPath: exceptionsRelativePath,
+          fixedVersion: "Repair the repository-local exception registry JSON before rerunning",
+          reason: `Exception registry could not be parsed: ${error.message}`,
+          metadata: {
+            configPath: exceptionsRelativePath,
+          },
+        }),
+      );
+    }
+  }
+
   const actionPinningFindings = evaluateActionPinningFindings({
     repo: repoKey,
     workflowEntries,
@@ -456,18 +497,78 @@ async function main() {
     exceptionRecords: exceptionRegistry.records,
     exceptionsPath: exceptionsRelativePath,
   });
-  const branchProtection = await captureBranchProtectionEvidence({
-    repoSlug,
-    branch: defaultBranch,
-    expectedRequiredCheck,
-    token: branchProtectionToken,
-  });
+  let branchProtection = null;
+
+  try {
+    branchProtection = await captureBranchProtectionEvidence({
+      repoSlug,
+      branch: defaultBranch,
+      expectedRequiredCheck,
+      token: branchProtectionToken,
+    });
+  } catch (error) {
+    branchProtection = {
+      repo: repoKey,
+      branch: defaultBranch,
+      capturedAt: nowDate.toISOString(),
+      captureMethod: "capture-failed",
+      requiredChecks: [],
+      enforceAdmins: null,
+      status: "capture-failed",
+      expectedRequiredCheck,
+      actionsPermissions: {
+        enabled: null,
+        allowedActions: null,
+        shaPinningRequired: null,
+        status: "capture-failed",
+        reason: error.message,
+      },
+      reason: error.message,
+    };
+  }
+
+  let dependabotAlerts = [];
+  let dependabotFindings = [];
+  let rawAlertsArtifact = [];
+
+  try {
+    dependabotAlerts = await loadDependabotAlerts(repoSlug, alertsToken);
+    rawAlertsArtifact = dependabotAlerts;
+    const nvdLookup = await buildNvdLookup();
+    dependabotFindings = await evaluateDependabotAlerts({
+      repo: repoKey,
+      alerts: dependabotAlerts,
+      exceptionRecords: exceptionRegistry.records,
+      nvdLookup,
+      now,
+    });
+  } catch (error) {
+    rawAlertsArtifact = {
+      status: "capture-failed",
+      scanner: "github-dependabot-alerts",
+      capturedAt: nowDate.toISOString(),
+      reason: error.message,
+    };
+    dependabotFindings = [
+      createBlockingErrorFinding({
+        type: "scan-error",
+        repo: repoKey,
+        fixedVersion: "Restore Dependabot/NVD access or provide a valid authenticated token before rerunning",
+        reason: `Dependency security scan failed: ${error.message}`,
+        metadata: {
+          scanner: "github-dependabot-alerts",
+        },
+      }),
+    ];
+  }
+
   const failOnBranchProtectionAudit =
     normalizeText(
       process.env.FAIL_ON_BRANCH_PROTECTION_AUDIT_ERROR,
       process.env.GITHUB_ACTIONS === "true" ? "true" : "false",
     ) === "true";
   const findings = [
+    ...preflightFindings,
     ...dependabotFindings,
     ...actionPinningFindings,
     ...exceptionValidationFindings,
@@ -507,7 +608,7 @@ async function main() {
     records: exceptionRegistry.records || [],
   });
   writeJsonFile(branchProtectionPath, branchProtection);
-  writeJsonFile(rawAlertsPath, dependabotAlerts);
+  writeJsonFile(rawAlertsPath, rawAlertsArtifact);
   writeJsonFile(
     indexPath,
     buildEvidenceIndex({

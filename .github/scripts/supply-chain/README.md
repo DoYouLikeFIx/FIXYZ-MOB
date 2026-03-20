@@ -12,6 +12,7 @@
 - `BRANCH_PROTECTION_TOKEN` is required to capture live branch-protection and GitHub Actions permissions evidence.
 - Approved exception records must include the required review metadata before they can suppress a blocking finding.
 - GitHub Actions runs fail closed when branch-protection proof cannot be captured.
+- Upstream scan failures still emit machine-readable evidence snapshots with blocking `scan-error` findings.
 
 ## Local Validation
 
