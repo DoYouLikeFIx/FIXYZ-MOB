@@ -352,6 +352,65 @@ describe('mobile auth service', () => {
     });
   });
 
+  it('returns proof-of-work v2 metadata for the recovery bootstrap flow', async () => {
+    vi.mocked(authApi.requestPasswordRecoveryChallenge).mockResolvedValue({
+      challengeToken: 'challenge-token-v2',
+      challengeType: 'proof-of-work',
+      challengeTtlSeconds: 300,
+      challengeContractVersion: 2,
+      challengeId: 'challenge-id-v2',
+      challengeIssuedAtEpochMs: 1_700_000_000_000,
+      challengeExpiresAtEpochMs: 1_700_000_300_000,
+      challengePayload: {
+        kind: 'proof-of-work',
+        proofOfWork: {
+          algorithm: 'SHA-256',
+          seed: 'seed-value',
+          difficultyBits: 2,
+          answerFormat: 'nonce-decimal',
+          inputTemplate: '{seed}:{nonce}',
+          inputEncoding: 'utf-8',
+          successCondition: {
+            type: 'leading-zero-bits',
+            minimum: 2,
+          },
+        },
+      },
+    });
+
+    await expect(
+      service.requestPasswordRecoveryChallenge({
+        email: 'Demo+Tag@Fix.com',
+      }),
+    ).resolves.toEqual({
+      success: true,
+      challenge: {
+        challengeToken: 'challenge-token-v2',
+        challengeType: 'proof-of-work',
+        challengeTtlSeconds: 300,
+        challengeContractVersion: 2,
+        challengeId: 'challenge-id-v2',
+        challengeIssuedAtEpochMs: 1_700_000_000_000,
+        challengeExpiresAtEpochMs: 1_700_000_300_000,
+        challengePayload: {
+          kind: 'proof-of-work',
+          proofOfWork: {
+            algorithm: 'SHA-256',
+            seed: 'seed-value',
+            difficultyBits: 2,
+            answerFormat: 'nonce-decimal',
+            inputTemplate: '{seed}:{nonce}',
+            inputEncoding: 'utf-8',
+            successCondition: {
+              type: 'leading-zero-bits',
+              minimum: 2,
+            },
+          },
+        },
+      },
+    });
+  });
+
   it('returns success when the password reset completes', async () => {
     vi.mocked(authApi.resetPassword).mockResolvedValue({});
 

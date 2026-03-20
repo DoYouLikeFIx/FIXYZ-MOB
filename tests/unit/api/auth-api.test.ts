@@ -272,6 +272,64 @@ describe('auth api', () => {
     );
   });
 
+  it('passes through the proof-of-work password-recovery challenge contract', async () => {
+    client.post.mockResolvedValue(response(200, {
+        challengeToken: 'challenge-token',
+        challengeType: 'proof-of-work',
+        challengeTtlSeconds: 300,
+        challengeContractVersion: 2,
+        challengeId: 'challenge-id',
+        challengeIssuedAtEpochMs: 1_700_000_000_000,
+        challengeExpiresAtEpochMs: 1_700_000_300_000,
+        challengePayload: {
+          kind: 'proof-of-work',
+          proofOfWork: {
+            algorithm: 'SHA-256',
+            seed: 'seed-value',
+            difficultyBits: 4,
+            answerFormat: 'nonce-decimal',
+            inputTemplate: '{seed}:{nonce}',
+            inputEncoding: 'utf-8',
+            successCondition: {
+              type: 'leading-zero-bits',
+              minimum: 4,
+            },
+          },
+        },
+      }));
+
+    const authApi = createAuthApi({ client, csrfManager });
+
+    await expect(
+      authApi.requestPasswordRecoveryChallenge({
+        email: 'demo@fix.com',
+      }),
+    ).resolves.toEqual({
+      challengeToken: 'challenge-token',
+      challengeType: 'proof-of-work',
+      challengeTtlSeconds: 300,
+      challengeContractVersion: 2,
+      challengeId: 'challenge-id',
+      challengeIssuedAtEpochMs: 1_700_000_000_000,
+      challengeExpiresAtEpochMs: 1_700_000_300_000,
+      challengePayload: {
+        kind: 'proof-of-work',
+        proofOfWork: {
+          algorithm: 'SHA-256',
+          seed: 'seed-value',
+          difficultyBits: 4,
+          answerFormat: 'nonce-decimal',
+          inputTemplate: '{seed}:{nonce}',
+          inputEncoding: 'utf-8',
+          successCondition: {
+            type: 'leading-zero-bits',
+            minimum: 4,
+          },
+        },
+      },
+    });
+  });
+
   it('submits the password-reset payload as JSON', async () => {
     client.post.mockResolvedValue(response(204, null));
 

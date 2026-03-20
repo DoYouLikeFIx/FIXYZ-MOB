@@ -1,5 +1,9 @@
 import { createAuthApi } from '@/api/auth-api';
 import { createAuthFlowViewModel } from '@/auth/auth-flow-view-model';
+import {
+  parsePasswordRecoveryChallengeResponse,
+  solvePasswordRecoveryProofOfWork,
+} from '@/auth/recovery-challenge';
 import { createMobileAuthService } from '@/auth/mobile-auth-service';
 import { InMemoryCookieManager } from '@/network/cookie-manager';
 import { CsrfTokenManager } from '@/network/csrf';
@@ -126,7 +130,7 @@ const createHarness = (
   };
 };
 
-describe('E2E tests: mobile password recovery workflow', () => {
+describe('mobile password recovery transport harness', () => {
   beforeEach(() => {
     resetAuthStore();
   });
@@ -193,6 +197,116 @@ describe('E2E tests: mobile password recovery workflow', () => {
     ).toMatchObject({
       method: 'POST',
     });
+  });
+
+  it('bootstraps a proof-of-work recovery challenge through the mobile transport harness and submits a solver-derived nonce with the original email', async () => {
+    const issuedAtEpochMs = Date.now();
+    const expiresAtEpochMs = issuedAtEpochMs + 300_000;
+    const harness = createHarness((request) => {
+      if (request.method === 'GET' && getPathname(request.url) === '/api/v1/auth/csrf') {
+        return successResponse(200, {
+          token: 'csrf-forgot-v2',
+        });
+      }
+
+      if (
+        request.method === 'POST'
+        && getPathname(request.url) === '/api/v1/auth/password/forgot/challenge'
+      ) {
+        return successResponse(200, {
+          challengeToken: 'challenge-token-v2',
+          challengeType: 'proof-of-work',
+          challengeTtlSeconds: 300,
+          challengeContractVersion: 2,
+          challengeId: 'challenge-id-v2',
+          challengeIssuedAtEpochMs: issuedAtEpochMs,
+          challengeExpiresAtEpochMs: expiresAtEpochMs,
+          challengePayload: {
+            kind: 'proof-of-work',
+            proofOfWork: {
+              algorithm: 'SHA-256',
+              seed: 'seed-value',
+              difficultyBits: 2,
+              answerFormat: 'nonce-decimal',
+              inputTemplate: '{seed}:{nonce}',
+              inputEncoding: 'utf-8',
+              successCondition: {
+                type: 'leading-zero-bits',
+                minimum: 2,
+              },
+            },
+          },
+        });
+      }
+
+      if (
+        request.method === 'POST'
+        && getPathname(request.url) === '/api/v1/auth/password/forgot'
+      ) {
+        return successResponse(202, {
+          accepted: true,
+          message: 'If the account is eligible, a reset email will be sent.',
+          recovery: {
+            challengeEndpoint: '/api/v1/auth/password/forgot/challenge',
+            challengeMayBeRequired: true,
+          },
+        });
+      }
+
+      return errorResponse(404, 'SYS-404', 'Unhandled request', 'Missing route');
+    });
+
+    const challengeResult = await harness.viewModel.submitPasswordRecoveryChallenge({
+      email: 'Demo+Tag@Fix.com',
+    });
+    if (!challengeResult.success) {
+      throw new Error('expected password recovery bootstrap to succeed');
+    }
+
+    const parsed = parsePasswordRecoveryChallengeResponse(
+      challengeResult.challenge,
+      'Demo+Tag@Fix.com',
+      issuedAtEpochMs,
+    );
+    if ('error' in parsed || parsed.challenge.kind !== 'proof-of-work') {
+      throw new Error('expected a proof-of-work challenge');
+    }
+
+    const challengeAnswer = await solvePasswordRecoveryProofOfWork(
+      parsed.challenge.challengePayload.proofOfWork,
+    );
+    const forgotResult = await harness.viewModel.submitPasswordResetEmail({
+      email: 'Demo+Tag@Fix.com',
+      challengeToken: 'challenge-token-v2',
+      challengeAnswer,
+    });
+
+    expect(challengeResult).toMatchObject({
+      success: true,
+      challenge: {
+        challengeType: 'proof-of-work',
+        challengeContractVersion: 2,
+        challengeId: 'challenge-id-v2',
+      },
+    });
+    expect(forgotResult).toMatchObject({
+      success: true,
+      response: {
+        accepted: true,
+      },
+    });
+
+    const bootstrapCall = harness.calls.find(
+      (call) => getPathname(call.url) === '/api/v1/auth/password/forgot/challenge',
+    );
+    const forgotCall = harness.calls.find(
+      (call) => getPathname(call.url) === '/api/v1/auth/password/forgot',
+    );
+
+    expect(bootstrapCall?.body).toContain('Demo+Tag@Fix.com');
+    expect(forgotCall?.body).toContain('Demo+Tag@Fix.com');
+    expect(forgotCall?.body).toContain('challenge-token-v2');
+    expect(forgotCall?.body).toContain(challengeAnswer);
   });
 
   it('fails forgot-password deterministically after a second csrf 403', async () => {
