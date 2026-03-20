@@ -1,5 +1,8 @@
 import type { CsrfTokenManager } from '../network/csrf';
 import type { HttpClient } from '../network/http-client';
+import {
+  type RecoveryChallengeFailClosedTelemetryEvent,
+} from '../auth/recovery-challenge';
 import type {
   LoginChallenge,
   LoginRequest,
@@ -47,6 +50,8 @@ const createFormBody = (payload: Record<string, string>) =>
 const FORM_HEADERS = {
   'Content-Type': 'application/x-www-form-urlencoded',
 };
+const RECOVERY_CHALLENGE_FAIL_CLOSED_PATH =
+  '/api/v1/auth/password/forgot/challenge/fail-closed';
 
 const createCompatMember = (payload: AuthMutationResponse): Member => ({
   memberUuid: payload.memberUuid ?? String(payload.memberId ?? ''),
@@ -70,6 +75,9 @@ export interface AuthApi {
   requestPasswordRecoveryChallenge: (
     payload: PasswordRecoveryChallengeRequest,
   ) => Promise<PasswordRecoveryChallengeResponse>;
+  reportPasswordRecoveryChallengeFailClosed: (
+    event: RecoveryChallengeFailClosedTelemetryEvent,
+  ) => Promise<void>;
   resetPassword: (payload: PasswordResetRequest) => Promise<PasswordResetContinuation>;
   bootstrapAuthenticatedTotpRebind: (
     payload: MemberTotpRebindRequest,
@@ -90,130 +98,152 @@ interface CreateAuthApiInput {
 export const createAuthApi = ({
   client,
   csrfManager,
-}: CreateAuthApiInput): AuthApi => ({
-  resetPassword: async (payload) => {
-    const response = await client.post('/api/v1/auth/password/reset', payload);
-    const recoveryProof = response.headers.get('X-MFA-Recovery-Proof')?.trim() ?? '';
-    const rawExpiresIn = response.headers.get('X-MFA-Recovery-Proof-Expires-In');
-    const recoveryProofExpiresInSeconds = rawExpiresIn ? Number(rawExpiresIn) : undefined;
-
-    return {
-      recoveryProof: recoveryProof || undefined,
-      recoveryProofExpiresInSeconds:
-        recoveryProofExpiresInSeconds !== undefined && Number.isFinite(recoveryProofExpiresInSeconds)
-          ? recoveryProofExpiresInSeconds
-          : undefined,
+}: CreateAuthApiInput): AuthApi => {
+  const reportPasswordRecoveryChallengeFailClosed = async (
+    event: RecoveryChallengeFailClosedTelemetryEvent,
+  ) => {
+    const payload: Record<string, string> = {
+      reason: event.payload.reason,
+      surface: event.payload.surface,
     };
-  },
-  fetchSession: async () => {
-    const response = await client.get<Member>('/api/v1/auth/session');
-    return response.body;
-  },
-  startLoginFlow: async (payload) => {
-    const response = await client.post<LoginChallenge>(
-      '/api/v1/auth/login',
-      createFormBody({
-        email: payload.email,
-        password: payload.password,
-      }),
+    if (typeof event.payload.challengeIssuedAtEpochMs === 'number') {
+      payload.challengeIssuedAtEpochMs = String(event.payload.challengeIssuedAtEpochMs);
+    }
+    await client.post(
+      RECOVERY_CHALLENGE_FAIL_CLOSED_PATH,
+      createFormBody(payload),
       {
         headers: FORM_HEADERS,
       },
     );
+  };
 
-    return response.body;
-  },
+  return {
+    reportPasswordRecoveryChallengeFailClosed,
+    resetPassword: async (payload) => {
+      const response = await client.post('/api/v1/auth/password/reset', payload);
+      const recoveryProof = response.headers.get('X-MFA-Recovery-Proof')?.trim() ?? '';
+      const rawExpiresIn = response.headers.get('X-MFA-Recovery-Proof-Expires-In');
+      const recoveryProofExpiresInSeconds = rawExpiresIn ? Number(rawExpiresIn) : undefined;
 
-  verifyLoginOtp: async (payload) => {
-    const response = await client.post<AuthMutationResponse>(
-      '/api/v1/auth/otp/verify',
-      payload,
-    );
+      return {
+        recoveryProof: recoveryProof || undefined,
+        recoveryProofExpiresInSeconds:
+          recoveryProofExpiresInSeconds !== undefined && Number.isFinite(recoveryProofExpiresInSeconds)
+            ? recoveryProofExpiresInSeconds
+            : undefined,
+      };
+    },
+    fetchSession: async () => {
+      const response = await client.get<Member>('/api/v1/auth/session');
+      return response.body;
+    },
+    startLoginFlow: async (payload) => {
+      const response = await client.post<LoginChallenge>(
+        '/api/v1/auth/login',
+        createFormBody({
+          email: payload.email,
+          password: payload.password,
+        }),
+        {
+          headers: FORM_HEADERS,
+        },
+      );
 
-    if (csrfManager) {
-      await csrfManager.onLoginSuccess();
-    }
+      return response.body;
+    },
 
-    return createCompatMember(response.body);
-  },
-  beginTotpEnrollment: async (payload) => {
-    const response = await client.post<TotpEnrollmentBootstrap>(
-      '/api/v1/members/me/totp/enroll',
-      payload,
-    );
+    verifyLoginOtp: async (payload) => {
+      const response = await client.post<AuthMutationResponse>(
+        '/api/v1/auth/otp/verify',
+        payload,
+      );
 
-    return response.body;
-  },
-  confirmTotpEnrollment: async (payload) => {
-    const response = await client.post<AuthMutationResponse>(
-      '/api/v1/members/me/totp/confirm',
-      payload,
-    );
+      if (csrfManager) {
+        await csrfManager.onLoginSuccess();
+      }
 
-    if (csrfManager) {
-      await csrfManager.onLoginSuccess();
-    }
+      return createCompatMember(response.body);
+    },
+    beginTotpEnrollment: async (payload) => {
+      const response = await client.post<TotpEnrollmentBootstrap>(
+        '/api/v1/members/me/totp/enroll',
+        payload,
+      );
 
-    return createCompatMember(response.body);
-  },
-  registerMember: async (payload) => {
-    const response = await client.post<Member | AuthMutationResponse>(
-      '/api/v1/auth/register',
-      createFormBody({
-        email: payload.email,
-        password: payload.password,
-        name: payload.name,
-      }),
-      {
-        headers: FORM_HEADERS,
-      },
-    );
-    return isMember(response.body)
-      ? response.body
-      : createCompatMember(response.body);
-  },
-  requestPasswordResetEmail: async (payload) => {
-    const response = await client.post<PasswordForgotResponse>(
-      '/api/v1/auth/password/forgot',
-      payload,
-    );
+      return response.body;
+    },
+    confirmTotpEnrollment: async (payload) => {
+      const response = await client.post<AuthMutationResponse>(
+        '/api/v1/members/me/totp/confirm',
+        payload,
+      );
 
-    return response.body;
-  },
-  requestPasswordRecoveryChallenge: async (payload) => {
-    const response = await client.post<PasswordRecoveryChallengeResponse>(
-      '/api/v1/auth/password/forgot/challenge',
-      payload,
-    );
+      if (csrfManager) {
+        await csrfManager.onLoginSuccess();
+      }
 
-    return response.body;
-  },
-  bootstrapAuthenticatedTotpRebind: async (payload) => {
-    const response = await client.post<TotpRebindBootstrap>(
-      '/api/v1/members/me/totp/rebind',
-      payload,
-    );
+      return createCompatMember(response.body);
+    },
+    registerMember: async (payload) => {
+      const response = await client.post<Member | AuthMutationResponse>(
+        '/api/v1/auth/register',
+        createFormBody({
+          email: payload.email,
+          password: payload.password,
+          name: payload.name,
+        }),
+        {
+          headers: FORM_HEADERS,
+        },
+      );
+      return isMember(response.body)
+        ? response.body
+        : createCompatMember(response.body);
+    },
+    requestPasswordResetEmail: async (payload) => {
+      const response = await client.post<PasswordForgotResponse>(
+        '/api/v1/auth/password/forgot',
+        payload,
+      );
 
-    return response.body;
-  },
-  bootstrapRecoveryTotpRebind: async (payload) => {
-    const response = await client.post<TotpRebindBootstrap>(
-      '/api/v1/auth/mfa-recovery/rebind',
-      payload,
-    );
+      return response.body;
+    },
+    requestPasswordRecoveryChallenge: async (payload) => {
+      const response = await client.post<PasswordRecoveryChallengeResponse>(
+        '/api/v1/auth/password/forgot/challenge',
+        payload,
+      );
 
-    return response.body;
-  },
-  confirmMfaRecoveryRebind: async (payload) => {
-    const response = await client.post<MfaRecoveryRebindConfirmResponse>(
-      '/api/v1/auth/mfa-recovery/rebind/confirm',
-      payload,
-    );
+      return response.body;
+    },
+    bootstrapAuthenticatedTotpRebind: async (payload) => {
+      const response = await client.post<TotpRebindBootstrap>(
+        '/api/v1/members/me/totp/rebind',
+        payload,
+      );
 
-    if (csrfManager) {
-      await csrfManager.onLoginSuccess().catch(() => undefined);
-    }
+      return response.body;
+    },
+    bootstrapRecoveryTotpRebind: async (payload) => {
+      const response = await client.post<TotpRebindBootstrap>(
+        '/api/v1/auth/mfa-recovery/rebind',
+        payload,
+      );
 
-    return response.body;
-  },
-});
+      return response.body;
+    },
+    confirmMfaRecoveryRebind: async (payload) => {
+      const response = await client.post<MfaRecoveryRebindConfirmResponse>(
+        '/api/v1/auth/mfa-recovery/rebind/confirm',
+        payload,
+      );
+
+      if (csrfManager) {
+        await csrfManager.onLoginSuccess().catch(() => undefined);
+      }
+
+      return response.body;
+    },
+  };
+};
