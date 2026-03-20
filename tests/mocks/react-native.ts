@@ -9,6 +9,19 @@ export const Platform = {
   OS: 'ios',
 };
 
+export const NativeModules = {
+  RNCookieManagerIOS: {
+    setFromResponse: async () => true,
+    getFromResponse: async () => ({}),
+    flush: async () => undefined,
+  },
+  RNCookieManagerAndroid: {
+    setFromResponse: async () => true,
+    getFromResponse: async () => ({}),
+    flush: async () => undefined,
+  },
+};
+
 export const Keyboard = {
   addListener: () => ({
     remove: () => {},
