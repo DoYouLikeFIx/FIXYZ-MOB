@@ -1,12 +1,21 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
+import { resolveAuthErrorPresentation } from './auth-errors';
 import {
-  getForgotPasswordErrorFeedback,
-} from './auth-errors';
+  getRecoveryChallengeFailClosedMessage,
+  isPasswordRecoveryChallengeTrustedForSolve,
+  isPasswordRecoveryProofOfWorkChallenge,
+  parsePasswordRecoveryChallengeResponse,
+  reportPasswordRecoveryChallengeFailClosed,
+  solvePasswordRecoveryProofOfWork,
+  type PasswordRecoveryChallengeSession,
+  type RecoveryChallengeFailClosedReason,
+} from './recovery-challenge';
 import { validateForgotPasswordForm } from './form-validation';
 import type {
   PasswordForgotRequest,
-  PasswordRecoveryChallengeResponse,
+  PasswordRecoveryChallengeRequest,
 } from '../types/auth';
 import {
   type PasswordForgotResult,
@@ -17,10 +26,12 @@ import {
 
 interface ForgotPasswordViewModelInput {
   submit: (payload: PasswordForgotRequest) => Promise<PasswordForgotResult>;
-  submitChallenge: (payload: {
-    email: string;
-  }) => Promise<PasswordRecoveryChallengeResult>;
+  submitChallenge: (
+    payload: PasswordRecoveryChallengeRequest,
+  ) => Promise<PasswordRecoveryChallengeResult>;
 }
+
+type ChallengeSolveStatus = 'idle' | 'solving' | 'solved' | 'failed';
 
 export const useForgotPasswordViewModel = ({
   submit,
@@ -29,19 +40,90 @@ export const useForgotPasswordViewModel = ({
   const [email, setEmail] = useState('');
   const [challengeAnswer, setChallengeAnswer] = useState('');
   const [challengeState, setChallengeState] =
-    useState<PasswordRecoveryChallengeResponse | null>(null);
+    useState<PasswordRecoveryChallengeSession | null>(null);
   const [acceptedMessage, setAcceptedMessage] = useState<string | null>(null);
   const [challengeMayBeRequired, setChallengeMayBeRequired] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isBootstrappingChallenge, setIsBootstrappingChallenge] = useState(false);
+  const [challengeSolveStatus, setChallengeSolveStatus] =
+    useState<ChallengeSolveStatus>('idle');
+  const [challengeSolveProgress, setChallengeSolveProgress] = useState(0);
+  const [challengeFailClosedReason, setChallengeFailClosedReason] =
+    useState<RecoveryChallengeFailClosedReason | null>(null);
   const [feedback, setFeedback] =
     useState<ForgotPasswordFormFeedback>(createEmptyForgotPasswordFeedback);
+  const activeChallengeIdRef = useRef<string | null>(null);
+
+  const clearChallengeRuntimeState = () => {
+    activeChallengeIdRef.current = null;
+    setChallengeAnswer('');
+    setChallengeSolveStatus('idle');
+    setChallengeSolveProgress(0);
+    setChallengeFailClosedReason(null);
+  };
+
+  const clearChallengeState = () => {
+    setChallengeState(null);
+    clearChallengeRuntimeState();
+  };
 
   const resetFlowState = () => {
-    setChallengeAnswer('');
-    setChallengeState(null);
+    clearChallengeState();
     setAcceptedMessage(null);
     setChallengeMayBeRequired(false);
+  };
+
+  const updateFeedbackForChallengeFailure = (
+    reason: RecoveryChallengeFailClosedReason,
+  ) => {
+    reportPasswordRecoveryChallengeFailClosed(reason);
+    setChallengeMayBeRequired(true);
+    setChallengeFailClosedReason(reason);
+    setFeedback((current) => ({
+      ...current,
+      globalMessage: getRecoveryChallengeFailClosedMessage(reason),
+    }));
+  };
+
+  const acceptBootstrappedChallenge = (nextChallenge: PasswordRecoveryChallengeSession) => {
+    const currentChallenge = challengeState;
+    if (currentChallenge?.kind === 'proof-of-work' && nextChallenge.kind === 'proof-of-work') {
+      if (
+        nextChallenge.challengeId === currentChallenge.challengeId
+        && nextChallenge.challengeIssuedAtEpochMs === currentChallenge.challengeIssuedAtEpochMs
+      ) {
+        return;
+      }
+
+      if (nextChallenge.challengeIssuedAtEpochMs < currentChallenge.challengeIssuedAtEpochMs) {
+        return;
+      }
+
+      if (
+        nextChallenge.challengeIssuedAtEpochMs === currentChallenge.challengeIssuedAtEpochMs
+        && nextChallenge.challengeId !== currentChallenge.challengeId
+      ) {
+        clearChallengeState();
+        updateFeedbackForChallengeFailure('validity-untrusted');
+        return;
+      }
+    }
+
+    if (nextChallenge.kind === 'proof-of-work' && !isPasswordRecoveryChallengeTrustedForSolve(nextChallenge)) {
+      clearChallengeState();
+      updateFeedbackForChallengeFailure('validity-untrusted');
+      return;
+    }
+
+    activeChallengeIdRef.current =
+      nextChallenge.kind === 'proof-of-work' ? nextChallenge.challengeId : null;
+    setChallengeState(nextChallenge);
+    setChallengeAnswer('');
+    setChallengeSolveProgress(0);
+    setChallengeSolveStatus(nextChallenge.kind === 'proof-of-work' ? 'solving' : 'idle');
+    setChallengeFailClosedReason(null);
+    setFeedback(createEmptyForgotPasswordFeedback());
+    setChallengeMayBeRequired(true);
   };
 
   const updateEmail = (value: string) => {
@@ -50,14 +132,18 @@ export const useForgotPasswordViewModel = ({
     setFeedback(createEmptyForgotPasswordFeedback());
   };
 
-  const submitForgotPassword = async () => {
+  const submitForgotPassword = async (overrideChallengeAnswer?: string) => {
     if (isSubmitting) {
       return;
     }
 
+    const submittedEmail = challengeState?.email ?? email;
+    const effectiveChallengeAnswer =
+      overrideChallengeAnswer ?? challengeAnswer;
+
     const validation = validateForgotPasswordForm({
-      email,
-      challengeAnswer,
+      email: submittedEmail,
+      challengeAnswer: challengeState ? effectiveChallengeAnswer : undefined,
       challengeToken: challengeState?.challengeToken,
     });
 
@@ -66,22 +152,54 @@ export const useForgotPasswordViewModel = ({
       return;
     }
 
+    if (
+      isPasswordRecoveryProofOfWorkChallenge(challengeState)
+      && challengeSolveStatus !== 'solved'
+      && !overrideChallengeAnswer
+    ) {
+      setFeedback((current) => ({
+        ...current,
+        globalMessage: '보안 확인을 계산 중입니다. 잠시만 기다려 주세요.',
+      }));
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const result = await submit(validation.payload);
+      const result = await submit({
+        email: submittedEmail,
+        challengeToken: challengeState?.challengeToken,
+        challengeAnswer: challengeState ? effectiveChallengeAnswer : undefined,
+      });
 
       if (!result.success) {
-        if (challengeState) {
-          resetFlowState();
+        const presentation = resolveAuthErrorPresentation(result.error);
+        const challengeCode = presentation.code;
+
+        if (
+          challengeCode === 'AUTH-022'
+          || challengeCode === 'AUTH-024'
+          || challengeCode === 'AUTH-025'
+        ) {
+          clearChallengeState();
+          setAcceptedMessage(null);
+          setChallengeMayBeRequired(true);
+        } else if (challengeState) {
+          clearChallengeState();
+          setAcceptedMessage(null);
         } else {
           setAcceptedMessage(null);
         }
 
-        setFeedback(getForgotPasswordErrorFeedback(result.error));
+        setFeedback((current) => ({
+          ...current,
+          globalMessage: presentation.message,
+        }));
         return;
       }
 
+      clearChallengeState();
       setFeedback(validation.feedback);
       setAcceptedMessage(result.response.message);
       setChallengeMayBeRequired(result.response.recovery.challengeMayBeRequired);
@@ -108,21 +226,108 @@ export const useForgotPasswordViewModel = ({
 
     try {
       const result = await submitChallenge({
-        email: validation.payload.email,
+        email,
       });
 
       if (!result.success) {
-        setFeedback(getForgotPasswordErrorFeedback(result.error));
+        const presentation = resolveAuthErrorPresentation(result.error);
+        if (challengeState) {
+          clearChallengeState();
+        }
+
+        setFeedback((current) => ({
+          ...current,
+          globalMessage: presentation.message,
+        }));
         return;
       }
 
-      setFeedback(createEmptyForgotPasswordFeedback());
-      setChallengeMayBeRequired(true);
-      setChallengeState(result.challenge);
+      const parsed = parsePasswordRecoveryChallengeResponse(
+        result.challenge,
+        email,
+      );
+
+      if ('error' in parsed) {
+        clearChallengeState();
+        updateFeedbackForChallengeFailure(parsed.error.reason);
+        return;
+      }
+
+      acceptBootstrappedChallenge(parsed.challenge);
     } finally {
       setIsBootstrappingChallenge(false);
     }
   };
+
+  const cancelChallenge = (reason?: RecoveryChallengeFailClosedReason) => {
+    clearChallengeState();
+
+    if (reason) {
+      updateFeedbackForChallengeFailure(reason);
+    }
+  };
+
+  useEffect(() => {
+    if (!isPasswordRecoveryProofOfWorkChallenge(challengeState)) {
+      return undefined;
+    }
+
+    const challengeId = challengeState.challengeId;
+    let cancelled = false;
+
+    setChallengeSolveStatus('solving');
+    setChallengeSolveProgress(0);
+    setChallengeAnswer('');
+
+    void solvePasswordRecoveryProofOfWork(challengeState.challengePayload.proofOfWork, {
+      onProgress: (progress) => {
+        if (cancelled || activeChallengeIdRef.current !== challengeId) {
+          return;
+        }
+
+        setChallengeSolveProgress(progress);
+      },
+      shouldAbort: () => cancelled || activeChallengeIdRef.current !== challengeId,
+    })
+      .then((nonce) => {
+        if (cancelled || activeChallengeIdRef.current !== challengeId) {
+          return;
+        }
+
+        setChallengeAnswer(nonce);
+        setChallengeSolveProgress(100);
+        setChallengeSolveStatus('solved');
+      })
+      .catch((error: unknown) => {
+        if (cancelled || activeChallengeIdRef.current !== challengeId) {
+          return;
+        }
+
+        if (error instanceof Error && error.message === 'recovery-challenge-solve-aborted') {
+          return;
+        }
+
+        clearChallengeState();
+        updateFeedbackForChallengeFailure('validity-untrusted');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [challengeState]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active' && isPasswordRecoveryProofOfWorkChallenge(challengeState)) {
+        clearChallengeState();
+        updateFeedbackForChallengeFailure('validity-untrusted');
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [challengeState]);
 
   return {
     email,
@@ -132,6 +337,9 @@ export const useForgotPasswordViewModel = ({
     challengeMayBeRequired,
     isSubmitting,
     isBootstrappingChallenge,
+    challengeSolveStatus,
+    challengeSolveProgress,
+    challengeFailClosedReason,
     feedback,
     updateEmail,
     updateChallengeAnswer: (value: string) => {
@@ -151,5 +359,6 @@ export const useForgotPasswordViewModel = ({
     },
     submitForgotPassword,
     bootstrapChallenge,
+    cancelChallenge,
   };
 };

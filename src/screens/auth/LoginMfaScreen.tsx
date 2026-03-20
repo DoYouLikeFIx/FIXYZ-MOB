@@ -6,9 +6,9 @@ import { isCompleteOtpCode, sanitizeOtpCodeInput } from '../../auth/totp-code';
 import { useExpiryCountdown } from '../../auth/use-expiry-countdown';
 import { AuthField } from '../../components/auth/AuthField';
 import { AuthScaffold } from '../../components/auth/AuthScaffold';
-import { authSharedStyles as styles } from '../../components/auth/auth-styles';
 import type { LoginChallenge, TotpVerificationRequest } from '../../types/auth';
 import type { FormSubmissionResult } from '../../types/auth-ui';
+import { authSharedStyles as styles } from '../../components/auth/auth-styles';
 
 interface LoginMfaScreenProps {
   bannerMessage?: string | null;

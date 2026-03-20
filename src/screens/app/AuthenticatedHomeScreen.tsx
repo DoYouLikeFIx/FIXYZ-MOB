@@ -11,13 +11,13 @@ import type { AccountApi } from '../../api/account-api';
 import type { NotificationApi } from '../../api/notification-api';
 import type { OrderApi } from '../../api/order-api';
 import { useAccountDashboardViewModel } from '../../account/use-account-dashboard-view-model';
-import { palette } from '../../components/auth/auth-styles';
-import { useNotificationFeedViewModel } from '../../notification/use-notification-feed-view-model';
 import { ExternalOrderRecoverySection } from '../../components/order/ExternalOrderRecoverySection';
+import { useNotificationFeedViewModel } from '../../notification/use-notification-feed-view-model';
 import { hasExternalOrderAccountId } from '../../order/external-order-recovery';
 import { useExternalOrderViewModel } from '../../order/use-external-order-view-model';
 import type { Member } from '../../types/auth';
 import { formatKRW, formatQuantity } from '../../utils/formatters';
+import { palette } from '../../components/auth/auth-styles';
 
 interface AuthenticatedHomeScreenProps {
   accountApi: AccountApi;

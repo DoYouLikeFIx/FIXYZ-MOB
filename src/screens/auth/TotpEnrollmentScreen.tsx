@@ -6,7 +6,6 @@ import { isCompleteOtpCode, sanitizeOtpCodeInput } from '../../auth/totp-code';
 import { useExpiryCountdown } from '../../auth/use-expiry-countdown';
 import { AuthField } from '../../components/auth/AuthField';
 import { AuthScaffold } from '../../components/auth/AuthScaffold';
-import { authSharedStyles as styles, palette } from '../../components/auth/auth-styles';
 import type {
   LoginChallenge,
   TotpEnrollmentBootstrap,
@@ -16,6 +15,7 @@ import type {
   FormSubmissionResult,
   TotpEnrollmentBootstrapResult,
 } from '../../types/auth-ui';
+import { authSharedStyles as styles, palette } from '../../components/auth/auth-styles';
 
 interface TotpEnrollmentScreenProps {
   bannerMessage?: string | null;

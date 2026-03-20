@@ -5,8 +5,8 @@ import type { PasswordResetResult } from '../../types/auth-ui';
 import { useResetPasswordViewModel } from '../../auth/use-reset-password-view-model';
 import { AuthField } from '../../components/auth/AuthField';
 import { AuthScaffold } from '../../components/auth/AuthScaffold';
-import { authSharedStyles as styles } from '../../components/auth/auth-styles';
 import { shouldUseQaPlaintextPasswords } from '../../config/runtime-options';
+import { authSharedStyles as styles } from '../../components/auth/auth-styles';
 
 interface ResetPasswordScreenProps {
   initialToken?: string;

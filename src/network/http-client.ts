@@ -1,3 +1,5 @@
+import CookieManager from '@react-native-cookies/cookies';
+
 import {
   DEFAULT_HEALTH_TIMEOUT_MS,
   type SessionCookiePolicy,
@@ -50,6 +52,43 @@ const isApiResponseEnvelope = (
 };
 
 const SAFE_METHODS = new Set<HttpMethod>(['GET', 'HEAD', 'OPTIONS']);
+
+type CookieManagerBridge = {
+  setFromResponse?: (url: string, cookie: string) => Promise<boolean>;
+  flush?: () => Promise<void>;
+};
+
+let cookieManagerBridge: CookieManagerBridge | undefined;
+
+const resolveCookieManagerBridge = (): CookieManagerBridge | undefined => {
+  if (cookieManagerBridge !== undefined) {
+    return cookieManagerBridge;
+  }
+
+  try {
+    cookieManagerBridge = CookieManager as CookieManagerBridge;
+  } catch {
+    cookieManagerBridge = undefined;
+  }
+
+  return cookieManagerBridge;
+};
+
+const persistResponseCookies = async (url: string, headers: Headers): Promise<void> => {
+  const cookieManager = resolveCookieManagerBridge();
+  const rawCookie = headers.get('set-cookie') ?? headers.get('Set-Cookie');
+
+  if (!cookieManager?.setFromResponse || !rawCookie) {
+    return;
+  }
+
+  try {
+    await cookieManager.setFromResponse(url, rawCookie);
+    await cookieManager.flush?.();
+  } catch {
+    // Ignore cookie bridge failures and fall back to the platform fetch behavior.
+  }
+};
 
 const parseBody = async (response: Response): Promise<unknown> => {
   const text = await response.text();
@@ -147,6 +186,7 @@ export class HttpClient {
           credentials: 'include',
           signal: controller.signal,
         });
+        await persistResponseCookies(url, response.headers);
 
         if (
           response.status === 403

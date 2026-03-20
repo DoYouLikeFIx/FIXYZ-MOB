@@ -7,10 +7,10 @@ import type {
 import { useMfaRecoveryViewModel } from '../../auth/use-mfa-recovery-view-model';
 import { AuthField } from '../../components/auth/AuthField';
 import { AuthScaffold } from '../../components/auth/AuthScaffold';
-import { authSharedStyles as styles, palette } from '../../components/auth/auth-styles';
 import type { AuthStatus } from '../../store/auth-store';
 import type { Member, MemberTotpRebindRequest } from '../../types/auth';
 import type { TotpRebindBootstrapResult } from '../../types/auth-ui';
+import { authSharedStyles as styles, palette } from '../../components/auth/auth-styles';
 
 interface MfaRecoveryScreenProps {
   authStatus: AuthStatus;

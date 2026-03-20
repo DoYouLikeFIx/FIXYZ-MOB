@@ -8,6 +8,7 @@ import type {
   PasswordForgotResult,
   PasswordRecoveryChallengeResult,
 } from '../../types/auth-ui';
+import { isPasswordRecoveryProofOfWorkChallenge } from '../../auth/recovery-challenge';
 import { useForgotPasswordViewModel } from '../../auth/use-forgot-password-view-model';
 import { AuthField } from '../../components/auth/AuthField';
 import { AuthScaffold } from '../../components/auth/AuthScaffold';
@@ -34,6 +35,16 @@ export const ForgotPasswordScreen = ({
     submit: onSubmit,
     submitChallenge: onSubmitChallenge,
   });
+
+  const proofOfWorkChallenge = isPasswordRecoveryProofOfWorkChallenge(viewModel.challengeState)
+    ? viewModel.challengeState
+    : null;
+  const legacyChallenge =
+    viewModel.challengeState && proofOfWorkChallenge === null
+      ? viewModel.challengeState
+      : null;
+  const isChallengeSubmissionBlocked =
+    proofOfWorkChallenge !== null && viewModel.challengeSolveStatus !== 'solved';
 
   return (
     <AuthScaffold
@@ -73,13 +84,13 @@ export const ForgotPasswordScreen = ({
             필요 시 보안 확인 정보를 먼저 받아 같은 이메일로 다시 제출할 수 있습니다.
           </Text>
           <Pressable
-            disabled={viewModel.isSubmitting || viewModel.isBootstrappingChallenge}
+            disabled={viewModel.isBootstrappingChallenge || viewModel.isSubmitting}
             onPress={() => {
               void viewModel.bootstrapChallenge();
             }}
             style={[
               styles.secondaryLinkButton,
-              viewModel.isSubmitting || viewModel.isBootstrappingChallenge
+              viewModel.isBootstrappingChallenge || viewModel.isSubmitting
                 ? styles.primaryButtonDisabled
                 : null,
             ]}
@@ -94,15 +105,57 @@ export const ForgotPasswordScreen = ({
       {viewModel.challengeState ? (
         <View style={styles.inlineInfoCard} testID="forgot-password-challenge-state">
           <Text style={styles.inlineInfoTitle}>보안 확인 정보가 준비되었습니다.</Text>
-          <Text style={styles.inlineInfoBody}>
-            유형: {viewModel.challengeState.challengeType}
-          </Text>
-          <Text style={styles.inlineInfoDetail}>
-            유효 시간: {viewModel.challengeState.challengeTtlSeconds}초
-          </Text>
+          {proofOfWorkChallenge ? (
+            <>
+              <Text style={styles.inlineInfoBody}>
+                유형: {proofOfWorkChallenge.challengeType}
+              </Text>
+              <Text style={styles.inlineInfoDetail}>
+                챌린지 ID: {proofOfWorkChallenge.challengeId}
+              </Text>
+              <Text style={styles.inlineInfoDetail}>
+                난이도: {proofOfWorkChallenge.challengePayload.proofOfWork.difficultyBits} bits
+              </Text>
+              <Text style={styles.inlineInfoDetail}>
+                진행률: {viewModel.challengeSolveProgress}%
+              </Text>
+              <Text style={styles.inlineInfoDetail}>
+                상태:{' '}
+                {viewModel.challengeSolveStatus === 'solved'
+                  ? '계산 완료'
+                  : viewModel.challengeSolveStatus === 'failed'
+                    ? '다시 불러와야 합니다'
+                    : '계산 중'}
+              </Text>
+              <Pressable
+                disabled={viewModel.isSubmitting || viewModel.isBootstrappingChallenge}
+                onPress={() => {
+                  viewModel.cancelChallenge();
+                }}
+                style={[
+                  styles.secondaryLinkButton,
+                  viewModel.isSubmitting || viewModel.isBootstrappingChallenge
+                    ? styles.primaryButtonDisabled
+                    : null,
+                ]}
+                testID="forgot-password-cancel-challenge"
+              >
+                <Text style={styles.secondaryLinkText}>보안 확인 취소</Text>
+              </Pressable>
+            </>
+          ) : legacyChallenge ? (
+            <>
+              <Text style={styles.inlineInfoBody}>
+                유형: {legacyChallenge.challengeType}
+              </Text>
+              <Text style={styles.inlineInfoDetail}>
+                유효 시간: {legacyChallenge.challengeTtlSeconds}초
+              </Text>
+            </>
+          ) : null}
         </View>
       ) : null}
-      {viewModel.challengeState ? (
+      {legacyChallenge ? (
         <AuthField
           errorMessage={viewModel.feedback.fieldMessages.challengeAnswer}
           label="보안 확인 응답"
@@ -119,20 +172,28 @@ export const ForgotPasswordScreen = ({
         </View>
       ) : null}
       <Pressable
-        disabled={viewModel.isSubmitting || viewModel.isBootstrappingChallenge}
+        disabled={
+          viewModel.isSubmitting
+          || viewModel.isBootstrappingChallenge
+          || isChallengeSubmissionBlocked
+        }
         onPress={() => {
           void viewModel.submitForgotPassword();
         }}
         style={[
           styles.primaryButton,
-          viewModel.isSubmitting || viewModel.isBootstrappingChallenge
+          viewModel.isSubmitting || viewModel.isBootstrappingChallenge || isChallengeSubmissionBlocked
             ? styles.primaryButtonDisabled
             : null,
         ]}
         testID="forgot-password-submit"
       >
         <Text style={styles.primaryButtonText}>
-          {viewModel.isSubmitting ? '요청 중...' : '재설정 메일 요청'}
+          {viewModel.isSubmitting
+            ? '요청 중...'
+            : viewModel.challengeState
+              ? '보안 확인 포함 요청'
+              : '재설정 메일 요청'}
         </Text>
       </Pressable>
       <View style={styles.secondaryLinkWrap}>

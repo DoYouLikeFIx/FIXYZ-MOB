@@ -7,8 +7,8 @@ import { buildPasswordRecoveryGuidance } from '../../auth/auth-copy';
 import { useLoginViewModel } from '../../auth/use-login-view-model';
 import { AuthField } from '../../components/auth/AuthField';
 import { AuthScaffold } from '../../components/auth/AuthScaffold';
-import { authSharedStyles as styles } from '../../components/auth/auth-styles';
 import { shouldUseQaPlaintextPasswords } from '../../config/runtime-options';
+import { authSharedStyles as styles } from '../../components/auth/auth-styles';
 
 interface LoginScreenProps {
   bannerMessage?: string | null;

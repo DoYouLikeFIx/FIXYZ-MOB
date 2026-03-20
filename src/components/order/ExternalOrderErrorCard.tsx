@@ -1,7 +1,7 @@
 import { Text, View } from 'react-native';
 
-import { palette } from '../auth/auth-styles';
 import type { ExternalOrderErrorPresentation } from '../../order/external-errors';
+import { palette } from '../auth/auth-styles';
 
 interface ExternalOrderErrorCardProps {
   presentation: ExternalOrderErrorPresentation;

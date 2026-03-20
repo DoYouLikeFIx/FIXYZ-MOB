@@ -1,20 +1,20 @@
 import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { useExpiryCountdown } from '../../auth/use-expiry-countdown';
-import { palette } from '../auth/auth-styles';
 import type {
   ExternalOrderPresetId,
   ExternalOrderPresetOption,
 } from '../../order/external-order-recovery';
 import type { ExternalOrderErrorPresentation } from '../../order/external-errors';
 import type { OrderFlowStep, OrderSessionResponse } from '../../types/order';
-import { formatKRW, formatQuantity } from '../../utils/formatters';
-import { ExternalOrderErrorCard } from './ExternalOrderErrorCard';
-import { buildExternalOrderRecoverySectionModel } from './external-order-recovery-section-model';
 import {
   resolveOrderFinalResultContent,
   resolveOrderProcessingContent,
 } from '../../order/order-session-guidance';
+import { formatKRW, formatQuantity } from '../../utils/formatters';
+import { ExternalOrderErrorCard } from './ExternalOrderErrorCard';
+import { buildExternalOrderRecoverySectionModel } from './external-order-recovery-section-model';
+import { palette } from '../auth/auth-styles';
 
 interface ExternalOrderRecoverySectionProps {
   step: OrderFlowStep;
