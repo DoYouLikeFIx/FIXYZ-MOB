@@ -270,7 +270,7 @@ const parseProofOfWorkChallenge = (
           challengeIssuedAtEpochMs: resolveChallengeIssuedAtEpochMs(value),
         },
       ),
-      };
+    };
   }
 
   if (
@@ -305,7 +305,7 @@ const parseProofOfWorkChallenge = (
       error: createFailure('malformed-payload', {
         challengeIssuedAtEpochMs: resolveChallengeIssuedAtEpochMs(value),
       }),
-      };
+    };
   }
 
   if (Math.abs(receivedAtEpochMs - challengeIssuedAtEpochMs) > 30_000) {
@@ -313,7 +313,7 @@ const parseProofOfWorkChallenge = (
       error: createFailure('clock-skew', {
         challengeIssuedAtEpochMs,
       }),
-      };
+    };
   }
 
   const payloadResult = parseProofOfWorkPayload(value.challengePayload);

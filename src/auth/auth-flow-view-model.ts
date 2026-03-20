@@ -606,7 +606,7 @@ export const createAuthFlowViewModel = ({
     },
 
     async reportPasswordRecoveryChallengeFailClosed(
-        event: RecoveryChallengeFailClosedTelemetryEvent,
+      event: RecoveryChallengeFailClosedTelemetryEvent,
     ): Promise<void> {
       await authService.reportPasswordRecoveryChallengeFailClosed(event);
     },
