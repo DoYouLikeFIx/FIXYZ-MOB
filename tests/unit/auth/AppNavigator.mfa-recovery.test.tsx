@@ -155,6 +155,7 @@ const renderNavigator = (
             challengeTtlSeconds: 300,
           },
         })}
+        onPasswordChallengeFailClosedTelemetry={() => {}}
         onPasswordResetSubmit={async () => ({
           success: true,
           continuation: {},

@@ -1,5 +1,6 @@
 import { createAuthApi } from '@/api/auth-api';
 import { reportPasswordRecoveryChallengeFailClosed } from '@/auth/recovery-challenge';
+import type { HttpClient } from '@/network/http-client';
 import type { Member } from '@/types/auth';
 
 const memberFixture: Member = {
@@ -343,13 +344,13 @@ describe('auth api', () => {
   });
 
   it('keeps fail-closed telemetry transport scoped to the selected auth api instance', async () => {
-    const clientA = {
-      get: vi.fn(),
-      post: vi.fn(async () => response(204, null)),
+    const clientA: Pick<HttpClient, 'get' | 'post'> = {
+      get: vi.fn() as HttpClient['get'],
+      post: vi.fn(async () => response(204, undefined)) as HttpClient['post'],
     };
-    const clientB = {
-      get: vi.fn(),
-      post: vi.fn(async () => response(204, null)),
+    const clientB: Pick<HttpClient, 'get' | 'post'> = {
+      get: vi.fn() as HttpClient['get'],
+      post: vi.fn(async () => response(204, undefined)) as HttpClient['post'],
     };
     const authApiA = createAuthApi({ client: clientA, csrfManager });
     createAuthApi({ client: clientB, csrfManager });
