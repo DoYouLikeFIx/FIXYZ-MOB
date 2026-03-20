@@ -36,9 +36,15 @@ export const ForgotPasswordScreen = ({
     submitChallenge: onSubmitChallenge,
   });
 
-  const isProofOfWorkChallenge = isPasswordRecoveryProofOfWorkChallenge(viewModel.challengeState);
+  const proofOfWorkChallenge = isPasswordRecoveryProofOfWorkChallenge(viewModel.challengeState)
+    ? viewModel.challengeState
+    : null;
+  const legacyChallenge =
+    viewModel.challengeState && proofOfWorkChallenge === null
+      ? viewModel.challengeState
+      : null;
   const isChallengeSubmissionBlocked =
-    isProofOfWorkChallenge && viewModel.challengeSolveStatus !== 'solved';
+    proofOfWorkChallenge !== null && viewModel.challengeSolveStatus !== 'solved';
 
   return (
     <AuthScaffold
@@ -99,16 +105,16 @@ export const ForgotPasswordScreen = ({
       {viewModel.challengeState ? (
         <View style={styles.inlineInfoCard} testID="forgot-password-challenge-state">
           <Text style={styles.inlineInfoTitle}>보안 확인 정보가 준비되었습니다.</Text>
-          {isProofOfWorkChallenge ? (
+          {proofOfWorkChallenge ? (
             <>
               <Text style={styles.inlineInfoBody}>
-                유형: {viewModel.challengeState.challengeType}
+                유형: {proofOfWorkChallenge.challengeType}
               </Text>
               <Text style={styles.inlineInfoDetail}>
-                챌린지 ID: {viewModel.challengeState.challengeId}
+                챌린지 ID: {proofOfWorkChallenge.challengeId}
               </Text>
               <Text style={styles.inlineInfoDetail}>
-                난이도: {viewModel.challengeState.challengePayload.proofOfWork.difficultyBits} bits
+                난이도: {proofOfWorkChallenge.challengePayload.proofOfWork.difficultyBits} bits
               </Text>
               <Text style={styles.inlineInfoDetail}>
                 진행률: {viewModel.challengeSolveProgress}%
@@ -137,19 +143,19 @@ export const ForgotPasswordScreen = ({
                 <Text style={styles.secondaryLinkText}>보안 확인 취소</Text>
               </Pressable>
             </>
-          ) : (
+          ) : legacyChallenge ? (
             <>
               <Text style={styles.inlineInfoBody}>
-                유형: {viewModel.challengeState.challengeType}
+                유형: {legacyChallenge.challengeType}
               </Text>
               <Text style={styles.inlineInfoDetail}>
-                유효 시간: {viewModel.challengeState.challengeTtlSeconds}초
+                유효 시간: {legacyChallenge.challengeTtlSeconds}초
               </Text>
             </>
-          )}
+          ) : null}
         </View>
       ) : null}
-      {viewModel.challengeState && !isProofOfWorkChallenge ? (
+      {legacyChallenge ? (
         <AuthField
           errorMessage={viewModel.feedback.fieldMessages.challengeAnswer}
           label="보안 확인 응답"
