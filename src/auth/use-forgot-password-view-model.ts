@@ -13,7 +13,10 @@ import {
   type RecoveryChallengeFailClosedReason,
 } from './recovery-challenge';
 import { validateForgotPasswordForm } from './form-validation';
-import type { PasswordForgotRequest } from '../types/auth';
+import type {
+  PasswordForgotRequest,
+  PasswordRecoveryChallengeRequest,
+} from '../types/auth';
 import {
   type PasswordForgotResult,
   type PasswordRecoveryChallengeResult,
@@ -23,9 +26,9 @@ import {
 
 interface ForgotPasswordViewModelInput {
   submit: (payload: PasswordForgotRequest) => Promise<PasswordForgotResult>;
-  submitChallenge: (payload: {
-    email: string;
-  }) => Promise<PasswordRecoveryChallengeResult>;
+  submitChallenge: (
+    payload: PasswordRecoveryChallengeRequest,
+  ) => Promise<PasswordRecoveryChallengeResult>;
 }
 
 type ChallengeSolveStatus = 'idle' | 'solving' | 'solved' | 'failed';
