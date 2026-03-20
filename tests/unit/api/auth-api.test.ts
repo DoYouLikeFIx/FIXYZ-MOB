@@ -1,4 +1,5 @@
 import { createAuthApi } from '@/api/auth-api';
+import { reportPasswordRecoveryChallengeFailClosed } from '@/auth/recovery-challenge';
 import type { Member } from '@/types/auth';
 
 const memberFixture: Member = {
@@ -269,6 +270,115 @@ describe('auth api', () => {
       {
         email: 'demo@fix.com',
       },
+    );
+  });
+
+  it('bridges fail-closed recovery challenge telemetry through the mobile auth api client', async () => {
+    client.post.mockResolvedValue(response(204, null));
+    const authApi = createAuthApi({ client, csrfManager });
+
+    reportPasswordRecoveryChallengeFailClosed(
+      'kind-mismatch',
+      {
+        challengeIssuedAtEpochMs: 1_710_000_000_000,
+      },
+      {
+        transport: authApi.reportPasswordRecoveryChallengeFailClosed,
+      },
+    );
+
+    await vi.waitFor(() => {
+      expect(client.post).toHaveBeenCalledWith(
+        '/api/v1/auth/password/forgot/challenge/fail-closed',
+        'reason=kind-mismatch&surface=forgot-password-mobile&challengeIssuedAtEpochMs=1710000000000',
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        },
+      );
+    });
+  });
+
+  it('prefers the shared auth telemetry sink over the mobile transport bridge when installed', async () => {
+    const telemetry = vi.fn();
+    (
+      globalThis as typeof globalThis & {
+        __FIXYZ_AUTH_TELEMETRY__?: (event: unknown) => void;
+      }
+    ).__FIXYZ_AUTH_TELEMETRY__ = telemetry;
+    const authApi = createAuthApi({ client, csrfManager });
+
+    try {
+      reportPasswordRecoveryChallengeFailClosed(
+        'clock-skew',
+        {
+          challengeIssuedAtEpochMs: 1_710_000_000_000,
+        },
+        {
+          transport: authApi.reportPasswordRecoveryChallengeFailClosed,
+        },
+      );
+
+      expect(telemetry).toHaveBeenCalledWith({
+        name: 'password-recovery-challenge-fail-closed',
+        payload: {
+          reason: 'clock-skew',
+          surface: 'forgot-password-mobile',
+          challengeIssuedAtEpochMs: 1_710_000_000_000,
+        },
+      });
+      expect(client.post).not.toHaveBeenCalledWith(
+        '/api/v1/auth/password/forgot/challenge/fail-closed',
+        expect.anything(),
+        expect.anything(),
+      );
+    } finally {
+      delete (
+        globalThis as typeof globalThis & {
+          __FIXYZ_AUTH_TELEMETRY__?: (event: unknown) => void;
+        }
+      ).__FIXYZ_AUTH_TELEMETRY__;
+    }
+  });
+
+  it('keeps fail-closed telemetry transport scoped to the selected auth api instance', async () => {
+    const clientA = {
+      get: vi.fn(),
+      post: vi.fn(async () => response(204, null)),
+    };
+    const clientB = {
+      get: vi.fn(),
+      post: vi.fn(async () => response(204, null)),
+    };
+    const authApiA = createAuthApi({ client: clientA, csrfManager });
+    createAuthApi({ client: clientB, csrfManager });
+
+    reportPasswordRecoveryChallengeFailClosed(
+      'kind-mismatch',
+      {
+        challengeIssuedAtEpochMs: 1_710_000_000_000,
+      },
+      {
+        transport: authApiA.reportPasswordRecoveryChallengeFailClosed,
+      },
+    );
+
+    await vi.waitFor(() => {
+      expect(clientA.post).toHaveBeenCalledWith(
+        '/api/v1/auth/password/forgot/challenge/fail-closed',
+        'reason=kind-mismatch&surface=forgot-password-mobile&challengeIssuedAtEpochMs=1710000000000',
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        },
+      );
+    });
+    expect(clientB.post).not.toHaveBeenCalledWith(
+      '/api/v1/auth/password/forgot/challenge/fail-closed',
+      expect.anything(),
+      expect.anything(),
     );
   });
 

@@ -25,13 +25,19 @@ let currentViewModel: ReturnType<typeof useForgotPasswordViewModel> | null = nul
 const Harness = ({
   submit,
   submitChallenge,
+  reportChallengeFailClosed,
 }: {
   submit: (payload: PasswordForgotRequest) => Promise<PasswordForgotResult>;
   submitChallenge: (
     payload: PasswordRecoveryChallengeRequest,
   ) => Promise<PasswordRecoveryChallengeResult>;
+  reportChallengeFailClosed?: (event: unknown) => void | Promise<void>;
 }) => {
-  currentViewModel = useForgotPasswordViewModel({ submit, submitChallenge });
+  currentViewModel = useForgotPasswordViewModel({
+    submit,
+    submitChallenge,
+    reportChallengeFailClosed,
+  });
   return null;
 };
 
@@ -229,6 +235,173 @@ describe('useForgotPasswordViewModel', () => {
       email: 'Demo+Tag@Fix.com',
       challengeToken: 'challenge-token-v2',
       challengeAnswer: expect.stringMatching(/^\d+$/),
+    });
+  });
+
+  it('fails closed when a replacement proof-of-work challenge reuses the issued-at time with a different id', async () => {
+    const issuedAtEpochMs = Date.now();
+    const expiresAtEpochMs = issuedAtEpochMs + 300_000;
+    const telemetry = vi.fn();
+    let bootstrapCount = 0;
+    (
+      globalThis as typeof globalThis & {
+        __FIXYZ_AUTH_TELEMETRY__?: (event: unknown) => void;
+      }
+    ).__FIXYZ_AUTH_TELEMETRY__ = telemetry;
+
+    const submitChallenge = vi.fn(async (): Promise<PasswordRecoveryChallengeResult> => {
+      bootstrapCount += 1;
+      const challengeId = bootstrapCount === 1 ? 'challenge-id-v2-a' : 'challenge-id-v2-b';
+
+      return {
+        success: true,
+        challenge: {
+          challengeToken: `challenge-token-${challengeId}`,
+          challengeType: 'proof-of-work',
+          challengeTtlSeconds: 300,
+          challengeContractVersion: 2,
+          challengeId,
+          challengeIssuedAtEpochMs: issuedAtEpochMs,
+          challengeExpiresAtEpochMs: expiresAtEpochMs,
+          challengePayload: {
+            kind: 'proof-of-work',
+            proofOfWork: {
+              algorithm: 'SHA-256',
+              seed: `seed-${challengeId}`,
+              difficultyBits: 1,
+              answerFormat: 'nonce-decimal',
+              inputTemplate: '{seed}:{nonce}',
+              inputEncoding: 'utf-8',
+              successCondition: {
+                type: 'leading-zero-bits',
+                minimum: 1,
+              },
+            },
+          },
+        },
+      };
+    });
+    const submit = vi.fn(async (): Promise<PasswordForgotResult> => createAcceptedForgotPasswordResult());
+
+    await act(async () => {
+      create(<Harness submit={submit} submitChallenge={submitChallenge} />);
+    });
+
+    expect(currentViewModel).not.toBeNull();
+    if (!currentViewModel) {
+      throw new Error('view model did not initialize');
+    }
+
+    try {
+      await act(async () => {
+        currentViewModel!.updateEmail('demo@fix.com');
+      });
+
+      await act(async () => {
+        await currentViewModel!.bootstrapChallenge();
+      });
+
+      expect(currentViewModel!.challengeState).toMatchObject({
+        kind: 'proof-of-work',
+        challengeId: 'challenge-id-v2-a',
+      });
+
+      await act(async () => {
+        await currentViewModel!.bootstrapChallenge();
+      });
+
+      expect(currentViewModel!.challengeState).toBeNull();
+      expect(currentViewModel!.challengeFailClosedReason).toBe('validity-untrusted');
+      expect(telemetry).toHaveBeenCalledWith({
+        name: PASSWORD_RECOVERY_CHALLENGE_FAIL_CLOSED_EVENT,
+        payload: {
+          reason: 'validity-untrusted',
+          surface: 'forgot-password-mobile',
+          challengeIssuedAtEpochMs: issuedAtEpochMs,
+        },
+      });
+    } finally {
+      delete (
+        globalThis as typeof globalThis & {
+          __FIXYZ_AUTH_TELEMETRY__?: (event: unknown) => void;
+        }
+      ).__FIXYZ_AUTH_TELEMETRY__;
+    }
+  });
+
+  it('uses the provided fail-closed telemetry reporter without relying on global transport state', async () => {
+    const issuedAtEpochMs = Date.now();
+    const expiresAtEpochMs = issuedAtEpochMs + 300_000;
+    const reportChallengeFailClosed = vi.fn();
+    let bootstrapCount = 0;
+    const submitChallenge = vi.fn(async (): Promise<PasswordRecoveryChallengeResult> => {
+      bootstrapCount += 1;
+      const challengeId = bootstrapCount === 1 ? 'challenge-id-v2-a' : 'challenge-id-v2-b';
+
+      return {
+        success: true,
+        challenge: {
+          challengeToken: `challenge-token-${challengeId}`,
+          challengeType: 'proof-of-work',
+          challengeTtlSeconds: 300,
+          challengeContractVersion: 2,
+          challengeId,
+          challengeIssuedAtEpochMs: issuedAtEpochMs,
+          challengeExpiresAtEpochMs: expiresAtEpochMs,
+          challengePayload: {
+            kind: 'proof-of-work',
+            proofOfWork: {
+              algorithm: 'SHA-256',
+              seed: `seed-${challengeId}`,
+              difficultyBits: 1,
+              answerFormat: 'nonce-decimal',
+              inputTemplate: '{seed}:{nonce}',
+              inputEncoding: 'utf-8',
+              successCondition: {
+                type: 'leading-zero-bits',
+                minimum: 1,
+              },
+            },
+          },
+        },
+      };
+    });
+    const submit = vi.fn(async (): Promise<PasswordForgotResult> => createAcceptedForgotPasswordResult());
+
+    await act(async () => {
+      create(
+        <Harness
+          submit={submit}
+          submitChallenge={submitChallenge}
+          reportChallengeFailClosed={reportChallengeFailClosed}
+        />,
+      );
+    });
+
+    expect(currentViewModel).not.toBeNull();
+    if (!currentViewModel) {
+      throw new Error('view model did not initialize');
+    }
+
+    await act(async () => {
+      currentViewModel!.updateEmail('demo@fix.com');
+    });
+
+    await act(async () => {
+      await currentViewModel!.bootstrapChallenge();
+    });
+
+    await act(async () => {
+      await currentViewModel!.bootstrapChallenge();
+    });
+
+    expect(reportChallengeFailClosed).toHaveBeenCalledWith({
+      name: PASSWORD_RECOVERY_CHALLENGE_FAIL_CLOSED_EVENT,
+      payload: {
+        reason: 'validity-untrusted',
+        surface: 'forgot-password-mobile',
+        challengeIssuedAtEpochMs: issuedAtEpochMs,
+      },
     });
   });
 });
