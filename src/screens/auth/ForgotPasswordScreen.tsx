@@ -8,7 +8,10 @@ import type {
   PasswordForgotResult,
   PasswordRecoveryChallengeResult,
 } from '../../types/auth-ui';
-import { isPasswordRecoveryProofOfWorkChallenge } from '../../auth/recovery-challenge';
+import {
+  isPasswordRecoveryProofOfWorkChallenge,
+  type RecoveryChallengeFailClosedTelemetryEvent,
+} from '../../auth/recovery-challenge';
 import { useForgotPasswordViewModel } from '../../auth/use-forgot-password-view-model';
 import { AuthField } from '../../components/auth/AuthField';
 import { AuthScaffold } from '../../components/auth/AuthScaffold';
@@ -22,6 +25,9 @@ interface ForgotPasswordScreenProps {
   onSubmitChallenge: (
     payload: PasswordRecoveryChallengeRequest,
   ) => Promise<PasswordRecoveryChallengeResult>;
+  onChallengeFailClosedTelemetry?: (
+    event: RecoveryChallengeFailClosedTelemetryEvent,
+  ) => void | Promise<void>;
 }
 
 export const ForgotPasswordScreen = ({
@@ -30,10 +36,12 @@ export const ForgotPasswordScreen = ({
   onResetPasswordPress,
   onSubmit,
   onSubmitChallenge,
+  onChallengeFailClosedTelemetry,
 }: ForgotPasswordScreenProps) => {
   const viewModel = useForgotPasswordViewModel({
     submit: onSubmit,
     submitChallenge: onSubmitChallenge,
+    reportChallengeFailClosed: onChallengeFailClosedTelemetry,
   });
 
   const proofOfWorkChallenge = isPasswordRecoveryProofOfWorkChallenge(viewModel.challengeState)
