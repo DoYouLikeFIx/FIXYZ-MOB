@@ -51,6 +51,7 @@ Each workflow run writes evidence under `docs/ops/security-scan/<YYYYMMDD>/<snap
 - `dependabot-alerts-<repo>.json`
 
 The `index.json` file is repository-local and lists only the current repository in `repositories[]`.
+If upstream alert or CVSS enrichment requests fail, the workflow still writes a blocking `scan-error` summary plus raw error metadata instead of leaving the snapshot empty.
 
 The default `snapshot-id` is `github.run_id-github.run_attempt` in GitHub Actions and a UTC timestamp for local/manual execution. This keeps multiple runs on the same day audit-traceable instead of overwriting the previous snapshot.
 

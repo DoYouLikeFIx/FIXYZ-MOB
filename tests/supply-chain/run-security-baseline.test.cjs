@@ -263,6 +263,7 @@ function createNvdFallbackAlert(repoContext, advisoryId = "GHSA-nvd-retry") {
 function buildBaselineInvocation({
   alertsPayload,
   exceptionRecords,
+  exceptionRegistryContent = null,
   evidenceRunId,
   extraEnv = {},
   branchProtectionFixture = "branch-protection.json",
@@ -279,17 +280,21 @@ function buildBaselineInvocation({
   const alertsPath = path.join(tempRoot, `${evidenceRunId}-alerts.json`);
 
   fs.mkdirSync(path.dirname(exceptionsPath), { recursive: true });
-  fs.writeFileSync(
-    exceptionsPath,
-    JSON.stringify(
-      {
-        policyVersion: "story-0.11-v1",
-        records: exceptionRecords,
-      },
-      null,
-      2,
-    ),
-  );
+  if (typeof exceptionRegistryContent === "string") {
+    fs.writeFileSync(exceptionsPath, exceptionRegistryContent);
+  } else {
+    fs.writeFileSync(
+      exceptionsPath,
+      JSON.stringify(
+        {
+          policyVersion: "story-0.11-v1",
+          records: exceptionRecords,
+        },
+        null,
+        2,
+      ),
+    );
+  }
 
   if (useAlertsFixture) {
     fs.writeFileSync(alertsPath, JSON.stringify(alertsPayload, null, 2));
@@ -635,7 +640,16 @@ test("run-security-baseline surfaces upstream non-JSON failures clearly", async 
     assert.match(result.stderr, /503 Service Unavailable while requesting/);
     assert.match(result.stderr, /upstream alerts unavailable/);
     assert.doesNotMatch(result.stderr, /SyntaxError|Unexpected token/);
-    assert.equal(fs.existsSync(path.join(outputRoot, "index.json")), false);
+    assert.equal(fs.existsSync(path.join(outputRoot, "index.json")), true);
+
+    const summary = readJson(path.join(outputRoot, `scan-summary-${getRepoContext().repoKey}.json`));
+    const rawAlerts = readJson(path.join(outputRoot, `dependabot-alerts-${getRepoContext().repoKey}.json`));
+
+    assert.equal(summary.summary.scanErrorFindings, 1);
+    assert.equal(summary.summary.status, "blocked");
+    assert.match(summary.findings[0].reason, /Dependency security scan failed/);
+    assert.equal(rawAlerts.status, "capture-failed");
+    assert.match(rawAlerts.reason, /503 Service Unavailable/);
   });
 });
 
@@ -702,4 +716,28 @@ test("run-security-baseline retries transient NVD failures before succeeding", a
     assert.equal(alertFinding.cvss, 7.2);
     assert.equal(alertFinding.blocker, true);
   });
+});
+
+test("run-security-baseline retains evidence when the exception registry JSON is invalid", () => {
+  const repoContext = getRepoContext();
+  const { result, outputRoot } = runBaseline({
+    alertsPayload: [],
+    exceptionRecords: [],
+    exceptionRegistryContent: "{ invalid-json",
+    evidenceRunId: "invalid-exception-registry",
+  });
+
+  assert.equal(result.status, 1);
+
+  const index = readJson(path.join(outputRoot, "index.json"));
+  const summary = readJson(path.join(outputRoot, `scan-summary-${repoContext.repoKey}.json`));
+  const branchProtection = readJson(
+    path.join(outputRoot, `branch-protection-${repoContext.repoKey}.json`),
+  );
+
+  assert.equal(index.snapshotId, "invalid-exception-registry");
+  assert.equal(summary.summary.configurationErrorFindings, 1);
+  assert.equal(summary.summary.status, "blocked");
+  assert.match(summary.findings[0].reason, /Exception registry could not be parsed/);
+  assert.equal(branchProtection.status, "bound");
 });
