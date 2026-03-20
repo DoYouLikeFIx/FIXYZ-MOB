@@ -61,32 +61,34 @@ describe('recovery challenge helper', () => {
     );
 
     expect('error' in result).toBe(false);
-    if ('challenge' in result) {
-      expect(result.challenge).toMatchObject({
-        kind: 'proof-of-work',
-        challengeContractVersion: 2,
-        challengeId: 'challenge-id',
-        challengeType: 'proof-of-work',
-        challengeToken: 'challenge-token',
-        challengeTtlSeconds: 300,
-        email: 'demo@fix.com',
-      });
-      expect(result.challenge.challengePayload).toMatchObject({
-        kind: 'proof-of-work',
-        proofOfWork: {
-          algorithm: 'SHA-256',
-          seed: 'seed-value',
-          difficultyBits: 4,
-          answerFormat: 'nonce-decimal',
-          inputTemplate: '{seed}:{nonce}',
-          inputEncoding: 'utf-8',
-          successCondition: {
-            type: 'leading-zero-bits',
-            minimum: 4,
-          },
-        },
-      });
+    if ('error' in result || result.challenge.kind !== 'proof-of-work') {
+      throw new Error('expected a proof-of-work challenge');
     }
+
+    expect(result.challenge).toMatchObject({
+      kind: 'proof-of-work',
+      challengeContractVersion: 2,
+      challengeId: 'challenge-id',
+      challengeType: 'proof-of-work',
+      challengeToken: 'challenge-token',
+      challengeTtlSeconds: 300,
+      email: 'demo@fix.com',
+    });
+    expect(result.challenge.challengePayload).toMatchObject({
+      kind: 'proof-of-work',
+      proofOfWork: {
+        algorithm: 'SHA-256',
+        seed: 'seed-value',
+        difficultyBits: 4,
+        answerFormat: 'nonce-decimal',
+        inputTemplate: '{seed}:{nonce}',
+        inputEncoding: 'utf-8',
+        successCondition: {
+          type: 'leading-zero-bits',
+          minimum: 4,
+        },
+      },
+    });
   });
 
   it('fails closed for mixed-shape and unsupported contract versions', () => {
@@ -155,14 +157,16 @@ describe('recovery challenge helper', () => {
       1_700_000_000_100,
     );
 
-    if ('challenge' in result) {
-      expect(isPasswordRecoveryChallengeTrustedForSolve(result.challenge, 1_700_000_294_500)).toBe(
-        true,
-      );
-      expect(
-        isPasswordRecoveryChallengeTrustedForSolve(result.challenge, 1_700_000_295_500),
-      ).toBe(false);
+    if ('error' in result || result.challenge.kind !== 'proof-of-work') {
+      throw new Error('expected a proof-of-work challenge');
     }
+
+    expect(isPasswordRecoveryChallengeTrustedForSolve(result.challenge, 1_700_000_294_500)).toBe(
+      true,
+    );
+    expect(
+      isPasswordRecoveryChallengeTrustedForSolve(result.challenge, 1_700_000_295_500),
+    ).toBe(false);
   });
 
   it('solves a simple proof-of-work challenge into a decimal nonce', async () => {

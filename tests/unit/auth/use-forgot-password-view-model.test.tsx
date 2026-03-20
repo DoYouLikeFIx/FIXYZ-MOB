@@ -4,6 +4,7 @@ import { PASSWORD_RECOVERY_CHALLENGE_FAIL_CLOSED_EVENT } from '@/auth/recovery-c
 import { useForgotPasswordViewModel } from '@/auth/use-forgot-password-view-model';
 import type {
   PasswordForgotRequest,
+  PasswordRecoveryChallengeRequest,
   PasswordRecoveryChallengeResponse,
 } from '@/types/auth';
 import type {
@@ -26,7 +27,9 @@ const Harness = ({
   submitChallenge,
 }: {
   submit: (payload: PasswordForgotRequest) => Promise<PasswordForgotResult>;
-  submitChallenge: (payload: { email: string }) => Promise<PasswordRecoveryChallengeResult>;
+  submitChallenge: (
+    payload: PasswordRecoveryChallengeRequest,
+  ) => Promise<PasswordRecoveryChallengeResult>;
 }) => {
   currentViewModel = useForgotPasswordViewModel({ submit, submitChallenge });
   return null;
@@ -38,27 +41,29 @@ const createLegacyChallenge = (): PasswordRecoveryChallengeResponse => ({
   challengeTtlSeconds: 300,
 });
 
+const createAcceptedForgotPasswordResult = (): PasswordForgotResult => ({
+  success: true,
+  response: {
+    accepted: true,
+    message: 'If the account is eligible, a reset email will be sent.',
+    recovery: {
+      challengeEndpoint: '/api/v1/auth/password/forgot/challenge',
+      challengeMayBeRequired: true,
+    },
+  },
+});
+
 describe('useForgotPasswordViewModel', () => {
   beforeEach(() => {
     currentViewModel = null;
   });
 
   it('keeps the originally submitted email verbatim when the challenge is solved and submitted later', async () => {
-    const submitChallenge = vi.fn(async () => ({
+    const submitChallenge = vi.fn(async (): Promise<PasswordRecoveryChallengeResult> => ({
       success: true,
       challenge: createLegacyChallenge(),
     }));
-    const submit = vi.fn(async () => ({
-      success: true,
-      response: {
-        accepted: true,
-        message: 'If the account is eligible, a reset email will be sent.',
-        recovery: {
-          challengeEndpoint: '/api/v1/auth/password/forgot/challenge',
-          challengeMayBeRequired: true,
-        },
-      },
-    }));
+    const submit = vi.fn(async (): Promise<PasswordForgotResult> => createAcceptedForgotPasswordResult());
 
     await act(async () => {
       create(<Harness submit={submit} submitChallenge={submitChallenge} />);
@@ -103,7 +108,7 @@ describe('useForgotPasswordViewModel', () => {
       }
     ).__FIXYZ_AUTH_TELEMETRY__ = telemetry;
 
-    const submitChallenge = vi.fn(async () => ({
+    const submitChallenge = vi.fn(async (): Promise<PasswordRecoveryChallengeResult> => ({
       success: true,
       challenge: {
         challengeToken: 'challenge-token',
@@ -112,17 +117,7 @@ describe('useForgotPasswordViewModel', () => {
         challengeContractVersion: 3,
       } as PasswordRecoveryChallengeResponse,
     }));
-    const submit = vi.fn(async () => ({
-      success: true,
-      response: {
-        accepted: true,
-        message: 'If the account is eligible, a reset email will be sent.',
-        recovery: {
-          challengeEndpoint: '/api/v1/auth/password/forgot/challenge',
-          challengeMayBeRequired: true,
-        },
-      },
-    }));
+    const submit = vi.fn(async (): Promise<PasswordForgotResult> => createAcceptedForgotPasswordResult());
 
     await act(async () => {
       create(<Harness submit={submit} submitChallenge={submitChallenge} />);
@@ -162,7 +157,7 @@ describe('useForgotPasswordViewModel', () => {
   it('solves a proof-of-work challenge through the forgot-password view model and submits the original email with the solved nonce', async () => {
     const issuedAtEpochMs = Date.now();
     const expiresAtEpochMs = issuedAtEpochMs + 300_000;
-    const submitChallenge = vi.fn(async () => ({
+    const submitChallenge = vi.fn(async (): Promise<PasswordRecoveryChallengeResult> => ({
       success: true,
       challenge: {
         challengeToken: 'challenge-token-v2',
@@ -189,17 +184,7 @@ describe('useForgotPasswordViewModel', () => {
         },
       },
     }));
-    const submit = vi.fn(async () => ({
-      success: true,
-      response: {
-        accepted: true,
-        message: 'If the account is eligible, a reset email will be sent.',
-        recovery: {
-          challengeEndpoint: '/api/v1/auth/password/forgot/challenge',
-          challengeMayBeRequired: true,
-        },
-      },
-    }));
+    const submit = vi.fn(async (): Promise<PasswordForgotResult> => createAcceptedForgotPasswordResult());
 
     await act(async () => {
       create(<Harness submit={submit} submitChallenge={submitChallenge} />);
