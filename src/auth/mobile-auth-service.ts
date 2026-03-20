@@ -221,6 +221,10 @@ export const createMobileAuthService = ({
     }
   },
 
+  async reportPasswordRecoveryChallengeFailClosed(event) {
+    await authApi.reportPasswordRecoveryChallengeFailClosed(event);
+  },
+
   async resetPassword(
     payload: PasswordResetRequest,
   ): Promise<PasswordResetResult> {

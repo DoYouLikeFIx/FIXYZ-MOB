@@ -13,20 +13,29 @@ export const RECOVERY_CHALLENGE_FAIL_CLOSED_MESSAGES = {
 
 export type RecoveryChallengeFailClosedReason = keyof typeof RECOVERY_CHALLENGE_FAIL_CLOSED_MESSAGES;
 
+export interface RecoveryChallengeFailClosedContext {
+  challengeIssuedAtEpochMs?: number;
+}
+
 export const PASSWORD_RECOVERY_CHALLENGE_FAIL_CLOSED_EVENT =
   'password-recovery-challenge-fail-closed';
 
-type RecoveryChallengeFailClosedTelemetryEvent = {
+export type RecoveryChallengeFailClosedTelemetryEvent = {
   name: typeof PASSWORD_RECOVERY_CHALLENGE_FAIL_CLOSED_EVENT;
   payload: {
     reason: RecoveryChallengeFailClosedReason;
     surface: 'forgot-password-mobile';
+    challengeIssuedAtEpochMs?: number;
   };
 };
 
-type RecoveryChallengeFailClosedTelemetrySink = (
+export type RecoveryChallengeFailClosedTelemetrySink = (
   event: RecoveryChallengeFailClosedTelemetryEvent,
 ) => void;
+
+export type RecoveryChallengeFailClosedTelemetryTransport = (
+  event: RecoveryChallengeFailClosedTelemetryEvent,
+) => void | Promise<void>;
 
 const defaultRecoveryChallengeFailClosedTelemetrySink: RecoveryChallengeFailClosedTelemetrySink = (
   event,
@@ -39,6 +48,7 @@ const defaultRecoveryChallengeFailClosedTelemetrySink: RecoveryChallengeFailClos
 export interface RecoveryChallengeParseError {
   reason: RecoveryChallengeFailClosedReason;
   message: string;
+  challengeIssuedAtEpochMs?: number;
 }
 
 interface RecoveryChallengeParseSuccess {
@@ -112,10 +122,25 @@ const hasAnyV2Fields = (value: RecordLike) =>
 const hasLegacyShape = (value: RecordLike) =>
   hasOnlyExactKeys(value, ['challengeToken', 'challengeType', 'challengeTtlSeconds']);
 
-const createFailure = (reason: RecoveryChallengeFailClosedReason): RecoveryChallengeParseError => ({
-  reason,
-  message: RECOVERY_CHALLENGE_FAIL_CLOSED_MESSAGES[reason],
-});
+const createFailure = (
+  reason: RecoveryChallengeFailClosedReason,
+  context: RecoveryChallengeFailClosedContext = {},
+): RecoveryChallengeParseError => {
+  const failure: RecoveryChallengeParseError = {
+    reason,
+    message: RECOVERY_CHALLENGE_FAIL_CLOSED_MESSAGES[reason],
+  };
+  if (typeof context.challengeIssuedAtEpochMs === 'number') {
+    failure.challengeIssuedAtEpochMs = context.challengeIssuedAtEpochMs;
+  }
+  return failure;
+};
+
+const resolveChallengeIssuedAtEpochMs = (
+  value: RecordLike,
+) => isFiniteNumber(value.challengeIssuedAtEpochMs)
+  ? Math.floor(value.challengeIssuedAtEpochMs)
+  : undefined;
 
 const normalizeTtlSeconds = (
   value: unknown,
@@ -239,8 +264,13 @@ const parseProofOfWorkChallenge = (
 
   if (challengeType !== 'proof-of-work') {
     return {
-      error: createFailure(isString(challengeType) ? 'mixed-shape' : 'malformed-payload'),
-    };
+      error: createFailure(
+        isString(challengeType) ? 'mixed-shape' : 'malformed-payload',
+        {
+          challengeIssuedAtEpochMs: resolveChallengeIssuedAtEpochMs(value),
+        },
+      ),
+      };
   }
 
   if (
@@ -272,14 +302,18 @@ const parseProofOfWorkChallenge = (
     )
   ) {
     return {
-      error: createFailure('malformed-payload'),
-    };
+      error: createFailure('malformed-payload', {
+        challengeIssuedAtEpochMs: resolveChallengeIssuedAtEpochMs(value),
+      }),
+      };
   }
 
   if (Math.abs(receivedAtEpochMs - challengeIssuedAtEpochMs) > 30_000) {
     return {
-      error: createFailure('clock-skew'),
-    };
+      error: createFailure('clock-skew', {
+        challengeIssuedAtEpochMs,
+      }),
+      };
   }
 
   const payloadResult = parseProofOfWorkPayload(value.challengePayload);
@@ -318,26 +352,51 @@ export const getRecoveryChallengeFailClosedMessage = (
 
 export const reportPasswordRecoveryChallengeFailClosed = (
   reason: RecoveryChallengeFailClosedReason,
+  context: RecoveryChallengeFailClosedContext = {},
+  options?: {
+    transport?: RecoveryChallengeFailClosedTelemetryTransport;
+  },
 ) => {
+  const telemetryPayload: RecoveryChallengeFailClosedTelemetryEvent['payload'] = {
+    reason,
+    surface: 'forgot-password-mobile',
+  };
+  if (typeof context.challengeIssuedAtEpochMs === 'number') {
+    telemetryPayload.challengeIssuedAtEpochMs = context.challengeIssuedAtEpochMs;
+  }
+
   const telemetryEvent: RecoveryChallengeFailClosedTelemetryEvent = {
     name: PASSWORD_RECOVERY_CHALLENGE_FAIL_CLOSED_EVENT,
-    payload: {
-      reason,
-      surface: 'forgot-password-mobile',
-    },
+    payload: telemetryPayload,
   };
+
+  const globalTelemetrySink = (
+    globalThis as typeof globalThis & {
+      __FIXYZ_AUTH_TELEMETRY__?: RecoveryChallengeFailClosedTelemetrySink;
+    }
+  ).__FIXYZ_AUTH_TELEMETRY__;
+
+  if (globalTelemetrySink) {
+    try {
+      globalTelemetrySink(telemetryEvent);
+    } catch {
+      // Telemetry must never break the recovery flow.
+    }
+    return;
+  }
+
+  if (options?.transport) {
+    void Promise.resolve(
+      options.transport(telemetryEvent),
+    ).catch(() => undefined);
+    return;
+  }
 
   try {
     defaultRecoveryChallengeFailClosedTelemetrySink(telemetryEvent);
   } catch {
     // Telemetry must never break the recovery flow.
   }
-
-  (
-    globalThis as typeof globalThis & {
-      __FIXYZ_AUTH_TELEMETRY__?: RecoveryChallengeFailClosedTelemetrySink;
-    }
-  ).__FIXYZ_AUTH_TELEMETRY__?.(telemetryEvent);
 };
 
 export const parsePasswordRecoveryChallengeResponse = (
@@ -354,7 +413,9 @@ export const parsePasswordRecoveryChallengeResponse = (
   if ('challengeContractVersion' in value) {
     if (value.challengeContractVersion !== 2) {
       return {
-        error: createFailure('unknown-version'),
+        error: createFailure('unknown-version', {
+          challengeIssuedAtEpochMs: resolveChallengeIssuedAtEpochMs(value),
+        }),
       };
     }
 
@@ -363,8 +424,10 @@ export const parsePasswordRecoveryChallengeResponse = (
 
   if (hasAnyV2Fields(value)) {
     return {
-      error: createFailure('mixed-shape'),
-    };
+      error: createFailure('mixed-shape', {
+        challengeIssuedAtEpochMs: resolveChallengeIssuedAtEpochMs(value),
+      }),
+      };
   }
 
   if (hasLegacyShape(value)) {

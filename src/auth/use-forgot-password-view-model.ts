@@ -9,6 +9,7 @@ import {
   parsePasswordRecoveryChallengeResponse,
   reportPasswordRecoveryChallengeFailClosed,
   solvePasswordRecoveryProofOfWork,
+  type RecoveryChallengeFailClosedTelemetryTransport,
   type PasswordRecoveryChallengeSession,
   type RecoveryChallengeFailClosedReason,
 } from './recovery-challenge';
@@ -29,6 +30,7 @@ interface ForgotPasswordViewModelInput {
   submitChallenge: (
     payload: PasswordRecoveryChallengeRequest,
   ) => Promise<PasswordRecoveryChallengeResult>;
+  reportChallengeFailClosed?: RecoveryChallengeFailClosedTelemetryTransport;
 }
 
 type ChallengeSolveStatus = 'idle' | 'solving' | 'solved' | 'failed';
@@ -36,6 +38,7 @@ type ChallengeSolveStatus = 'idle' | 'solving' | 'solved' | 'failed';
 export const useForgotPasswordViewModel = ({
   submit,
   submitChallenge,
+  reportChallengeFailClosed,
 }: ForgotPasswordViewModelInput) => {
   const [email, setEmail] = useState('');
   const [challengeAnswer, setChallengeAnswer] = useState('');
@@ -75,8 +78,11 @@ export const useForgotPasswordViewModel = ({
 
   const updateFeedbackForChallengeFailure = (
     reason: RecoveryChallengeFailClosedReason,
+    context?: Parameters<typeof reportPasswordRecoveryChallengeFailClosed>[1],
   ) => {
-    reportPasswordRecoveryChallengeFailClosed(reason);
+    reportPasswordRecoveryChallengeFailClosed(reason, context, {
+      transport: reportChallengeFailClosed,
+    });
     setChallengeMayBeRequired(true);
     setChallengeFailClosedReason(reason);
     setFeedback((current) => ({
@@ -104,14 +110,18 @@ export const useForgotPasswordViewModel = ({
         && nextChallenge.challengeId !== currentChallenge.challengeId
       ) {
         clearChallengeState();
-        updateFeedbackForChallengeFailure('validity-untrusted');
+        updateFeedbackForChallengeFailure('validity-untrusted', {
+          challengeIssuedAtEpochMs: nextChallenge.challengeIssuedAtEpochMs,
+        });
         return;
       }
     }
 
     if (nextChallenge.kind === 'proof-of-work' && !isPasswordRecoveryChallengeTrustedForSolve(nextChallenge)) {
       clearChallengeState();
-      updateFeedbackForChallengeFailure('validity-untrusted');
+      updateFeedbackForChallengeFailure('validity-untrusted', {
+        challengeIssuedAtEpochMs: nextChallenge.challengeIssuedAtEpochMs,
+      });
       return;
     }
 
@@ -249,7 +259,9 @@ export const useForgotPasswordViewModel = ({
 
       if ('error' in parsed) {
         clearChallengeState();
-        updateFeedbackForChallengeFailure(parsed.error.reason);
+        updateFeedbackForChallengeFailure(parsed.error.reason, {
+          challengeIssuedAtEpochMs: parsed.error.challengeIssuedAtEpochMs,
+        });
         return;
       }
 
@@ -308,7 +320,9 @@ export const useForgotPasswordViewModel = ({
         }
 
         clearChallengeState();
-        updateFeedbackForChallengeFailure('validity-untrusted');
+        updateFeedbackForChallengeFailure('validity-untrusted', {
+          challengeIssuedAtEpochMs: challengeState.challengeIssuedAtEpochMs,
+        });
       });
 
     return () => {
@@ -320,7 +334,9 @@ export const useForgotPasswordViewModel = ({
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState !== 'active' && isPasswordRecoveryProofOfWorkChallenge(challengeState)) {
         clearChallengeState();
-        updateFeedbackForChallengeFailure('validity-untrusted');
+        updateFeedbackForChallengeFailure('validity-untrusted', {
+          challengeIssuedAtEpochMs: challengeState.challengeIssuedAtEpochMs,
+        });
       }
     });
 
