@@ -5,12 +5,12 @@ import { useMfaRecoveryRebindViewModel } from '../../auth/use-mfa-recovery-rebin
 import { useExpiryCountdown } from '../../auth/use-expiry-countdown';
 import { AuthField } from '../../components/auth/AuthField';
 import { AuthScaffold } from '../../components/auth/AuthScaffold';
-import { authSharedStyles as styles, palette } from '../../components/auth/auth-styles';
 import type {
   MfaRecoveryRebindConfirmRequest,
   TotpRebindBootstrap,
 } from '../../types/auth';
 import type { MfaRecoveryRebindConfirmationResult } from '../../types/auth-ui';
+import { authSharedStyles as styles, palette } from '../../components/auth/auth-styles';
 
 interface MfaRecoveryRebindScreenProps {
   bootstrap: TotpRebindBootstrap;

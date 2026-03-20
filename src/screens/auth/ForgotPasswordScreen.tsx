@@ -8,11 +8,11 @@ import type {
   PasswordForgotResult,
   PasswordRecoveryChallengeResult,
 } from '../../types/auth-ui';
+import { isPasswordRecoveryProofOfWorkChallenge } from '../../auth/recovery-challenge';
 import { useForgotPasswordViewModel } from '../../auth/use-forgot-password-view-model';
 import { AuthField } from '../../components/auth/AuthField';
 import { AuthScaffold } from '../../components/auth/AuthScaffold';
 import { authSharedStyles as styles } from '../../components/auth/auth-styles';
-import { isPasswordRecoveryProofOfWorkChallenge } from '../../auth/recovery-challenge';
 
 interface ForgotPasswordScreenProps {
   onLoginPress: () => void;
