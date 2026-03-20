@@ -111,6 +111,12 @@ Real backend verification flows live in `e2e/maestro/auth-live`.
 
 `scripts/run-maestro-auth-suite.sh` now handles `auth-live` launch-argument rendering automatically, so the live flows can be executed through the checked-in runner without a manual `envsubst` step. The runner also skips the local mock auth server when the target lives under `e2e/maestro/auth-live`.
 
+Vitest also includes a live auth contract regression for the mobile runtime itself:
+
+- `LIVE_API_BASE_URL=http://localhost:18080 LIVE_EMAIL=<registered_email> LIVE_PASSWORD=<same_password> npm run test:live:auth`
+- If `LIVE_EMAIL` / `LIVE_PASSWORD` are omitted, the test self-registers a disposable member before replaying an invalid-credentials login.
+- The Vitest live regression captures the real `/api/v1/auth/login` error body and `X-Correlation-Id` header, then verifies the mobile normalized error preserves that backend correlation metadata.
+
 - Register against a live backend:
   - `export PATH="$PATH:$HOME/.maestro/bin"`
   - `LIVE_API_BASE_URL=http://localhost:18080 LIVE_EMAIL=<unique_email> LIVE_NAME='<display_name>' LIVE_PASSWORD=<password> DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/01-register-success-live-be.yaml`

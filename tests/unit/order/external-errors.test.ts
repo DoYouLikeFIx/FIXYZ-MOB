@@ -1,8 +1,9 @@
-import { createNormalizedHttpError } from '@/network/errors';
 import {
   DEFAULT_SERVER_ERROR_MESSAGE,
   NETWORK_ERROR_MESSAGE,
   TIMEOUT_ERROR_MESSAGE,
+  createNormalizedHttpError,
+  normalizeHttpError,
 } from '@/network/errors';
 import {
   isVisibleExternalOrderError,
@@ -56,6 +57,24 @@ describe('mobile external order errors', () => {
     expect(presentation.title).toBe(externalOrderErrorContract.unknownFallback.title);
     expect(presentation.nextStep).toBe(
       externalOrderErrorContract.unknownFallback.nextStep,
+    );
+  });
+
+  it('surfaces response-header correlation ids in visible support references', () => {
+    const normalized = normalizeHttpError({
+      status: 503,
+      data: {
+        message: 'Bad gateway',
+      },
+      headers: new Headers({
+        'X-Correlation-Id': 'trace-header-external-001',
+      }),
+    });
+    const presentation = resolveExternalOrderErrorPresentation(normalized);
+
+    expect(isVisibleExternalOrderError(normalized)).toBe(true);
+    expect(presentation.supportReference).toBe(
+      `${externalOrderErrorContract.supportReferenceLabel}: trace-header-external-001`,
     );
   });
 

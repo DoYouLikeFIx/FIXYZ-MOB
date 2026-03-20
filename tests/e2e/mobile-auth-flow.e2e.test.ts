@@ -24,11 +24,16 @@ interface RecordedCall {
   body?: string;
 }
 
-const jsonResponse = (status: number, body: unknown): Response =>
+const jsonResponse = (
+  status: number,
+  body: unknown,
+  headers?: HeadersInit,
+): Response =>
   new Response(JSON.stringify(body), {
     status,
     headers: {
       'Content-Type': 'application/json',
+      ...(headers ?? {}),
     },
   });
 
@@ -43,26 +48,31 @@ const errorResponse = (
   status: number,
   code: string,
   message: string,
-  detail: string,
+  path: string,
   options?: {
-    traceId?: string;
+    correlationId?: string;
     retryAfterSeconds?: number;
     enrollUrl?: string;
+    operatorCode?: string;
+    recoveryUrl?: string;
+    headers?: HeadersInit;
   },
 ): Response =>
-  jsonResponse(status, {
-    success: false,
-    data: null,
-    traceId: options?.traceId,
-    error: {
+  jsonResponse(
+    status,
+    {
       code,
       message,
-      detail,
+      path,
+      correlationId: options?.correlationId,
+      operatorCode: options?.operatorCode,
       retryAfterSeconds: options?.retryAfterSeconds,
       enrollUrl: options?.enrollUrl,
+      recoveryUrl: options?.recoveryUrl,
       timestamp: '2026-03-08T00:00:00.000Z',
     },
-  });
+    options?.headers,
+  );
 
 const normalizeHeaders = (headers: HeadersInit | undefined): Record<string, string> => {
   if (!headers) {
@@ -197,7 +207,7 @@ const notFoundResponse = (request: RecordedCall): Response =>
     404,
     'SYS-404',
     `Unhandled request: ${request.method} ${getPathname(request.url)}`,
-    'Test harness request handler is missing a route',
+    getPathname(request.url),
   );
 
 describe('Backend-driven mobile auth workflow contract tests', () => {
@@ -437,7 +447,10 @@ describe('Backend-driven mobile auth workflow contract tests', () => {
           401,
           'AUTH-001',
           'Credential mismatch',
-          'Username or password was invalid',
+          '/api/v1/auth/login',
+          {
+            correlationId: 'corr-auth-invalid-001',
+          },
         );
       }
 
@@ -458,6 +471,14 @@ describe('Backend-driven mobile auth workflow contract tests', () => {
       getLoginErrorFeedback((result as Extract<typeof result, { success: false }>).error),
     ).toMatchObject({
       globalMessage: '이메일 또는 비밀번호가 올바르지 않습니다.',
+    });
+    expect(
+      resolveAuthErrorPresentation(
+        (result as Extract<typeof result, { success: false }>).error,
+      ),
+    ).toMatchObject({
+      semantic: 'invalid-credentials',
+      traceId: 'corr-auth-invalid-001',
     });
     expect(authStore.getState()).toMatchObject({
       status: 'anonymous',
@@ -487,7 +508,7 @@ describe('Backend-driven mobile auth workflow contract tests', () => {
           403,
           'AUTH-009',
           'TOTP enrollment required',
-          'User must enroll before OTP verification',
+          '/api/v1/auth/otp/verify',
           {
             enrollUrl: '/settings/totp/enroll',
           },
@@ -544,7 +565,7 @@ describe('Backend-driven mobile auth workflow contract tests', () => {
           429,
           'RATE-001',
           'Too many attempts',
-          'Too many OTP verification attempts',
+          '/api/v1/auth/otp/verify',
           {
             retryAfterSeconds: 30,
           },
@@ -606,7 +627,7 @@ describe('Backend-driven mobile auth workflow contract tests', () => {
           409,
           'AUTH-017',
           'Email already exists',
-          'Duplicate email',
+          '/api/v1/auth/register',
         );
       }
 
@@ -652,9 +673,9 @@ describe('Backend-driven mobile auth workflow contract tests', () => {
           500,
           'AUTH-999',
           'Raw backend details should not leak',
-          'Unexpected auth subsystem failure',
+          '/api/v1/auth/login',
           {
-            traceId: 'corr-123',
+            correlationId: 'corr-body-123',
           },
         );
       }
@@ -676,7 +697,7 @@ describe('Backend-driven mobile auth workflow contract tests', () => {
       getLoginErrorFeedback((result as Extract<typeof result, { success: false }>).error),
     ).toMatchObject({
       globalMessage:
-        '로그인을 완료할 수 없습니다. 잠시 후 다시 시도해 주세요. 문제가 계속되면 고객센터에 문의해 주세요. 문의 코드: corr-123',
+        '로그인을 완료할 수 없습니다. 잠시 후 다시 시도해 주세요. 문제가 계속되면 고객센터에 문의해 주세요. 문의 코드: corr-body-123',
     });
     expect(
       resolveAuthErrorPresentation(
@@ -684,7 +705,63 @@ describe('Backend-driven mobile auth workflow contract tests', () => {
       ),
     ).toMatchObject({
       semantic: 'unknown',
-      traceId: 'corr-123',
+      traceId: 'corr-body-123',
+    });
+  });
+
+  it('maps unknown password-step failures to the safe fallback when correlation only arrives in the response header', async () => {
+    const harness = createHarness((request) => {
+      if (request.method === 'GET' && getPathname(request.url) === '/api/v1/auth/csrf') {
+        return successResponse(200, {
+          token: 'csrf-auth-unknown-header',
+        });
+      }
+
+      if (request.method === 'POST' && getPathname(request.url) === '/api/v1/auth/login') {
+        return errorResponse(
+          500,
+          'AUTH-999',
+          'Raw backend details should not leak',
+          '/api/v1/auth/login',
+          {
+            headers: {
+              'X-Correlation-Id': 'corr-header-123',
+            },
+          },
+        );
+      }
+
+      return notFoundResponse(request);
+    });
+
+    authStore.initialize(null);
+
+    const result = await harness.viewModel.submitLogin({
+      email: 'demo@fix.com',
+      password: 'wrong-password',
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+    });
+    expect(
+      getLoginErrorFeedback((result as Extract<typeof result, { success: false }>).error),
+    ).toMatchObject({
+      globalMessage:
+        '로그인을 완료할 수 없습니다. 잠시 후 다시 시도해 주세요. 문제가 계속되면 고객센터에 문의해 주세요. 문의 코드: corr-header-123',
+    });
+    expect(
+      resolveAuthErrorPresentation(
+        (result as Extract<typeof result, { success: false }>).error,
+      ),
+    ).toMatchObject({
+      semantic: 'unknown',
+      traceId: 'corr-header-123',
+    });
+    expect((result as Extract<typeof result, { success: false }>).error).toMatchObject({
+      code: 'AUTH-999',
+      status: 500,
+      traceId: 'corr-header-123',
     });
   });
 
@@ -701,7 +778,7 @@ describe('Backend-driven mobile auth workflow contract tests', () => {
           401,
           'AUTH-003',
           'Authentication required',
-          'Session is missing or invalid',
+          '/api/v1/auth/session',
         );
       }
 
@@ -742,7 +819,7 @@ describe('Backend-driven mobile auth workflow contract tests', () => {
           401,
           'AUTH-003',
           'Authentication required',
-          'Session is missing or invalid',
+          '/api/v1/auth/session',
         );
       }
 

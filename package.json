@@ -10,6 +10,7 @@
     "start": "react-native start --port 8088",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:live:auth": "vitest run tests/e2e/mobile-auth-live.e2e.test.ts",
     "e2e:maestro:auth": "bash ./scripts/run-maestro-auth-suite.sh",
     "e2e:maestro:order": "bash ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/order",
     "test:collab-webhook": "node --test tests/collab-webhook/*.test.js",

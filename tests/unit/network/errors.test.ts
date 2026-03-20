@@ -105,6 +105,74 @@ describe('network error normalization', () => {
     expect(normalized.traceId).toBe('trace-auth-001');
   });
 
+  it('falls back to the response header correlation id when an envelope omits traceId', () => {
+    const normalized = normalizeHttpError({
+      status: 422,
+      data: {
+        success: false,
+        data: null,
+        error: {
+          code: 'FEP-001',
+          message: '주문 서비스를 잠시 사용할 수 없습니다',
+          detail: '거래소 연결이 일시적으로 불안정합니다. 주문이 접수되지 않았을 수 있습니다.',
+          operatorCode: 'CIRCUIT_OPEN',
+          timestamp: '2026-03-09T00:00:00Z',
+        },
+      },
+      headers: new Headers({
+        'Retry-After': '10',
+        'X-Correlation-Id': 'trace-envelope-header-001',
+      }),
+    });
+
+    expect(normalized.code).toBe('FEP-001');
+    expect(normalized.message).toBe('주문 서비스를 잠시 사용할 수 없습니다');
+    expect(normalized.detail).toBe('거래소 연결이 일시적으로 불안정합니다. 주문이 접수되지 않았을 수 있습니다.');
+    expect(normalized.operatorCode).toBe('CIRCUIT_OPEN');
+    expect(normalized.retryAfterSeconds).toBe(10);
+    expect(normalized.traceId).toBe('trace-envelope-header-001');
+  });
+
+  it('falls back to the response header correlation id when the body does not provide one', () => {
+    const normalized = normalizeHttpError({
+      status: 502,
+      data: {
+        message: 'Bad gateway',
+      },
+      headers: new Headers({
+        'X-Correlation-Id': 'trace-header-001',
+      }),
+    });
+
+    expect(normalized.traceId).toBe('trace-header-001');
+  });
+
+  it('ignores unsupported direct-payload fields while preserving supported error metadata', () => {
+    const normalized = normalizeHttpError({
+      status: 429,
+      data: {
+        code: 'RATE-001',
+        message: 'Too many attempts',
+        correlationId: 'corr-789',
+        operatorCode: 'ABUSE_LIMIT',
+        retryAfterSeconds: 30,
+        remainingAttempts: 0,
+        email: 'secret@example.com',
+        accountNumber: '123-45-6789',
+      },
+      headers: new Headers({
+        'X-Correlation-Id': 'trace-header-should-not-win',
+      }),
+    });
+
+    expect(normalized.traceId).toBe('corr-789');
+    expect(normalized.operatorCode).toBe('ABUSE_LIMIT');
+    expect(normalized.retryAfterSeconds).toBe(30);
+    expect(normalized.remainingAttempts).toBe(0);
+    expect(normalized).not.toHaveProperty('email');
+    expect(normalized).not.toHaveProperty('accountNumber');
+  });
+
   it('normalizes timeout and network failures', () => {
     expect(normalizeHttpError({ timeout: true }).message).toBe(TIMEOUT_ERROR_MESSAGE);
     expect(normalizeHttpError({ network: true }).message).toBe(NETWORK_ERROR_MESSAGE);
