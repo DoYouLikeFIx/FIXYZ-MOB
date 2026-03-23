@@ -1,0 +1,36 @@
+appId: org.reactjs.native.example.FIXYZMob
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    arguments:
+      mobApiBaseUrl: ${LIVE_API_BASE_URL}
+      mobDisableAnimations: true
+- extendedWaitUntil:
+    visible:
+      id: login-email
+    timeout: 20000
+- tapOn:
+    id: login-email
+- extendedWaitUntil:
+    visible:
+      id: login-email
+    timeout: 10000
+- tapOn:
+    id: login-email
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: ${LIVE_EMAIL}
+- tapOn:
+    id: login-password
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: ${LIVE_PASSWORD}
+- pressKey: Enter
+- tapOn:
+    text: "지금 안 함"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: login-mfa-input
+    timeout: 20000
