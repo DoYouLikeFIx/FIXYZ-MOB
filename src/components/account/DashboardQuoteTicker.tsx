@@ -10,38 +10,34 @@ const quoteDateFormatter = new Intl.DateTimeFormat('ko-KR', {
   minute: '2-digit',
 });
 
-const PREVIEW_CANDLE_COUNT = 18;
-const CHART_HEIGHT = 152;
-
-interface PreviewCandle {
-  open: number;
-  close: number;
-  high: number;
-  low: number;
-}
-
-const normalizePrice = (value: number) => Math.max(10, Math.round(value / 10) * 10);
-
-const hashKey = (input: string) =>
-  input.split('').reduce((accumulator, character) => (
-    (accumulator * 31 + character.charCodeAt(0)) % 2_147_483_647
-  ), 7);
-
-const createSeededRandom = (seed: number) => {
-  let value = seed % 2_147_483_647;
-
-  if (value <= 0) {
-    value += 2_147_483_646;
-  }
-
-  return () => {
-    value = (value * 16_807) % 2_147_483_647;
-    return (value - 1) / 2_147_483_646;
-  };
+type QuoteTone = {
+  accent: string;
+  accentSoft: string;
+  badgeBorder: string;
+  boardBackground: string;
+  boardBorder: string;
+  panelSurface: string;
+  stateLabel: string;
+  statusFill: string;
+  statusNote: string;
+  statusText: string;
 };
 
-const getChartTone = (quoteSourceMode: QuoteSourceMode | null | undefined) => {
+const getQuoteTone = (quoteSourceMode: QuoteSourceMode | null | undefined): QuoteTone => {
   switch (quoteSourceMode) {
+    case 'LIVE':
+      return {
+        accent: '#FF8A3D',
+        accentSoft: 'rgba(255, 138, 61, 0.14)',
+        badgeBorder: 'rgba(255, 138, 61, 0.26)',
+        boardBackground: '#0B1018',
+        boardBorder: 'rgba(255,255,255,0.08)',
+        panelSurface: '#101722',
+        stateLabel: '직결 시세',
+        statusFill: 'rgba(255, 138, 61, 0.18)',
+        statusNote: '실시간 기준',
+        statusText: '#FFB07A',
+      };
     case 'DELAYED':
       return {
         accent: '#F6B84A',
@@ -49,15 +45,12 @@ const getChartTone = (quoteSourceMode: QuoteSourceMode | null | undefined) => {
         badgeBorder: 'rgba(246, 184, 74, 0.28)',
         boardBackground: '#0B1018',
         boardBorder: 'rgba(255,255,255,0.08)',
-        chartSurface: '#101722',
-        gridColor: 'rgba(246, 184, 74, 0.12)',
-        priceGuide: 'rgba(246, 184, 74, 0.34)',
-        scaleSurface: '#151D2A',
+        panelSurface: '#101722',
         stateLabel: '지연 호가',
         statusFill: 'rgba(246, 184, 74, 0.18)',
+        statusNote: '지연 도착 데이터',
         statusText: '#FFD27E',
-        volatilityRatio: 0.0036,
-      } as const;
+      };
     case 'REPLAY':
       return {
         accent: '#72A9FF',
@@ -65,87 +58,72 @@ const getChartTone = (quoteSourceMode: QuoteSourceMode | null | undefined) => {
         badgeBorder: 'rgba(114, 169, 255, 0.26)',
         boardBackground: '#0B1018',
         boardBorder: 'rgba(255,255,255,0.08)',
-        chartSurface: '#101722',
-        gridColor: 'rgba(114, 169, 255, 0.12)',
-        priceGuide: 'rgba(114, 169, 255, 0.34)',
-        scaleSurface: '#151D2A',
+        panelSurface: '#101722',
         stateLabel: '리플레이 기준',
         statusFill: 'rgba(114, 169, 255, 0.18)',
+        statusNote: '재생 스냅샷',
         statusText: '#A9CBFF',
-        volatilityRatio: 0.0028,
-      } as const;
-    case 'LIVE':
+      };
     default:
       return {
-        accent: '#FF8A3D',
-        accentSoft: 'rgba(255, 138, 61, 0.14)',
-        badgeBorder: 'rgba(255, 138, 61, 0.26)',
+        accent: '#A7B2C6',
+        accentSoft: 'rgba(167, 178, 198, 0.14)',
+        badgeBorder: 'rgba(167, 178, 198, 0.24)',
         boardBackground: '#0B1018',
         boardBorder: 'rgba(255,255,255,0.08)',
-        chartSurface: '#101722',
-        gridColor: 'rgba(255, 138, 61, 0.12)',
-        priceGuide: 'rgba(255, 138, 61, 0.34)',
-        scaleSurface: '#151D2A',
-        stateLabel: '직결 시세',
-        statusFill: 'rgba(255, 138, 61, 0.18)',
-        statusText: '#FFB07A',
-        volatilityRatio: 0.0048,
-      } as const;
+        panelSurface: '#101722',
+        stateLabel: '미확인 시세',
+        statusFill: 'rgba(167, 178, 198, 0.16)',
+        statusNote: '새 source mode',
+        statusText: '#D4DBE8',
+      };
   }
 };
 
-const buildPreviewCandles = (
-  marketPrice: number,
-  symbol: string,
-  quoteSourceMode: QuoteSourceMode | null | undefined,
-) => {
-  const chartTone = getChartTone(quoteSourceMode);
-  const random = createSeededRandom(hashKey(`${symbol}:${quoteSourceMode ?? 'UNKNOWN'}`));
-  const closes = Array.from({ length: PREVIEW_CANDLE_COUNT }, (_, index) => {
-    const progress = index / Math.max(PREVIEW_CANDLE_COUNT - 1, 1);
-    const wave = Math.sin(progress * Math.PI * 1.7 + random() * 0.6);
-    const drift = (progress - 0.5) * marketPrice * chartTone.volatilityRatio * 1.6;
-    const jitter = (random() - 0.5) * marketPrice * chartTone.volatilityRatio * 0.75;
-
-    return marketPrice + wave * marketPrice * chartTone.volatilityRatio + drift + jitter;
-  });
-  const shift = marketPrice - closes[closes.length - 1];
-
-  return closes.map((closeValue, index) => {
-    const previousClose = index === 0
-      ? closeValue + shift - marketPrice * chartTone.volatilityRatio * 0.65
-      : closes[index - 1] + shift;
-    const driftBias = index < 10 ? 1 : -1;
-    const bodyOffset =
-      driftBias * marketPrice * chartTone.volatilityRatio * (0.16 + random() * 0.18);
-    const close = normalizePrice(closeValue + shift);
-    const open = normalizePrice(previousClose - bodyOffset);
-    const high = normalizePrice(
-      Math.max(open, close) + marketPrice * chartTone.volatilityRatio * (0.14 + random() * 0.2),
-    );
-    const low = normalizePrice(
-      Math.min(open, close) - marketPrice * chartTone.volatilityRatio * (0.14 + random() * 0.2),
-    );
-
-    return {
-      close,
-      high,
-      low,
-      open,
-    };
-  });
+const formatModeLabel = (quoteSourceMode: QuoteSourceMode | null | undefined) => {
+  const normalized = typeof quoteSourceMode === 'string' ? quoteSourceMode.trim() : '';
+  return normalized || 'UNKNOWN';
 };
 
-const buildChartMetrics = (candles: PreviewCandle[]) => {
-  const max = Math.max(...candles.map((candle) => candle.high));
-  const min = Math.min(...candles.map((candle) => candle.low));
-  const safeRange = max - min || 1;
+const formatTimestampLabel = (value: string | null | undefined) => {
+  if (!value) {
+    return '시각 확인 필요';
+  }
 
-  return {
-    max,
-    min,
-    toPixels: (value: number) => ((value - min) / safeRange) * CHART_HEIGHT,
-  };
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) {
+    return '시각 확인 필요';
+  }
+
+  return quoteDateFormatter.format(new Date(timestamp));
+};
+
+const formatFreshnessAge = (quoteAsOf: string, asOf: string) => {
+  const quoteTime = new Date(quoteAsOf).getTime();
+  const asOfTime = new Date(asOf).getTime();
+
+  if (!Number.isFinite(quoteTime) || !Number.isFinite(asOfTime)) {
+    return '시각 확인 필요';
+  }
+
+  const deltaMs = Math.abs(asOfTime - quoteTime);
+
+  if (deltaMs < 60_000) {
+    return '동일 시각';
+  }
+
+  const deltaMinutes = Math.round(deltaMs / 60_000);
+
+  if (deltaMinutes < 60) {
+    return `${deltaMinutes}분 차이`;
+  }
+
+  const hours = Math.floor(deltaMinutes / 60);
+  const minutes = deltaMinutes % 60;
+
+  return minutes > 0
+    ? `${hours}시간 ${minutes}분 차이`
+    : `${hours}시간 차이`;
 };
 
 interface DashboardQuoteTickerProps {
@@ -196,6 +174,62 @@ const MetaChip = ({
   </View>
 );
 
+const SignalCard = ({
+  helper,
+  label,
+  value,
+  valueTestID,
+}: {
+  helper: string;
+  label: string;
+  value: string;
+  valueTestID?: string;
+}) => (
+  <View
+    style={{
+      flexGrow: 1,
+      minWidth: 150,
+      gap: 4,
+      borderRadius: 16,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      backgroundColor: 'rgba(255,255,255,0.03)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.06)',
+    }}
+  >
+    <Text
+      style={{
+        fontSize: 10,
+        fontWeight: '700',
+        color: 'rgba(255,255,255,0.46)',
+      }}
+    >
+      {label}
+    </Text>
+    <Text
+      style={{
+        fontSize: 15,
+        fontWeight: '800',
+        color: '#F6F8FC',
+        fontVariant: ['tabular-nums'],
+      }}
+      testID={valueTestID}
+    >
+      {value}
+    </Text>
+    <Text
+      style={{
+        fontSize: 11,
+        lineHeight: 16,
+        color: 'rgba(255,255,255,0.5)',
+      }}
+    >
+      {helper}
+    </Text>
+  </View>
+);
+
 export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) => {
   if (
     position.marketPrice === null
@@ -206,19 +240,11 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
     return null;
   }
 
-  const chartTone = getChartTone(position.quoteSourceMode);
-  const candles = buildPreviewCandles(
-    position.marketPrice,
-    position.symbol,
-    position.quoteSourceMode,
-  );
-  const chartMetrics = buildChartMetrics(candles);
-  const currentPriceY = CHART_HEIGHT - chartMetrics.toPixels(position.marketPrice);
-  const scaleValues = [
-    { label: 'HIGH', value: chartMetrics.max },
-    { label: 'NOW', value: position.marketPrice },
-    { label: 'LOW', value: chartMetrics.min },
-  ];
+  const quoteTone = getQuoteTone(position.quoteSourceMode);
+  const modeLabel = formatModeLabel(position.quoteSourceMode);
+  const freshnessAge = formatFreshnessAge(position.quoteAsOf, position.asOf);
+  const quoteAsOfLabel = formatTimestampLabel(position.quoteAsOf);
+  const asOfLabel = formatTimestampLabel(position.asOf);
 
   return (
     <View
@@ -227,9 +253,9 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
         borderRadius: 24,
         paddingHorizontal: 14,
         paddingVertical: 14,
-        backgroundColor: chartTone.boardBackground,
+        backgroundColor: quoteTone.boardBackground,
         borderWidth: 1,
-        borderColor: chartTone.boardBorder,
+        borderColor: quoteTone.boardBorder,
         shadowColor: '#000000',
         shadowOffset: { width: 0, height: 14 },
         shadowOpacity: 0.22,
@@ -264,7 +290,7 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
               color: '#F6F8FC',
             }}
           >
-            시장가 확인용 차트 미리보기
+            시장가 확인용 freshness 패널
           </Text>
         </View>
 
@@ -273,9 +299,9 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
             borderRadius: 999,
             paddingHorizontal: 10,
             paddingVertical: 6,
-            backgroundColor: chartTone.accentSoft,
+            backgroundColor: quoteTone.accentSoft,
             borderWidth: 1,
-            borderColor: chartTone.badgeBorder,
+            borderColor: quoteTone.badgeBorder,
           }}
         >
           <Text
@@ -283,11 +309,11 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
               fontSize: 10,
               fontWeight: '800',
               letterSpacing: 0.5,
-              color: chartTone.accent,
+              color: quoteTone.accent,
               textTransform: 'uppercase',
             }}
           >
-            1D Preview
+            Snapshot
           </Text>
         </View>
       </View>
@@ -298,9 +324,9 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
           borderRadius: 20,
           paddingHorizontal: 14,
           paddingVertical: 14,
-          backgroundColor: chartTone.chartSurface,
+          backgroundColor: quoteTone.panelSurface,
           borderWidth: 1,
-          borderColor: chartTone.boardBorder,
+          borderColor: quoteTone.boardBorder,
         }}
       >
         <View
@@ -354,18 +380,18 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
                   borderRadius: 999,
                   paddingHorizontal: 10,
                   paddingVertical: 4,
-                  backgroundColor: chartTone.statusFill,
+                  backgroundColor: quoteTone.statusFill,
                 }}
               >
                 <Text
                   style={{
                     fontSize: 10,
                     fontWeight: '800',
-                    color: chartTone.statusText,
+                    color: quoteTone.statusText,
                   }}
                   testID="mobile-dashboard-quote-ticker-state"
                 >
-                  {chartTone.stateLabel}
+                  {quoteTone.stateLabel}
                 </Text>
               </View>
             </View>
@@ -399,7 +425,7 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
                   color: 'rgba(255,255,255,0.58)',
                 }}
               >
-                호가 기준 {quoteDateFormatter.format(new Date(position.quoteAsOf))}
+                호가 기준 {quoteAsOfLabel}
               </Text>
             </View>
           </View>
@@ -416,9 +442,9 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
                 borderRadius: 999,
                 paddingHorizontal: 11,
                 paddingVertical: 6,
-                backgroundColor: chartTone.accentSoft,
+                backgroundColor: quoteTone.accentSoft,
                 borderWidth: 1,
-                borderColor: chartTone.badgeBorder,
+                borderColor: quoteTone.badgeBorder,
               }}
             >
               <Text
@@ -426,11 +452,11 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
                   fontSize: 11,
                   fontWeight: '900',
                   letterSpacing: 0.3,
-                  color: chartTone.accent,
+                  color: quoteTone.accent,
                 }}
                 testID="mobile-dashboard-quote-ticker-mode"
               >
-                {position.quoteSourceMode}
+                {modeLabel}
               </Text>
             </View>
 
@@ -439,10 +465,10 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
                 fontSize: 10,
                 fontWeight: '700',
                 color: 'rgba(255,255,255,0.44)',
-                textTransform: 'uppercase',
               }}
+              testID="mobile-dashboard-quote-ticker-status-note"
             >
-              snapshot-seeded
+              {quoteTone.statusNote}
             </Text>
           </View>
         </View>
@@ -456,190 +482,37 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
           <View
             style={{
               flexDirection: 'row',
-              gap: 10,
-              alignItems: 'stretch',
+              flexWrap: 'wrap',
+              gap: 8,
             }}
           >
-            <View
-              style={{
-                flex: 1,
-                position: 'relative',
-                height: CHART_HEIGHT,
-                borderRadius: 16,
-                overflow: 'hidden',
-                backgroundColor: 'rgba(255,255,255,0.03)',
-                borderWidth: 1,
-                borderColor: 'rgba(255,255,255,0.05)',
-              }}
-            >
-              {Array.from({ length: 4 }, (_, index) => (
-                <View
-                  key={`grid-${index + 1}`}
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    right: 0,
-                    top: index * (CHART_HEIGHT / 3),
-                    height: 1,
-                    backgroundColor: chartTone.gridColor,
-                  }}
-                />
-              ))}
-
-              <View
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  right: 0,
-                  top: currentPriceY,
-                  height: 1,
-                  backgroundColor: chartTone.priceGuide,
-                }}
-              />
-
-              <View
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  flexDirection: 'row',
-                  alignItems: 'stretch',
-                  gap: 3,
-                  paddingHorizontal: 5,
-                  paddingVertical: 8,
-                }}
-              >
-                {candles.map((candle, index) => {
-                  const openHeight = chartMetrics.toPixels(candle.open);
-                  const closeHeight = chartMetrics.toPixels(candle.close);
-                  const highHeight = chartMetrics.toPixels(candle.high);
-                  const lowHeight = chartMetrics.toPixels(candle.low);
-                  const upperBodyHeight = Math.max(openHeight, closeHeight);
-                  const lowerBodyHeight = Math.min(openHeight, closeHeight);
-                  const isBullish = candle.close >= candle.open;
-
-                  return (
-                    <View
-                      key={`mobile-candle-${index + 1}`}
-                      style={{
-                        flex: 1,
-                        position: 'relative',
-                      }}
-                      testID="mobile-dashboard-quote-ticker-candle"
-                    >
-                      <View
-                        style={{
-                          position: 'absolute',
-                          left: '50%',
-                          marginLeft: -1,
-                          width: 2,
-                          top: CHART_HEIGHT - highHeight - 8,
-                          bottom: lowHeight + 8,
-                          borderRadius: 999,
-                          backgroundColor: isBullish ? chartTone.accent : 'rgba(214,223,237,0.62)',
-                        }}
-                      />
-                      <View
-                        style={{
-                          position: 'absolute',
-                          left: '50%',
-                          marginLeft: -3.5,
-                          width: 7,
-                          top: CHART_HEIGHT - upperBodyHeight - 8,
-                          bottom: lowerBodyHeight + 8,
-                          minHeight: 8,
-                          borderRadius: 999,
-                          backgroundColor: isBullish ? chartTone.accent : '#E9EFFA',
-                        }}
-                      />
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-
-            <View
-              style={{
-                width: 66,
-                justifyContent: 'space-between',
-              }}
-            >
-              {scaleValues.map((item) => (
-                <View
-                  key={item.label}
-                  style={{
-                    borderRadius: 14,
-                    paddingHorizontal: 8,
-                    paddingVertical: 8,
-                    backgroundColor: chartTone.scaleSurface,
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.06)',
-                    gap: 3,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 9,
-                      fontWeight: '800',
-                      letterSpacing: 0.4,
-                      color: 'rgba(255,255,255,0.46)',
-                    }}
-                  >
-                    {item.label}
-                  </Text>
-                  <Text
-                    style={{
-                      fontSize: 11,
-                      fontWeight: '800',
-                      color: item.label === 'NOW' ? chartTone.accent : '#F5F7FB',
-                      fontVariant: ['tabular-nums'],
-                    }}
-                    numberOfLines={1}
-                  >
-                    {formatKRW(item.value)}
-                  </Text>
-                </View>
-              ))}
-            </View>
+            <SignalCard
+              label="시각 차이"
+              value={freshnessAge}
+              valueTestID="mobile-dashboard-quote-ticker-freshness-age"
+              helper="quoteAsOf 대비 조회 기준 차이"
+            />
+            <SignalCard
+              label="Source 해석"
+              value={quoteTone.statusNote}
+              helper="backend source mode를 그대로 보여줍니다."
+            />
+            <SignalCard
+              label="표시 원칙"
+              value="히스토리 차트 미사용"
+              helper="실제 가격 흐름을 합성하지 않습니다."
+            />
           </View>
 
-          <View
+          <Text
             style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
+              fontSize: 11,
+              lineHeight: 17,
+              color: 'rgba(255,255,255,0.42)',
             }}
           >
-            <Text
-              style={{
-                fontSize: 10,
-                fontWeight: '700',
-                color: 'rgba(255,255,255,0.44)',
-                textTransform: 'uppercase',
-              }}
-            >
-              open
-            </Text>
-            <Text
-              style={{
-                fontSize: 10,
-                fontWeight: '700',
-                color: 'rgba(255,255,255,0.44)',
-                textTransform: 'uppercase',
-              }}
-            >
-              intraday preview
-            </Text>
-            <Text
-              style={{
-                fontSize: 10,
-                fontWeight: '700',
-                color: 'rgba(255,255,255,0.44)',
-                textTransform: 'uppercase',
-              }}
-            >
-              now
-            </Text>
-          </View>
+            서버가 내려준 quote freshness 메타데이터만 요약합니다.
+          </Text>
         </View>
 
         <View
@@ -651,7 +524,7 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
         >
           <MetaChip
             label="호가 기준"
-            value={quoteDateFormatter.format(new Date(position.quoteAsOf))}
+            value={quoteAsOfLabel}
             valueTestID="mobile-dashboard-quote-ticker-quote-as-of"
           />
           <MetaChip
@@ -661,23 +534,13 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
           />
           <MetaChip
             label="조회 기준"
-            value={quoteDateFormatter.format(new Date(position.asOf))}
+            value={asOfLabel}
           />
           <MetaChip
             label="데이터 상태"
-            value={chartTone.stateLabel}
+            value={quoteTone.stateLabel}
           />
         </View>
-
-        <Text
-          style={{
-            fontSize: 11,
-            fontWeight: '600',
-            color: 'rgba(255,255,255,0.42)',
-          }}
-        >
-          차트는 최신 snapshot을 기반으로 만든 미리보기이며, 실제 분봉 히스토리와는 다를 수 있습니다.
-        </Text>
       </View>
     </View>
   );

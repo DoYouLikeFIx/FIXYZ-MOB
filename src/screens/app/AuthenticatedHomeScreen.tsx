@@ -27,6 +27,19 @@ const quoteDateFormatter = new Intl.DateTimeFormat('ko-KR', {
   minute: '2-digit',
 });
 
+const formatQuoteTimestamp = (value: string | null | undefined) => {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+
+  return quoteDateFormatter.format(new Date(timestamp));
+};
+
 interface AuthenticatedHomeScreenProps {
   accountApi: AccountApi;
   member: Member;
@@ -77,6 +90,10 @@ export const AuthenticatedHomeScreen = ({
     isRefreshingSession,
     orderApi,
   });
+  const dashboardPosition = accountDashboard.position;
+  const formattedDashboardQuoteAsOf = formatQuoteTimestamp(
+    dashboardPosition ? dashboardPosition.quoteAsOf : null,
+  );
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9F5F1' }}>
@@ -584,13 +601,13 @@ export const AuthenticatedHomeScreen = ({
                 ...(
                   accountDashboard.position.marketPrice !== null
                   && accountDashboard.position.marketPrice !== undefined
-                  && accountDashboard.position.quoteAsOf
+                  && formattedDashboardQuoteAsOf
                   && accountDashboard.position.quoteSourceMode
                     ? [
                         ['평가 단가', formatKRW(accountDashboard.position.marketPrice), 'mobile-dashboard-market-price'] as const,
                         [
                           '호가 기준 시각',
-                          quoteDateFormatter.format(new Date(accountDashboard.position.quoteAsOf)),
+                          formattedDashboardQuoteAsOf,
                           'mobile-dashboard-quote-as-of',
                         ] as const,
                         [
