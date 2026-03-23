@@ -168,8 +168,12 @@ maestro test \
   "$FLOW_LOGIN_PATH"
 if [[ -n "${LIVE_TOTP_KEY:-}" ]]; then
   LIVE_OTP_CODE="$(
+    STORY_11_5_HELPER_PATH="$REPO_ROOT/scripts/story-11-5-live-dashboard-account.mjs" \
     node --input-type=module <<'NODE'
-import { generateStableTotp } from '/Users/yeongjae/fixyz/scripts/story-11-5-live-dashboard-account.mjs';
+import { pathToFileURL } from 'node:url';
+
+const helperModuleUrl = pathToFileURL(process.env.STORY_11_5_HELPER_PATH).href;
+const { generateStableTotp } = await import(helperModuleUrl);
 
 const code = await generateStableTotp(process.env.LIVE_TOTP_KEY ?? '', 22_000);
 process.stdout.write(code);

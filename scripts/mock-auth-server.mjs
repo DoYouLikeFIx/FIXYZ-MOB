@@ -52,6 +52,9 @@ const getNotificationItemsForSession = (sessionId) => {
   return created;
 };
 
+const getPositionQueryStateKey = (sessionId, accountId, symbol) =>
+  `${sessionId ?? 'anonymous'}:${accountId}:${symbol}`;
+
 const normalizeIdentifier = (value) => value.trim().toLowerCase();
 
 const scriptedLoginErrors = new Map([
@@ -1641,7 +1644,7 @@ const server = http.createServer(async (request, response) => {
       }
 
       const matchedPosition = fixture.positions.find((position) => position.symbol === symbol);
-      const positionKey = `${requestedAccountId}:${symbol}`;
+      const positionKey = getPositionQueryStateKey(cookies.JSESSIONID, requestedAccountId, symbol);
       const nextQueryCount = (positionQueryCountsByKey.get(positionKey) ?? 0) + 1;
       positionQueryCountsByKey.set(positionKey, nextQueryCount);
       const shouldReplayTicker =
