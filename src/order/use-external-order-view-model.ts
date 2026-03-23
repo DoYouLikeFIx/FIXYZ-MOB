@@ -10,6 +10,9 @@ import {
   draftFromPreset,
   externalOrderPresetOptions,
   matchPresetIdFromDraft,
+  resolveExternalOrderDraftSelection,
+  resolveExternalOrderTypeFromPresetId,
+  type ExternalOrderType,
   type ExternalOrderPresetId,
   type ExternalOrderFieldErrors,
   validateExternalOrderDraft,
@@ -41,6 +44,7 @@ import {
   initialOrderFlowState,
   orderFlowReducer,
 } from './order-flow-state';
+import type { AccountPosition } from '../types/account';
 
 interface UseExternalOrderViewModelInput {
   accountId?: string;
@@ -50,6 +54,7 @@ interface UseExternalOrderViewModelInput {
 }
 
 const ORDER_STATUS_POLL_INTERVAL_MS = 30_000;
+const MARKET_TICKER_POLL_INTERVAL_MS = 5_000;
 const POSITION_EXECUTION_RESULTS = new Set([
   'FILLED',
   'PARTIAL_FILL',
@@ -157,11 +162,81 @@ const DAILY_SELL_LIMIT_FIELD_ERROR =
   '일일 매도 가능 한도를 초과했습니다.';
 const VALIDATION_GUIDANCE =
   '입력값을 확인한 뒤 다시 시도해 주세요.';
+const STALE_QUOTE_GUIDANCE =
+  '시장가 주문 사전검증에 사용한 시세가 최신이 아닙니다. 대시보드의 quoteAsOf와 source badge를 확인한 뒤 같은 주문을 다시 시작해 주세요.';
 
 type OrderabilityBoundaryType =
   | 'insufficient-position'
   | 'daily-sell-limit'
   | 'generic-orderability';
+
+const isStaleQuoteValidation = (
+  normalized: {
+    code?: string;
+    details?: Record<string, unknown>;
+    operatorCode?: string;
+    userMessageKey?: string;
+  },
+  code?: string,
+) => {
+  const hasStaleQuoteDetails =
+    typeof normalized.details?.quoteSnapshotId === 'string'
+    || typeof normalized.details?.quoteSourceMode === 'string'
+    || typeof normalized.details?.snapshotAgeMs === 'number'
+    || typeof normalized.details?.symbol === 'string';
+
+  return (
+    code === 'VALIDATION-003'
+    && (
+      normalized.userMessageKey === 'error.quote.stale'
+      || normalized.operatorCode === 'STALE_QUOTE'
+      || hasStaleQuoteDetails
+    )
+  );
+};
+
+const buildStaleQuoteGuidance = (normalized: {
+  details?: Record<string, unknown>;
+}) => {
+  const detailParts: string[] = [];
+
+  if (
+    normalized.details
+    && typeof normalized.details.symbol === 'string'
+    && normalized.details.symbol.trim()
+  ) {
+    detailParts.push(`symbol=${normalized.details.symbol.trim()}`);
+  }
+
+  if (
+    normalized.details
+    && typeof normalized.details.quoteSnapshotId === 'string'
+    && normalized.details.quoteSnapshotId.trim()
+  ) {
+    detailParts.push(`quoteSnapshotId=${normalized.details.quoteSnapshotId.trim()}`);
+  }
+
+  if (
+    normalized.details
+    && typeof normalized.details.quoteSourceMode === 'string'
+    && normalized.details.quoteSourceMode.trim()
+  ) {
+    detailParts.push(`quoteSourceMode=${normalized.details.quoteSourceMode.trim()}`);
+  }
+
+  if (
+    normalized.details
+    && typeof normalized.details.snapshotAgeMs === 'number'
+    && Number.isFinite(normalized.details.snapshotAgeMs)
+    && normalized.details.snapshotAgeMs >= 0
+  ) {
+    detailParts.push(`snapshotAgeMs=${Math.trunc(normalized.details.snapshotAgeMs)}`);
+  }
+
+  return detailParts.length > 0
+    ? `${STALE_QUOTE_GUIDANCE} ${detailParts.join(', ')}`
+    : STALE_QUOTE_GUIDANCE;
+};
 
 const resolveOrderabilityBoundaryType = (
   normalized: {
@@ -196,18 +271,21 @@ const resolveServerValidationFieldErrors = (
   fieldErrors: ExternalOrderFieldErrors;
   guidance: string | null;
   inlineError: string | null;
+  staleQuoteGuidance: string | null;
 } => {
   if (typeof error !== 'object' || error === null) {
     return {
       fieldErrors: {},
       guidance: null,
       inlineError: null,
+      staleQuoteGuidance: null,
     };
   }
 
   const normalized = error as {
     code?: string;
     message?: string;
+    details?: Record<string, unknown>;
     operatorCode?: string;
     userMessageKey?: string;
   };
@@ -219,6 +297,7 @@ const resolveServerValidationFieldErrors = (
       fieldErrors: {},
       guidance: '매수 가능 금액을 확인하거나 수량을 조정한 뒤 다시 시도해 주세요.',
       inlineError: message || null,
+      staleQuoteGuidance: null,
     };
   }
 
@@ -243,6 +322,18 @@ const resolveServerValidationFieldErrors = (
       },
       guidance,
       inlineError: null,
+      staleQuoteGuidance: null,
+    };
+  }
+
+  if (isStaleQuoteValidation(normalized, code)) {
+    const staleQuoteGuidance = buildStaleQuoteGuidance(normalized);
+
+    return {
+      fieldErrors: {},
+      guidance: null,
+      inlineError: null,
+      staleQuoteGuidance,
     };
   }
 
@@ -251,6 +342,7 @@ const resolveServerValidationFieldErrors = (
       fieldErrors: {},
       guidance: VALIDATION_GUIDANCE,
       inlineError: message || null,
+      staleQuoteGuidance: null,
     };
   }
 
@@ -258,6 +350,7 @@ const resolveServerValidationFieldErrors = (
     fieldErrors: {},
     guidance: null,
     inlineError: null,
+    staleQuoteGuidance: null,
   };
 };
 
@@ -288,12 +381,20 @@ export const useExternalOrderViewModel = ({
   const [selectedPresetId, setSelectedPresetId] = useState<ExternalOrderPresetId | null>(
     externalOrderPresetOptions[0].id,
   );
+  const [selectedOrderType, setSelectedOrderType] = useState<ExternalOrderType>(
+    resolveExternalOrderTypeFromPresetId(externalOrderPresetOptions[0].id),
+  );
   const [draft, setDraft] = useState(createInitialExternalOrderDraft);
+  const [marketTickerPosition, setMarketTickerPosition] = useState<AccountPosition | null>(null);
+  const [marketTickerError, setMarketTickerError] = useState<string | null>(null);
+  const [isMarketTickerLoading, setIsMarketTickerLoading] = useState(false);
   const [flowState, dispatch] = useReducer(orderFlowReducer, initialOrderFlowState);
   const operationVersionRef = useRef(0);
+  const marketTickerPositionRef = useRef<AccountPosition | null>(null);
   const {
     step,
     feedbackMessage,
+    staleQuoteGuidance,
     inlineError,
     errorReasonCategory,
     serverFieldErrors,
@@ -320,6 +421,16 @@ export const useExternalOrderViewModel = ({
     !mergedFieldErrors.symbol
     && !mergedFieldErrors.quantity
     && !isInteractionLocked;
+  const marketTickerSymbol = draft.symbol.replace(/\s+/g, '').trim();
+  const showMarketTicker =
+    step === 'A'
+    && selectedOrderType === 'MARKET'
+    && Boolean(accountId)
+    && /^\d{6}$/.test(marketTickerSymbol);
+
+  useEffect(() => {
+    marketTickerPositionRef.current = marketTickerPosition;
+  }, [marketTickerPosition]);
 
   const clearTransientFeedback = (options?: { preservePresentation?: boolean }) => {
     dispatch({
@@ -377,6 +488,7 @@ export const useExternalOrderViewModel = ({
     if (!options?.keepPreset) {
       setDraft(createInitialExternalOrderDraft());
       setSelectedPresetId(externalOrderPresetOptions[0].id);
+      setSelectedOrderType(resolveExternalOrderTypeFromPresetId(externalOrderPresetOptions[0].id));
     }
   };
 
@@ -445,9 +557,13 @@ export const useExternalOrderViewModel = ({
       symbol: session.symbol,
       quantity: String(session.qty),
     });
+    const restoredOrderType = session.orderType === 'MARKET' ? 'MARKET' : 'LIMIT';
+    setSelectedOrderType(restoredOrderType);
     setSelectedPresetId(matchPresetIdFromDraft({
       symbol: session.symbol,
       quantity: String(session.qty),
+    }, {
+      orderType: restoredOrderType,
     }));
     persistSessionContext(session.orderSessionId);
 
@@ -583,6 +699,60 @@ export const useExternalOrderViewModel = ({
       cancelled = true;
     };
   }, [accountId, isRefreshingSession, orderApi]);
+
+  useEffect(() => {
+    if (!showMarketTicker || !accountId) {
+      marketTickerPositionRef.current = null;
+      setMarketTickerPosition(null);
+      setMarketTickerError(null);
+      setIsMarketTickerLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    marketTickerPositionRef.current = null;
+    setMarketTickerPosition(null);
+    setMarketTickerError(null);
+    setIsMarketTickerLoading(true);
+
+    const loadMarketTicker = async () => {
+      if (!marketTickerPositionRef.current) {
+        setIsMarketTickerLoading(true);
+      }
+
+      try {
+        const position = await accountApi.fetchAccountPosition({
+          accountId,
+          symbol: marketTickerSymbol,
+        });
+        if (cancelled) {
+          return;
+        }
+        marketTickerPositionRef.current = position;
+        setMarketTickerPosition(position);
+        setMarketTickerError(null);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setMarketTickerError(getErrorMessage(error));
+      } finally {
+        if (!cancelled) {
+          setIsMarketTickerLoading(false);
+        }
+      }
+    };
+
+    void loadMarketTicker();
+    const intervalId = setInterval(() => {
+      void loadMarketTicker();
+    }, MARKET_TICKER_POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [accountApi, accountId, marketTickerSymbol, showMarketTicker]);
 
   useEffect(() => {
     const completedOrderSession = orderSession;
@@ -865,6 +1035,7 @@ export const useExternalOrderViewModel = ({
           inlineError: null,
           presentation: null,
           errorReasonCategory: null,
+          staleQuoteGuidance: null,
         },
       });
       return;
@@ -874,6 +1045,7 @@ export const useExternalOrderViewModel = ({
       accountId,
       symbol: draft.symbol,
       quantity: draft.quantity,
+      orderType: selectedOrderType,
     });
 
     if (!request) {
@@ -883,6 +1055,7 @@ export const useExternalOrderViewModel = ({
           errorReasonCategory: null,
           inlineError: '주문에 사용할 계좌 정보를 확인할 수 없습니다.',
           presentation: null,
+          staleQuoteGuidance: null,
         },
       });
       return;
@@ -920,6 +1093,7 @@ export const useExternalOrderViewModel = ({
             errorReasonCategory: reasonCategory,
             serverFieldErrors: validationPresentation.fieldErrors,
             inlineError: validationPresentation.inlineError,
+            staleQuoteGuidance: validationPresentation.staleQuoteGuidance,
             feedbackMessage:
               validationPresentation.guidance
               ?? buildServerValidationGuidance(validationPresentation.fieldErrors),
@@ -928,13 +1102,18 @@ export const useExternalOrderViewModel = ({
         return;
       }
 
-      if (validationPresentation.guidance || validationPresentation.inlineError) {
+      if (
+        validationPresentation.guidance
+        || validationPresentation.inlineError
+        || validationPresentation.staleQuoteGuidance
+      ) {
         dispatch({
           type: 'patch',
           payload: {
             errorReasonCategory: reasonCategory,
             feedbackMessage: validationPresentation.guidance,
             inlineError: validationPresentation.inlineError,
+            staleQuoteGuidance: validationPresentation.staleQuoteGuidance,
           },
         });
         return;
@@ -944,6 +1123,7 @@ export const useExternalOrderViewModel = ({
         type: 'patch',
         payload: {
           errorReasonCategory: resolveOrderReasonCategory(getErrorCode(error)),
+          staleQuoteGuidance: null,
           inlineError: getErrorMessage(error),
         },
       });
@@ -1083,12 +1263,23 @@ export const useExternalOrderViewModel = ({
     execute,
     errorReasonCategoryLabel: getOrderReasonCategoryLabel(errorReasonCategory),
     feedbackMessage,
+    staleQuoteGuidance,
     inlineError,
     symbolValue: draft.symbol,
     quantityValue: draft.quantity,
     symbolError: mergedFieldErrors.symbol ?? null,
     quantityError: mergedFieldErrors.quantity ?? null,
-    draftSummary: buildExternalOrderDraftSummary(draft),
+    draftSummary: buildExternalOrderDraftSummary(draft, {
+      orderType: selectedOrderType,
+    }),
+    marketTicker: showMarketTicker ? {
+      symbol: marketTickerSymbol,
+      marketPrice: marketTickerPosition?.marketPrice ?? null,
+      quoteAsOf: marketTickerPosition?.quoteAsOf ?? null,
+      quoteSourceMode: marketTickerPosition?.quoteSourceMode ?? null,
+      isLoading: isMarketTickerLoading,
+      error: marketTickerError,
+    } : null,
     canSubmit,
     isInteractionLocked,
     isCreating,
@@ -1109,6 +1300,7 @@ export const useExternalOrderViewModel = ({
     selectPreset: (presetId: ExternalOrderPresetId) => {
       invalidatePendingOperations();
       clearTransientFeedback();
+      setSelectedOrderType(resolveExternalOrderTypeFromPresetId(presetId));
       setSelectedPresetId(presetId);
       setDraft(draftFromPreset(presetId));
       if (orderSession !== null) {
@@ -1128,7 +1320,9 @@ export const useExternalOrderViewModel = ({
         symbol: value,
       };
       setDraft(nextDraft);
-      setSelectedPresetId(matchPresetIdFromDraft(nextDraft));
+      const nextSelection = resolveExternalOrderDraftSelection(nextDraft, selectedOrderType);
+      setSelectedOrderType(nextSelection.orderType);
+      setSelectedPresetId(nextSelection.presetId);
     },
     setQuantityValue: (value: string) => {
       invalidatePendingOperations();
@@ -1142,7 +1336,9 @@ export const useExternalOrderViewModel = ({
         quantity: value.replace(/[^\d]/g, '').slice(0, 6),
       };
       setDraft(nextDraft);
-      setSelectedPresetId(matchPresetIdFromDraft(nextDraft));
+      const nextSelection = resolveExternalOrderDraftSelection(nextDraft, selectedOrderType);
+      setSelectedOrderType(nextSelection.orderType);
+      setSelectedPresetId(nextSelection.presetId);
     },
     setOtpValue: (value: string) => {
       const digitsOnly = value.replace(/\D/g, '').slice(0, 6);
