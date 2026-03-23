@@ -9,6 +9,7 @@ import { formatKRW, formatQuantity } from '../../utils/formatters';
 interface ExternalOrderRecoverySectionModelInput {
   step: OrderFlowStep;
   feedbackMessage: string | null;
+  staleQuoteGuidance: string | null;
   inlineError: string | null;
   isInteractionLocked: boolean;
   isCreating: boolean;
@@ -50,6 +51,7 @@ const stepDescription = (step: OrderFlowStep) => {
 export const buildExternalOrderRecoverySectionModel = ({
   step,
   feedbackMessage,
+  staleQuoteGuidance,
   inlineError,
   isInteractionLocked,
   isCreating,
@@ -97,7 +99,11 @@ export const buildExternalOrderRecoverySectionModel = ({
     },
     clearAction: {
       label: '안내 지우기',
-      disabled: feedbackMessage === null && inlineError === null && presentation === null,
+      disabled:
+        feedbackMessage === null
+        && staleQuoteGuidance === null
+        && inlineError === null
+        && presentation === null,
       testId: 'mobile-order-session-clear',
     },
     otpInput: {

@@ -19,6 +19,7 @@ import { palette } from '../auth/auth-styles';
 interface ExternalOrderRecoverySectionProps {
   step: OrderFlowStep;
   feedbackMessage: string | null;
+  staleQuoteGuidance: string | null;
   inlineError: string | null;
   errorReasonCategoryLabel?: string | null;
   symbolValue: string;
@@ -26,6 +27,14 @@ interface ExternalOrderRecoverySectionProps {
   symbolError: string | null;
   quantityError: string | null;
   draftSummary: string;
+  marketTicker: {
+    symbol: string;
+    marketPrice: number | null;
+    quoteAsOf: string | null;
+    quoteSourceMode: string | null;
+    isLoading: boolean;
+    error: string | null;
+  } | null;
   canSubmit: boolean;
   isInteractionLocked: boolean;
   isCreating: boolean;
@@ -56,6 +65,12 @@ interface ExternalOrderRecoverySectionProps {
 }
 
 const EMPTY_EXPIRY = '1970-01-01T00:00:00Z';
+const quoteDateFormatter = new Intl.DateTimeFormat('ko-KR', {
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+});
 
 const isProcessingStatus = (status?: OrderSessionResponse['status']) =>
   status === 'EXECUTING' || status === 'REQUERYING';
@@ -70,6 +85,7 @@ const isFinalResultStatus = (status?: OrderSessionResponse['status']) =>
 export const ExternalOrderRecoverySection = ({
   step,
   feedbackMessage,
+  staleQuoteGuidance,
   inlineError,
   errorReasonCategoryLabel = null,
   symbolValue,
@@ -77,6 +93,7 @@ export const ExternalOrderRecoverySection = ({
   symbolError,
   quantityError,
   draftSummary,
+  marketTicker,
   canSubmit,
   isInteractionLocked,
   isCreating,
@@ -125,12 +142,31 @@ export const ExternalOrderRecoverySection = ({
   const hasCompleteStateCard = showProcessingState || showManualReviewState || showResultState;
   const effectiveFeedbackMessage =
     step === 'COMPLETE' && hasCompleteStateCard ? null : feedbackMessage;
+  const showDedicatedStaleQuoteGuidance =
+    step !== 'COMPLETE' && staleQuoteGuidance !== null;
+  const hasMarketTickerQuote =
+    marketTicker?.marketPrice !== null
+    && marketTicker?.marketPrice !== undefined
+    && Boolean(marketTicker?.quoteAsOf)
+    && Boolean(marketTicker?.quoteSourceMode);
+  const marketTickerStatus = marketTicker === null
+    ? null
+    : marketTicker.error
+      ? hasMarketTickerQuote
+        ? '마지막 시세를 유지 중입니다. 새 ticker를 다시 연결하고 있어요.'
+        : '실시간 ticker를 불러오지 못했습니다.'
+      : marketTicker.isLoading && !hasMarketTickerQuote
+        ? '실시간 ticker 연결 중...'
+        : hasMarketTickerQuote
+          ? '5초마다 자동 갱신'
+          : '실시간 ticker 데이터가 아직 준비되지 않았습니다.';
   const expiredModalMessage = hasExpiry && countdown.isExpired
     ? `${countdown.expiresAtLabel}에 세션이 종료되었습니다. 입력한 주문을 확인한 뒤 다시 시작해 주세요.`
     : '주문 세션이 더 이상 유효하지 않습니다. 입력한 주문을 확인한 뒤 다시 시작해 주세요.';
   const model = buildExternalOrderRecoverySectionModel({
     step,
     feedbackMessage: effectiveFeedbackMessage,
+    staleQuoteGuidance,
     inlineError,
     isInteractionLocked: isExpiredInteractionLocked,
     isCreating,
@@ -288,6 +324,43 @@ export const ExternalOrderRecoverySection = ({
         </View>
       ) : null}
 
+      {showDedicatedStaleQuoteGuidance ? (
+        <View
+          style={{
+            borderRadius: 18,
+            borderWidth: 1,
+            borderColor: '#E8D9CC',
+            backgroundColor: '#FFF8F2',
+            paddingHorizontal: 14,
+            paddingVertical: 14,
+          }}
+          testID="mobile-order-session-stale-quote-container"
+        >
+          {!model.feedbackMessage && errorReasonCategoryLabel ? (
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: '800',
+                color: palette.accentDeep,
+              }}
+              testID="mobile-order-session-error-category"
+            >
+              {errorReasonCategoryLabel}
+            </Text>
+          ) : null}
+          <Text
+            style={{
+              fontSize: 14,
+              lineHeight: 20,
+              color: palette.ink,
+            }}
+            testID="mobile-order-session-stale-quote-guidance"
+          >
+            {staleQuoteGuidance}
+          </Text>
+        </View>
+      ) : null}
+
       {model.inlineError ? (
         <View
           style={{
@@ -420,6 +493,106 @@ export const ExternalOrderRecoverySection = ({
           </Pressable>
         ))}
       </View>
+
+      {marketTicker ? (
+        <View
+          style={{
+            borderRadius: 18,
+            borderWidth: 1,
+            borderColor: '#F2C38C',
+            backgroundColor: '#FFF7ED',
+            paddingHorizontal: 14,
+            paddingVertical: 14,
+            gap: 10,
+          }}
+          testID="mobile-market-order-live-ticker"
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              gap: 12,
+            }}
+          >
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontWeight: '800',
+                  color: palette.accentDeep,
+                }}
+              >
+                시장가 실시간 ticker
+              </Text>
+              <Text
+                style={{
+                  fontSize: 13,
+                  lineHeight: 18,
+                  color: palette.inkSoft,
+                }}
+                testID="mobile-market-order-live-ticker-status"
+              >
+                {marketTickerStatus}
+              </Text>
+            </View>
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: '800',
+                color: palette.ink,
+              }}
+            >
+              {marketTicker.symbol}
+            </Text>
+          </View>
+
+          {hasMarketTickerQuote ? (
+            <View style={{ gap: 8 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
+                <Text style={{ fontSize: 13, color: palette.inkSoft }}>현재 시세</Text>
+                <Text
+                  style={{ fontSize: 16, fontWeight: '800', color: palette.ink }}
+                  testID="mobile-market-order-live-ticker-price"
+                >
+                  {formatKRW(marketTicker.marketPrice ?? 0)}
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
+                <Text style={{ fontSize: 13, color: palette.inkSoft }}>호가 기준 시각</Text>
+                <Text
+                  style={{ fontSize: 14, fontWeight: '700', color: palette.ink }}
+                  testID="mobile-market-order-live-ticker-quote-as-of"
+                >
+                  {quoteDateFormatter.format(new Date(marketTicker.quoteAsOf ?? ''))}
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
+                <Text style={{ fontSize: 13, color: palette.inkSoft }}>호가 source</Text>
+                <Text
+                  style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}
+                  testID="mobile-market-order-live-ticker-source-mode"
+                >
+                  {marketTicker.quoteSourceMode}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {marketTicker.error && !hasMarketTickerQuote ? (
+            <Text
+              style={{
+                fontSize: 13,
+                lineHeight: 18,
+                color: '#B45309',
+              }}
+              testID="mobile-market-order-live-ticker-error"
+            >
+              {marketTicker.error}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
 
       {step === 'A' ? (
         <View style={{ gap: 8 }}>

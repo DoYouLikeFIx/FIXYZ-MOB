@@ -17,11 +17,17 @@ RECORDER_LOG="/tmp/${OUTPUT_BASENAME}-record.log"
 FFMPEG_LOG="/tmp/${OUTPUT_BASENAME}-ffmpeg.log"
 FLOW_PATH="${MOB_ORDER_DEMO_FLOW_PATH:-$ROOT_DIR/e2e/maestro/order/14-order-success-full-flow-swipe-compact.yaml}"
 SETUP_FLOW_PATH="${MOB_ORDER_DEMO_SETUP_FLOW_PATH:-}"
+MOB_DEMO_EMAIL="${MOB_DEMO_EMAIL:-quote-story@fix.com}"
+MOB_DEMO_PASSWORD="${MOB_DEMO_PASSWORD:-Test1234!}"
+MOB_DEMO_OTP_CODE="${MOB_DEMO_OTP_CODE:-123456}"
 
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 export PATH="$PATH:$HOME/.maestro/bin"
 export MAESTRO_CLI_NO_ANALYTICS="${MAESTRO_CLI_NO_ANALYTICS:-1}"
 export MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED="${MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED:-true}"
+export MOB_DEMO_EMAIL
+export MOB_DEMO_PASSWORD
+export MOB_DEMO_OTP_CODE
 
 metro_pid=""
 server_pid=""
@@ -160,7 +166,7 @@ else
     -mobApiBaseUrl "http://localhost:${API_PORT}" \
     -mobDisableAnimations true \
     -mobHideDevWarningsOverlay true \
-    -mobDemoOrderOtpCode 123456 >/dev/null
+    -mobDemoOrderOtpCode "$MOB_DEMO_OTP_CODE" >/dev/null
 fi
 
 xcrun simctl io "$simulator_udid" recordVideo --force --codec=h264 "$TMP_MOV" >"$RECORDER_LOG" 2>&1 &

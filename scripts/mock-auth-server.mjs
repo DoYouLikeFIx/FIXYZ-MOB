@@ -19,6 +19,7 @@ let nextOrderId = 1;
 
 const notificationItemsBySession = new Map();
 const portfolioFixturesByAccountId = new Map();
+const positionQueryCountsByKey = new Map();
 
 const createDefaultNotificationItems = () => [
   {
@@ -50,6 +51,9 @@ const getNotificationItemsForSession = (sessionId) => {
   notificationItemsBySession.set(sessionId, created);
   return created;
 };
+
+const getPositionQueryStateKey = (sessionId, accountId, symbol) =>
+  `${sessionId ?? 'anonymous'}:${accountId}:${symbol}`;
 
 const normalizeIdentifier = (value) => value.trim().toLowerCase();
 
@@ -218,6 +222,15 @@ const indexProfile = (profile) => {
     mfaScenario: 'verify',
     totpEnrolled: true,
   }),
+  createProfile({
+    memberUuid: 'member-014',
+    email: 'quote-story@fix.com',
+    name: 'Quote Freshness Demo',
+    accountId: '14',
+    orderScenario: 'stale-quote',
+    mfaScenario: 'verify',
+    totpEnrolled: true,
+  }),
 ].forEach(indexProfile);
 
 const sessions = new Map();
@@ -333,6 +346,7 @@ const errorEnvelope = (code, message, detail, options = {}) => ({
     code,
     message,
     detail,
+    details: options.details,
     operatorCode: options.operatorCode,
     retryAfterSeconds: options.retryAfterSeconds,
     userMessageKey: options.userMessageKey,
@@ -371,6 +385,13 @@ const ORDER_FIXTURE_EXPECTATIONS = {
     side: 'BUY',
     symbol: '005930',
   },
+  'stale-quote': {
+    quantity: 3,
+    price: null,
+    side: 'BUY',
+    symbol: '005930',
+    orderType: 'MARKET',
+  },
 };
 
 const PORTFOLIO_AS_OF = '2026-03-11T09:10:00Z';
@@ -390,6 +411,14 @@ const createPortfolioFixture = (accountId) => {
       availableBalance: 100_000_000,
       currency: 'KRW',
       asOf: PORTFOLIO_AS_OF,
+      ...(accountId === '14'
+        ? {
+            marketPrice: 70_100,
+            quoteSnapshotId: 'qsnap-live-001',
+            quoteAsOf: '2026-03-12T08:45:00Z',
+            quoteSourceMode: 'LIVE',
+          }
+        : {}),
     },
     {
       accountId: numericAccountId,
@@ -402,7 +431,35 @@ const createPortfolioFixture = (accountId) => {
       availableBalance: 98_500_000,
       currency: 'KRW',
       asOf: PORTFOLIO_AS_OF,
+      ...(accountId === '14'
+        ? {
+            marketPrice: 194_000,
+            quoteSnapshotId: 'qsnap-delayed-001',
+            quoteAsOf: '2026-03-12T08:15:00Z',
+            quoteSourceMode: 'DELAYED',
+          }
+        : {}),
     },
+    ...(accountId === '14'
+      ? [
+          {
+            accountId: numericAccountId,
+            memberId,
+            symbol: '035420',
+            quantity: 9,
+            availableQuantity: 4,
+            availableQty: 4,
+            balance: 97_100_000,
+            availableBalance: 97_100_000,
+            currency: 'KRW',
+            asOf: PORTFOLIO_AS_OF,
+            marketPrice: 223_000,
+            quoteSnapshotId: 'qsnap-replay-001',
+            quoteAsOf: '2026-03-12T07:45:00Z',
+            quoteSourceMode: 'REPLAY',
+          },
+        ]
+      : []),
   ];
 
   const orderHistory = [
@@ -666,18 +723,27 @@ const validateOrderRequest = ({ body, profile, request, response }) => {
   }
 
   const quantity = parsePositiveWholeNumber(String(body.qty ?? body.quantity ?? ''));
-  const price = parsePositiveWholeNumber(String(body.price ?? ''));
+  const rawPrice = body.price;
+  const price = rawPrice === null || typeof rawPrice === 'undefined'
+    ? null
+    : parsePositiveWholeNumber(String(rawPrice));
   const symbol = typeof body.symbol === 'string' ? body.symbol.trim() : '';
   const side = typeof body.side === 'string' ? body.side.trim() : '';
   const orderType = typeof body.orderType === 'string' ? body.orderType.trim() : 'LIMIT';
-  if (!quantity || !price || !symbol || !side) {
+  if (
+    !quantity
+    || !symbol
+    || !side
+    || (orderType === 'LIMIT' && !price)
+    || (orderType === 'MARKET' && price !== null)
+  ) {
     writeJson(
       response,
       422,
       errorEnvelope(
         'VALIDATION-001',
         'Invalid order payload',
-        'The mock order endpoint requires accountId, clOrdId, symbol, side, quantity, and price.',
+        'The mock order endpoint requires accountId, clOrdId, symbol, side, quantity, and a valid price contract for the selected order type.',
       ),
     );
     return null;
@@ -689,6 +755,7 @@ const validateOrderRequest = ({ body, profile, request, response }) => {
     || price !== expected.price
     || symbol !== expected.symbol
     || side !== expected.side
+    || orderType !== (expected.orderType ?? 'LIMIT')
   ) {
     writeJson(
       response,
@@ -696,7 +763,7 @@ const validateOrderRequest = ({ body, profile, request, response }) => {
       errorEnvelope(
         'VALIDATION-001',
         'Unexpected order fixture payload',
-        `The ${profile.orderScenario} persona expects ${expected.symbol} ${expected.side} ${expected.quantity} @ ${expected.price}.`,
+        `The ${profile.orderScenario} persona expects ${expected.symbol} ${expected.side} ${expected.quantity} @ ${expected.price ?? 'MARKET'}.`,
       ),
     );
     return null;
@@ -1577,12 +1644,28 @@ const server = http.createServer(async (request, response) => {
       }
 
       const matchedPosition = fixture.positions.find((position) => position.symbol === symbol);
+      const positionKey = getPositionQueryStateKey(cookies.JSESSIONID, requestedAccountId, symbol);
+      const nextQueryCount = (positionQueryCountsByKey.get(positionKey) ?? 0) + 1;
+      positionQueryCountsByKey.set(positionKey, nextQueryCount);
+      const shouldReplayTicker =
+        requestedAccountId === '14'
+        && symbol === '005930'
+        && nextQueryCount > 1;
+      const positionPayload = shouldReplayTicker && matchedPosition
+        ? {
+            ...matchedPosition,
+            marketPrice: 70_300,
+            quoteSnapshotId: 'qsnap-replay-ticker-001',
+            quoteAsOf: '2026-03-12T09:05:00Z',
+            quoteSourceMode: 'REPLAY',
+          }
+        : matchedPosition;
 
       writeJson(
         response,
         200,
         successEnvelope(
-          matchedPosition ?? {
+          positionPayload ?? {
             ...fixture.summary,
             symbol,
           },
@@ -1646,6 +1729,29 @@ const server = http.createServer(async (request, response) => {
           {
             operatorCode: 'INSUFFICIENT_CASH',
             userMessageKey: 'error.order.insufficient_cash',
+          },
+        ),
+      );
+      return;
+    }
+
+    if (profile.orderScenario === 'stale-quote') {
+      writeJson(
+        response,
+        400,
+        errorEnvelope(
+          'VALIDATION-003',
+          '시장가 주문에 사용할 시세가 오래되었습니다.',
+          '시장가 주문에 사용한 quote snapshot이 허용 범위를 초과했습니다.',
+          {
+            operatorCode: 'STALE_QUOTE',
+            userMessageKey: 'error.quote.stale',
+            details: {
+              symbol: '005930',
+              quoteSnapshotId: 'qsnap-replay-001',
+              quoteSourceMode: 'REPLAY',
+              snapshotAgeMs: 65_000,
+            },
           },
         ),
       );

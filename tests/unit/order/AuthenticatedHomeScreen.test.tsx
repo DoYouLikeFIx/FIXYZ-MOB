@@ -29,6 +29,13 @@ const memberFixture: Member = {
 const futureIso = (seconds = 3600) =>
   new Date(Date.now() + seconds * 1000).toISOString();
 
+const quoteDateFormatter = new Intl.DateTimeFormat('ko-KR', {
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
 const makeOrderSession = (
   overrides?: Partial<OrderSessionResponse>,
 ): OrderSessionResponse => ({
@@ -137,6 +144,10 @@ const positionsFixture: AccountPosition[] = [
     availableBalance: 100_000_000,
     currency: 'KRW',
     asOf: '2026-03-11T09:10:00Z',
+    marketPrice: 70_100,
+    quoteSnapshotId: 'quote-live-001',
+    quoteAsOf: '2026-03-11T09:09:00Z',
+    quoteSourceMode: 'LIVE',
   },
   {
     accountId: 1,
@@ -151,6 +162,33 @@ const positionsFixture: AccountPosition[] = [
     asOf: '2026-03-11T09:20:00Z',
   },
 ];
+
+const quoteFreshnessScenarios = [
+  {
+    marketPrice: 70_100,
+    quoteSnapshotId: 'quote-live-001',
+    quoteAsOf: '2026-03-11T09:09:00Z',
+    quoteSourceMode: 'LIVE',
+    stateLabel: '직결 시세',
+    statusNote: '실시간 기준',
+  },
+  {
+    marketPrice: 70_200,
+    quoteSnapshotId: 'quote-delayed-001',
+    quoteAsOf: '2026-03-12T08:15:00Z',
+    quoteSourceMode: 'DELAYED',
+    stateLabel: '지연 호가',
+    statusNote: '지연 도착 데이터',
+  },
+  {
+    marketPrice: 70_300,
+    quoteSnapshotId: 'quote-replay-001',
+    quoteAsOf: '2026-03-12T07:45:00Z',
+    quoteSourceMode: 'REPLAY',
+    stateLabel: '리플레이 기준',
+    statusNote: '재생 스냅샷',
+  },
+] as const;
 
 const createHistoryPage = (
   overrides?: Partial<AccountOrderHistoryPage>,
@@ -1556,6 +1594,104 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     expect(findAllByTestId(renderer.root, 'mobile-order-session-otp-input')).toHaveLength(0);
   });
 
+  for (const scenario of quoteFreshnessScenarios) {
+    it(`renders ${scenario.quoteSourceMode} quote freshness metadata in the dashboard summary`, async () => {
+      const accountApi = createAccountApi({
+        fetchAccountPositions: vi.fn().mockResolvedValue([
+          {
+            ...positionsFixture[0],
+            marketPrice: scenario.marketPrice,
+            quoteSnapshotId: scenario.quoteSnapshotId,
+            quoteAsOf: scenario.quoteAsOf,
+            quoteSourceMode: scenario.quoteSourceMode,
+          },
+        ]),
+      });
+      const { renderer } = await renderScreen({ accountApi });
+
+      expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-market-price'))).toBe(
+        `₩${scenario.marketPrice.toLocaleString('en-US')}`,
+      );
+      expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-as-of'))).toBe(
+        quoteDateFormatter.format(new Date(scenario.quoteAsOf)),
+      );
+      expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-source-mode'))).toBe(
+        scenario.quoteSourceMode,
+      );
+      expect(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker')).toBeTruthy();
+      expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-symbol'))).toBe(
+        '005930',
+      );
+      expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-price'))).toBe(
+        `₩${scenario.marketPrice.toLocaleString('en-US')}`,
+      );
+      expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-mode'))).toBe(
+        scenario.quoteSourceMode,
+      );
+      expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-state'))).toBe(
+        scenario.stateLabel,
+      );
+      expect(
+        getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-status-note')),
+      ).toBe(scenario.statusNote);
+      expect(
+        getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-quote-as-of')),
+      ).toBe(quoteDateFormatter.format(new Date(scenario.quoteAsOf)));
+      expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-snapshot'))).toBe(
+        scenario.quoteSnapshotId,
+      );
+      expect(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-chart')).toBeTruthy();
+      expect(
+        findAllByTestId(renderer.root, 'mobile-dashboard-quote-ticker-candle'),
+      ).toHaveLength(0);
+    });
+  }
+
+  it('renders unknown quote source modes with neutral guidance instead of live styling', async () => {
+    const accountApi = createAccountApi({
+      fetchAccountPositions: vi.fn().mockResolvedValue([
+        {
+          ...positionsFixture[0],
+          marketPrice: 70_400,
+          quoteSnapshotId: 'quote-vendor-001',
+          quoteAsOf: '2026-03-12T08:40:00Z',
+          quoteSourceMode: 'VENDOR_STREAM',
+        },
+      ]),
+    });
+    const { renderer } = await renderScreen({ accountApi });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-mode'))).toBe(
+      'VENDOR_STREAM',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-state'))).toBe(
+      '미확인 시세',
+    );
+    expect(
+      getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-status-note')),
+    ).toBe('새 source mode');
+  });
+
+  it('falls back safely when quoteAsOf is malformed', async () => {
+    const accountApi = createAccountApi({
+      fetchAccountPositions: vi.fn().mockResolvedValue([
+        {
+          ...positionsFixture[0],
+          quoteAsOf: 'not-a-date',
+        },
+      ]),
+    });
+    const { renderer } = await renderScreen({ accountApi });
+
+    expect(findAllByTestId(renderer.root, 'mobile-dashboard-quote-as-of')).toHaveLength(0);
+    expect(
+      getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-quote-as-of')),
+    ).toBe('시각 확인 필요');
+    expect(
+      getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-freshness-age')),
+    ).toBe('시각 확인 필요');
+  });
+
   it('maps server-side Step A rejects back to quantity guidance', async () => {
     const createOrderSession = vi.fn().mockRejectedValue(
       createNormalizedHttpError('가용 수량을 다시 확인해 주세요.', {
@@ -1692,6 +1828,228 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     expect(findAllByTestId(renderer.root, 'mobile-order-session-error-category')).toHaveLength(0);
     expect(findAllByTestId(renderer.root, 'mobile-order-session-feedback')).toHaveLength(0);
     expect(findAllByTestId(renderer.root, 'mobile-order-input-qty-error')).toHaveLength(0);
+  });
+
+  it('keeps the user in Step A with stale-quote guidance for market prepare rejects', async () => {
+    const createOrderSession = vi.fn().mockRejectedValue(
+      createNormalizedHttpError('시장가 주문에 사용할 시세가 오래되었습니다.', {
+        code: 'VALIDATION-003',
+        status: 400,
+        operatorCode: 'STALE_QUOTE',
+        userMessageKey: 'error.quote.stale',
+        details: {
+          symbol: '005930',
+          quoteSnapshotId: 'qsnap-replay-001',
+          quoteSourceMode: 'REPLAY',
+          snapshotAgeMs: 65000,
+        },
+      }),
+    );
+    const orderApi = createOrderApi({
+      createOrderSession,
+    });
+    const { renderer } = await renderScreen({ orderApi });
+
+    await act(async () => {
+      findByTestId(renderer.root, 'mobile-external-order-preset-krx-market-buy-3').props.onPress();
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
+      await flushMicrotasks();
+    });
+
+    expect(createOrderSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderType: 'MARKET',
+        price: null,
+      }),
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-error-category'))).toBe(
+      '검증',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-stale-quote-guidance'))).toContain(
+      'symbol=005930',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-stale-quote-guidance'))).toContain(
+      'quoteSnapshotId=qsnap-replay-001',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-stale-quote-guidance'))).toContain(
+      'quoteSourceMode=REPLAY',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-stale-quote-guidance'))).toContain(
+      'snapshotAgeMs=65000',
+    );
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-feedback')).toHaveLength(0);
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-error')).toHaveLength(0);
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-otp-input')).toHaveLength(0);
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-execute')).toHaveLength(0);
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-create')).toHaveLength(1);
+  });
+
+  it('renders and refreshes the market-order live ticker while the market preset stays selected', async () => {
+    vi.useFakeTimers();
+
+    const fetchAccountPosition = vi.fn()
+      .mockResolvedValueOnce({
+        accountId: 1,
+        memberId: 1,
+        symbol: '005930',
+        quantity: 120,
+        availableQuantity: 20,
+        availableQty: 20,
+        balance: 100_000_000,
+        availableBalance: 100_000_000,
+        currency: 'KRW',
+        asOf: '2026-03-18T09:00:00Z',
+        marketPrice: 70_100,
+        quoteSnapshotId: 'quote-live-001',
+        quoteAsOf: '2026-03-18T09:00:00Z',
+        quoteSourceMode: 'LIVE',
+      })
+      .mockResolvedValue({
+        accountId: 1,
+        memberId: 1,
+        symbol: '005930',
+        quantity: 120,
+        availableQuantity: 20,
+        availableQty: 20,
+        balance: 100_000_000,
+        availableBalance: 100_000_000,
+        currency: 'KRW',
+        asOf: '2026-03-18T09:00:00Z',
+        marketPrice: 70_300,
+        quoteSnapshotId: 'quote-replay-001',
+        quoteAsOf: '2026-03-18T09:05:00Z',
+        quoteSourceMode: 'REPLAY',
+      });
+    const accountApi = createAccountApi({
+      fetchAccountPosition,
+    });
+    const { renderer } = await renderScreen({ accountApi });
+
+    await act(async () => {
+      findByTestId(renderer.root, 'mobile-external-order-preset-krx-market-buy-3').props.onPress();
+      await flushMicrotasks();
+    });
+
+    expect(fetchAccountPosition).toHaveBeenCalledWith({
+      accountId: '1',
+      symbol: '005930',
+    });
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-price'))).toBe(
+      '₩70,100',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-quote-as-of'))).toBe(
+      quoteDateFormatter.format(new Date('2026-03-18T09:00:00Z')),
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-source-mode'))).toBe(
+      'LIVE',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-status'))).toBe(
+      '5초마다 자동 갱신',
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(5_000);
+      await flushMicrotasks();
+    });
+
+    expect(fetchAccountPosition).toHaveBeenCalledTimes(2);
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-price'))).toBe(
+      '₩70,300',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-quote-as-of'))).toBe(
+      quoteDateFormatter.format(new Date('2026-03-18T09:05:00Z')),
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-source-mode'))).toBe(
+      'REPLAY',
+    );
+  });
+
+  it('keeps manually entered 3-share drafts on the limit path', async () => {
+    const createOrderSession = vi.fn().mockResolvedValue(makeOrderSession({
+      orderSessionId: 'sess-limit-3',
+      clOrdId: 'cl-limit-3',
+      orderType: 'LIMIT',
+      qty: 3,
+      price: 70100,
+    }));
+    const { renderer } = await renderScreen({
+      orderApi: createOrderApi({
+        createOrderSession,
+      }),
+    });
+
+    await act(async () => {
+      findByTestId(renderer.root, 'mobile-order-input-qty').props.onChangeText('3');
+      await flushMicrotasks();
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-selected-summary'))).toContain(
+      '005930 · 삼성전자 · 3주',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-selected-summary'))).not.toContain(
+      '시장가',
+    );
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
+      await flushMicrotasks();
+    });
+
+    expect(createOrderSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderType: 'LIMIT',
+        quantity: 3,
+        price: 70100,
+      }),
+    );
+  });
+
+  it('drops back to the limit path after editing away from the market preset value', async () => {
+    const createOrderSession = vi.fn().mockResolvedValue(makeOrderSession({
+      orderSessionId: 'sess-limit-4',
+      clOrdId: 'cl-limit-4',
+      orderType: 'LIMIT',
+      qty: 4,
+      price: 70100,
+    }));
+    const { renderer } = await renderScreen({
+      orderApi: createOrderApi({
+        createOrderSession,
+      }),
+    });
+
+    await act(async () => {
+      findByTestId(renderer.root, 'mobile-external-order-preset-krx-market-buy-3').props.onPress();
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      findByTestId(renderer.root, 'mobile-order-input-qty').props.onChangeText('4');
+      await flushMicrotasks();
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-selected-summary'))).toContain(
+      '005930 · 삼성전자 · 4주',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-selected-summary'))).not.toContain(
+      '시장가',
+    );
+
+    await act(async () => {
+      await findByTestId(renderer.root, 'mobile-order-session-create').props.onPress();
+      await flushMicrotasks();
+    });
+
+    expect(createOrderSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderType: 'LIMIT',
+        quantity: 4,
+        price: 70100,
+      }),
+    );
   });
 
   it('returns from Step B to Step A without discarding the created session context', async () => {
@@ -1851,6 +2209,42 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     expect(findAllByTestId(renderer.root, 'mobile-order-session-otp-input')).toHaveLength(1);
     expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-selected-summary'))).toContain(
       '005930 · 삼성전자 · 5주',
+    );
+  });
+
+  it('restores a 3-share limit session without relabeling it as market', async () => {
+    await persistOrderSessionForRestore('sess-restore-limit-3');
+
+    const getOrderSession = vi.fn().mockResolvedValue({
+      orderSessionId: 'sess-restore-limit-3',
+      clOrdId: 'cl-restore-limit-3',
+      status: 'PENDING_NEW',
+      challengeRequired: true,
+      authorizationReason: 'ELEVATED_ORDER_RISK',
+      accountId: 1,
+      symbol: '005930',
+      side: 'BUY',
+      orderType: 'LIMIT',
+      qty: 3,
+      price: 70100,
+      expiresAt: futureIso(),
+    });
+    const { renderer } = await renderScreen({
+      orderApi: createOrderApi({
+        getOrderSession,
+      }),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-otp-input')).toHaveLength(1);
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-selected-summary'))).toContain(
+      '005930 · 삼성전자 · 3주',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-selected-summary'))).not.toContain(
+      '시장가',
     );
   });
 

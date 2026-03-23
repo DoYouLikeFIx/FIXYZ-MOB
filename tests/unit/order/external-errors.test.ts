@@ -11,8 +11,16 @@ import {
 } from '@/order/external-errors';
 import { externalOrderErrorContract } from '../../fixtures/external-order-error-contract';
 
+const externalContractCases = externalOrderErrorContract.cases.filter(
+  (contractCase) => contractCase.reasonCategory === 'external',
+);
+
+const nonExternalContractCases = externalOrderErrorContract.cases.filter(
+  (contractCase) => contractCase.reasonCategory !== 'external',
+);
+
 describe('mobile external order errors', () => {
-  it.each(externalOrderErrorContract.cases)(
+  it.each(externalContractCases)(
     'maps contract case $codes/$operatorCode with parity',
     (contractCase) => {
       const code = contractCase.codes?.[0];
@@ -36,6 +44,21 @@ describe('mobile external order errors', () => {
       expect(presentation.supportReference).toBe(
         `${externalOrderErrorContract.supportReferenceLabel}: trace-contract-001`,
       );
+    },
+  );
+
+  it.each(nonExternalContractCases)(
+    'does not treat non-external contract case $codes/$operatorCode as external guidance',
+    (contractCase) => {
+      const code = contractCase.codes?.[0];
+      const error = createNormalizedHttpError(contractCase.message, {
+        code,
+        operatorCode: contractCase.operatorCode,
+        retryAfterSeconds: contractCase.retryAfterSeconds,
+        traceId: 'trace-contract-001',
+      });
+
+      expect(isVisibleExternalOrderError(error)).toBe(false);
     },
   );
 

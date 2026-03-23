@@ -2,6 +2,7 @@ export interface ApiErrorPayload {
   code: string;
   message: string;
   detail: string;
+  details?: Record<string, unknown> | null;
   operatorCode?: string | null;
   retryAfterSeconds?: number | null;
   remainingAttempts?: number | null;
@@ -26,6 +27,7 @@ export interface NormalizedHttpError extends Error {
   code?: string;
   status?: number;
   detail?: string;
+  details?: Record<string, unknown>;
   operatorCode?: string;
   retryAfterSeconds?: number;
   remainingAttempts?: number;

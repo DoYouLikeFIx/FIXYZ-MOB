@@ -1,0 +1,44 @@
+appId: org.reactjs.native.example.FIXYZMob
+---
+- extendedWaitUntil:
+    visible:
+      id: login-mfa-input
+    timeout: 10000
+- tapOn:
+    id: login-mfa-input
+- inputText: ${LIVE_OTP_CODE}
+- pressKey: Enter
+- tapOn:
+    id: login-mfa-submit
+- extendedWaitUntil:
+    visible:
+      id: mobile-masked-account
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: mobile-dashboard-quote-ticker
+    direction: DOWN
+    timeout: 20000
+    visibilityPercentage: 60
+- extendedWaitUntil:
+    visible:
+      id: mobile-dashboard-quote-ticker-price
+    timeout: 15000
+- assertVisible:
+    id: mobile-dashboard-quote-ticker
+- assertVisible:
+    id: mobile-dashboard-quote-ticker-price
+- assertVisible:
+    id: mobile-dashboard-quote-ticker-mode
+- assertVisible:
+    id: mobile-dashboard-quote-ticker-state
+- scrollUntilVisible:
+    element:
+      id: mobile-dashboard-quote-ticker-chart
+    direction: DOWN
+    timeout: 15000
+    visibilityPercentage: 60
+- assertVisible:
+    id: mobile-dashboard-quote-ticker-chart
+- waitForAnimationToEnd:
+    timeout: 3000

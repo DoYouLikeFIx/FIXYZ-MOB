@@ -33,6 +33,37 @@ describe('network error normalization', () => {
     expect(normalized.retryAfterSeconds).toBe(10);
   });
 
+  it('preserves backend details needed for stale-quote UX', () => {
+    const normalized = normalizeHttpError({
+      status: 400,
+      data: {
+        success: false,
+        data: null,
+        error: {
+          code: 'VALIDATION-003',
+          message: 'stale quote',
+          detail: 'market quote snapshot is stale',
+          details: {
+            symbol: '005930',
+            quoteSnapshotId: 'qsnap-replay-001',
+            snapshotAgeMs: 65000,
+            quoteSourceMode: 'REPLAY',
+          },
+          operatorCode: 'STALE_QUOTE',
+          userMessageKey: 'error.quote.stale',
+          timestamp: '2026-03-23T00:00:00Z',
+        },
+      },
+    });
+
+    expect(normalized.details).toEqual({
+      symbol: '005930',
+      quoteSnapshotId: 'qsnap-replay-001',
+      snapshotAgeMs: 65000,
+      quoteSourceMode: 'REPLAY',
+    });
+  });
+
   it('parses direct spring security and exception-handler error payloads', () => {
     const normalized = normalizeHttpError({
       status: 401,

@@ -71,6 +71,34 @@ appId: org.reactjs.native.example.FIXYZMob
     id: mobile-dashboard-error
 - assertVisible:
     id: mobile-dashboard-balance
+- scrollUntilVisible:
+    element:
+      id: mobile-dashboard-quote-ticker
+    direction: DOWN
+    timeout: 15000
+    visibilityPercentage: 60
+- assertVisible:
+    id: mobile-dashboard-market-price
+- assertVisible:
+    id: mobile-dashboard-quote-as-of
+- assertVisible:
+    id: mobile-dashboard-quote-source-mode
+- assertVisible:
+    id: mobile-dashboard-quote-ticker
+- assertVisible:
+    id: mobile-dashboard-quote-ticker-price
+- assertVisible:
+    id: mobile-dashboard-quote-ticker-mode
+- assertVisible:
+    id: mobile-dashboard-quote-ticker-state
+- scrollUntilVisible:
+    element:
+      id: mobile-dashboard-quote-ticker-chart
+    direction: DOWN
+    timeout: 15000
+    visibilityPercentage: 60
+- assertVisible:
+    id: mobile-dashboard-quote-ticker-chart
 - assertNotVisible:
     id: mobile-history-error
 - scrollUntilVisible:

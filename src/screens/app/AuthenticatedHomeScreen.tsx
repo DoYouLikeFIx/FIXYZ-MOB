@@ -11,6 +11,7 @@ import type { AccountApi } from '../../api/account-api';
 import type { NotificationApi } from '../../api/notification-api';
 import type { OrderApi } from '../../api/order-api';
 import { useAccountDashboardViewModel } from '../../account/use-account-dashboard-view-model';
+import { DashboardQuoteTicker } from '../../components/account/DashboardQuoteTicker';
 import { ExternalOrderRecoverySection } from '../../components/order/ExternalOrderRecoverySection';
 import { useNotificationFeedViewModel } from '../../notification/use-notification-feed-view-model';
 import { hasExternalOrderAccountId } from '../../order/external-order-recovery';
@@ -18,6 +19,26 @@ import { useExternalOrderViewModel } from '../../order/use-external-order-view-m
 import type { Member } from '../../types/auth';
 import { formatKRW, formatQuantity } from '../../utils/formatters';
 import { palette } from '../../components/auth/auth-styles';
+
+const quoteDateFormatter = new Intl.DateTimeFormat('ko-KR', {
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+const formatQuoteTimestamp = (value: string | null | undefined) => {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+
+  return quoteDateFormatter.format(new Date(timestamp));
+};
 
 interface AuthenticatedHomeScreenProps {
   accountApi: AccountApi;
@@ -69,6 +90,10 @@ export const AuthenticatedHomeScreen = ({
     isRefreshingSession,
     orderApi,
   });
+  const dashboardPosition = accountDashboard.position;
+  const formattedDashboardQuoteAsOf = formatQuoteTimestamp(
+    dashboardPosition ? dashboardPosition.quoteAsOf : null,
+  );
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9F5F1' }}>
@@ -541,6 +566,7 @@ export const AuthenticatedHomeScreen = ({
                 gap: 10,
               }}
             >
+              <DashboardQuoteTicker position={accountDashboard.position} />
               <View
                 style={{
                   flexDirection: 'row',
@@ -572,10 +598,30 @@ export const AuthenticatedHomeScreen = ({
               {[
                 ['가용 수량', `${formatQuantity(accountDashboard.position.availableQuantity)}주`],
                 ['보유 수량', `${formatQuantity(accountDashboard.position.quantity)}주`],
+                ...(
+                  accountDashboard.position.marketPrice !== null
+                  && accountDashboard.position.marketPrice !== undefined
+                  && formattedDashboardQuoteAsOf
+                  && accountDashboard.position.quoteSourceMode
+                    ? [
+                        ['평가 단가', formatKRW(accountDashboard.position.marketPrice), 'mobile-dashboard-market-price'] as const,
+                        [
+                          '호가 기준 시각',
+                          formattedDashboardQuoteAsOf,
+                          'mobile-dashboard-quote-as-of',
+                        ] as const,
+                        [
+                          '호가 source',
+                          accountDashboard.position.quoteSourceMode,
+                          'mobile-dashboard-quote-source-mode',
+                        ] as const,
+                      ]
+                    : []
+                ),
                 ...(accountDashboard.position.symbol
                   ? [['조회 종목', accountDashboard.position.symbol] as const]
                   : []),
-              ].map(([label, value]) => (
+              ].map(([label, value, testId]) => (
                 <View
                   key={label}
                   style={{
@@ -602,6 +648,7 @@ export const AuthenticatedHomeScreen = ({
                       fontWeight: '700',
                       color: palette.ink,
                     }}
+                    testID={testId}
                   >
                     {value}
                   </Text>
@@ -1211,6 +1258,7 @@ export const AuthenticatedHomeScreen = ({
         {hasOrderAccount ? (
           <ExternalOrderRecoverySection
             feedbackMessage={externalOrderViewModel.feedbackMessage}
+            staleQuoteGuidance={externalOrderViewModel.staleQuoteGuidance}
             inlineError={externalOrderViewModel.inlineError}
             errorReasonCategoryLabel={externalOrderViewModel.errorReasonCategoryLabel}
             symbolValue={externalOrderViewModel.symbolValue}
@@ -1218,6 +1266,7 @@ export const AuthenticatedHomeScreen = ({
             symbolError={externalOrderViewModel.symbolError}
             quantityError={externalOrderViewModel.quantityError}
             draftSummary={externalOrderViewModel.draftSummary}
+            marketTicker={externalOrderViewModel.marketTicker}
             canSubmit={externalOrderViewModel.canSubmit}
             isInteractionLocked={externalOrderViewModel.isInteractionLocked}
             isCreating={externalOrderViewModel.isCreating}

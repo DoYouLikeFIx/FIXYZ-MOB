@@ -23,6 +23,7 @@ interface DirectApiErrorPayload {
   message?: string;
   path?: string;
   correlationId?: string;
+  details?: Record<string, unknown>;
   operatorCode?: string;
   retryAfterSeconds?: unknown;
   remainingAttempts?: unknown;
@@ -62,6 +63,14 @@ const parseRetryAfterSeconds = (value: unknown) => {
   return Math.max(0, Math.ceil((asDate - Date.now()) / 1000));
 };
 
+const sanitizeErrorDetails = (value: unknown) => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value as Record<string, unknown>;
+};
+
 const getHeaderValue = (headers: Headers | undefined, key: string) =>
   headers?.get(key) ?? headers?.get(key.toLowerCase()) ?? undefined;
 
@@ -98,6 +107,7 @@ export const createNormalizedHttpError = (
   options?: {
     code?: string;
     detail?: string;
+    details?: Record<string, unknown>;
     operatorCode?: string;
     retryAfterSeconds?: number;
     remainingAttempts?: number;
@@ -113,6 +123,7 @@ export const createNormalizedHttpError = (
   normalized.name = 'MobHttpClientError';
   normalized.code = options?.code;
   normalized.detail = options?.detail;
+  normalized.details = sanitizeErrorDetails(options?.details);
   normalized.operatorCode = options?.operatorCode;
   normalized.retryAfterSeconds = options?.retryAfterSeconds;
   normalized.remainingAttempts = options?.remainingAttempts;
@@ -207,6 +218,7 @@ export const normalizeHttpError = (
       {
         code: input.data.error.code,
         detail: input.data.error.detail,
+        details: sanitizeErrorDetails(input.data.error.details),
         operatorCode: input.data.error.operatorCode ?? undefined,
         retryAfterSeconds: resolveRetryAfterSeconds(
           input.data.error.retryAfterSeconds,
@@ -228,6 +240,7 @@ export const normalizeHttpError = (
       {
         code: input.data.code,
         detail: input.data.path,
+        details: sanitizeErrorDetails(input.data.details),
         operatorCode: input.data.operatorCode,
         retryAfterSeconds: resolveRetryAfterSeconds(
           input.data.retryAfterSeconds,

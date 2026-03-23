@@ -1,14 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { resolveMfaErrorPresentation } from '../../auth/auth-errors';
-import { isCompleteOtpCode, sanitizeOtpCodeInput } from '../../auth/totp-code';
+import { useTotpEnrollmentViewModel } from '../../auth/use-totp-enrollment-view-model';
 import { useExpiryCountdown } from '../../auth/use-expiry-countdown';
 import { AuthField } from '../../components/auth/AuthField';
 import { AuthScaffold } from '../../components/auth/AuthScaffold';
 import type {
   LoginChallenge,
-  TotpEnrollmentBootstrap,
   TotpEnrollmentConfirmationRequest,
 } from '../../types/auth';
 import type {
@@ -40,120 +37,14 @@ export const TotpEnrollmentScreen = ({
   onRestartLogin,
   onSubmit,
 }: TotpEnrollmentScreenProps) => {
-  const [bootstrap, setBootstrap] = useState<TotpEnrollmentBootstrap | null>(null);
-  const [otpCode, setOtpCode] = useState('');
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isLoadingBootstrap, setIsLoadingBootstrap] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [shouldLoadBootstrap, setShouldLoadBootstrap] = useState(true);
-  const bootstrapRequestIdRef = useRef(0);
-  const previousChallengeTokenRef = useRef(challenge.loginToken);
+  const viewModel = useTotpEnrollmentViewModel({
+    challenge,
+    loadEnrollment: onLoadEnrollment,
+    submit: onSubmit,
+  });
   const countdown = useExpiryCountdown(
-    bootstrap?.expiresAt ?? challenge.expiresAt,
+    viewModel.bootstrap?.expiresAt ?? challenge.expiresAt,
   );
-
-  useEffect(() => {
-    if (bootstrap || isLoadingBootstrap || !shouldLoadBootstrap) {
-      return;
-    }
-
-    const requestId = bootstrapRequestIdRef.current + 1;
-    bootstrapRequestIdRef.current = requestId;
-    setShouldLoadBootstrap(false);
-    setIsLoadingBootstrap(true);
-    setErrorMessage(null);
-
-    void onLoadEnrollment()
-      .then((result) => {
-        if (bootstrapRequestIdRef.current !== requestId) {
-          return;
-        }
-
-        if (result.success) {
-          setBootstrap(result.enrollment);
-          return;
-        }
-
-        setErrorMessage(resolveMfaErrorPresentation(result.error).message);
-      })
-      .catch((error) => {
-        if (bootstrapRequestIdRef.current !== requestId) {
-          return;
-        }
-
-        setErrorMessage(resolveMfaErrorPresentation(error).message);
-      })
-      .finally(() => {
-        if (bootstrapRequestIdRef.current === requestId) {
-          setIsLoadingBootstrap(false);
-        }
-      });
-  }, [bootstrap, isLoadingBootstrap, onLoadEnrollment, shouldLoadBootstrap]);
-
-  useEffect(() => {
-    if (previousChallengeTokenRef.current === challenge.loginToken) {
-      return;
-    }
-
-    previousChallengeTokenRef.current = challenge.loginToken;
-    bootstrapRequestIdRef.current += 1;
-    setBootstrap(null);
-    setOtpCode('');
-    setErrorMessage(null);
-    setIsLoadingBootstrap(false);
-    setShouldLoadBootstrap(true);
-  }, [challenge.loginToken]);
-
-  const handleSubmit = async () => {
-    if (isSubmitting) {
-      return;
-    }
-
-    if (!bootstrap) {
-      setErrorMessage('인증 앱 등록 정보를 다시 불러와 주세요.');
-      return;
-    }
-
-    const normalizedOtp = sanitizeOtpCodeInput(otpCode);
-
-    if (!isCompleteOtpCode(normalizedOtp)) {
-      setErrorMessage('첫 인증 코드는 숫자 6자리로 입력해 주세요.');
-      return;
-    }
-
-    setIsSubmitting(true);
-    setErrorMessage(null);
-
-    try {
-      const result = await onSubmit({
-        loginToken: challenge.loginToken,
-        enrollmentToken: bootstrap.enrollmentToken,
-        otpCode: normalizedOtp,
-      });
-
-      if (!result.success) {
-        setErrorMessage(resolveMfaErrorPresentation(result.error).message);
-      }
-    } catch (error) {
-      setErrorMessage(resolveMfaErrorPresentation(error).message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleOpenAuthenticator = async () => {
-    if (!bootstrap?.qrUri) {
-      return;
-    }
-
-    setErrorMessage(null);
-
-    try {
-      await Linking.openURL(bootstrap.qrUri);
-    } catch {
-      setErrorMessage('인증 앱을 열지 못했습니다. 아래 수동 입력 키를 사용해 직접 등록해 주세요.');
-    }
-  };
 
   return (
     <AuthScaffold
@@ -166,7 +57,7 @@ export const TotpEnrollmentScreen = ({
       subtitle="처음 로그인하는 계정은 Google Authenticator 연결을 먼저 완료해야 합니다."
       title="Google Authenticator를 연결해 주세요"
     >
-      {isLoadingBootstrap ? (
+      {viewModel.isLoadingBootstrap ? (
         <View style={styles.inlineInfoCard} testID="totp-enroll-loading">
           <Text style={styles.inlineInfoTitle}>등록 정보를 준비하고 있습니다.</Text>
           <Text style={styles.inlineInfoBody}>
@@ -174,11 +65,11 @@ export const TotpEnrollmentScreen = ({
           </Text>
         </View>
       ) : null}
-      {!bootstrap && errorMessage ? (
+      {!viewModel.bootstrap && viewModel.errorMessage ? (
         <View style={styles.secondaryLinkWrap}>
           <Pressable
             onPress={() => {
-              setShouldLoadBootstrap(true);
+              viewModel.retryBootstrap();
             }}
             style={styles.secondaryLinkButton}
             testID="totp-enroll-retry"
@@ -187,7 +78,7 @@ export const TotpEnrollmentScreen = ({
           </Pressable>
         </View>
       ) : null}
-      {bootstrap ? (
+      {viewModel.bootstrap ? (
         <>
           <View style={panelStyles.card}>
             <Text style={panelStyles.title}>QR 등록 안내</Text>
@@ -196,7 +87,7 @@ export const TotpEnrollmentScreen = ({
             </Text>
             <Pressable
               onPress={() => {
-                void handleOpenAuthenticator();
+                void viewModel.openAuthenticator();
               }}
               style={styles.secondaryLinkButton}
               testID="totp-enroll-open-authenticator"
@@ -214,7 +105,7 @@ export const TotpEnrollmentScreen = ({
             </Text>
             <View style={panelStyles.codeBlock}>
               <Text selectable style={panelStyles.manualKey} testID="totp-enroll-manual-key">
-                {bootstrap.manualEntryKey}
+                {viewModel.bootstrap.manualEntryKey}
               </Text>
             </View>
             <Text style={styles.inlineInfoDetail} testID="totp-enroll-expiry">
@@ -224,34 +115,31 @@ export const TotpEnrollmentScreen = ({
         </>
       ) : null}
       <AuthField
-        errorMessage={errorMessage ?? undefined}
+        errorMessage={viewModel.errorMessage ?? undefined}
         keyboardType="numeric"
         label="첫 인증 코드"
-        onChangeText={(value) => {
-          setErrorMessage(null);
-          setOtpCode(sanitizeOtpCodeInput(value));
-        }}
+        onChangeText={viewModel.updateOtpCode}
         placeholder="6자리 코드"
         supportMessage="앱에 계정이 추가되면 현재 표시된 첫 6자리 코드를 입력해 주세요."
         testID="totp-enroll-code"
         textContentType="oneTimeCode"
-        value={otpCode}
+        value={viewModel.otpCode}
       />
       <Pressable
-        disabled={isSubmitting || isLoadingBootstrap || !bootstrap}
+        disabled={viewModel.isSubmitting || viewModel.isLoadingBootstrap || !viewModel.bootstrap}
         onPress={() => {
-          void handleSubmit();
+          void viewModel.submitEnrollment();
         }}
         style={[
           styles.primaryButton,
-          isSubmitting || isLoadingBootstrap || !bootstrap
+          viewModel.isSubmitting || viewModel.isLoadingBootstrap || !viewModel.bootstrap
             ? styles.primaryButtonDisabled
             : null,
         ]}
         testID="totp-enroll-submit"
       >
         <Text style={styles.primaryButtonText}>
-          {isSubmitting ? '등록 확인 중...' : '등록 완료'}
+          {viewModel.isSubmitting ? '등록 확인 중...' : '등록 완료'}
         </Text>
       </Pressable>
       <View style={styles.secondaryLinkWrap}>
