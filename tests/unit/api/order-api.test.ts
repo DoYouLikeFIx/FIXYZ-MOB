@@ -38,6 +38,7 @@ describe('order api', () => {
         clOrdId: 'cl-001',
         symbol: '005930',
         side: 'BUY',
+        orderType: 'LIMIT',
         quantity: 2,
         price: 71000,
       }),
@@ -60,6 +61,56 @@ describe('order api', () => {
         headers: {
           'Content-Type': 'application/json',
           'X-ClOrdID': 'cl-001',
+        },
+      },
+    );
+  });
+
+  it('passes through market-order payloads without forcing a limit price', async () => {
+    client.post.mockResolvedValue({
+      statusCode: 201,
+      body: {
+        orderSessionId: 'sess-market-001',
+        clOrdId: 'cl-market-001',
+        status: 'AUTHED',
+        challengeRequired: false,
+        authorizationReason: 'TRUSTED_AUTH_SESSION',
+        accountId: 1,
+        symbol: '005930',
+        side: 'BUY',
+        orderType: 'MARKET',
+        qty: 3,
+        price: null,
+        expiresAt: '2026-03-13T00:00:00Z',
+      },
+    });
+
+    const orderApi = createOrderApi({ client });
+
+    await orderApi.createOrderSession({
+      accountId: 1,
+      clOrdId: 'cl-market-001',
+      symbol: '005930',
+      side: 'BUY',
+      orderType: 'MARKET',
+      quantity: 3,
+      price: null,
+    });
+
+    expect(client.post).toHaveBeenCalledWith(
+      '/api/v1/orders/sessions',
+      {
+        accountId: 1,
+        symbol: '005930',
+        side: 'BUY',
+        orderType: 'MARKET',
+        qty: 3,
+        price: null,
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-ClOrdID': 'cl-market-001',
         },
       },
     );

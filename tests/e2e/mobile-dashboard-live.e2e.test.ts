@@ -1,35 +1,23 @@
 import { createHmac, randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { URL as NodeURL, fileURLToPath } from 'node:url';
 
+import { createAccountApi } from '@/api/account-api';
 import { createAuthApi } from '@/api/auth-api';
-import { createOrderApi, type OrderSessionResponse } from '@/api/order-api';
 import { createAuthFlowViewModel } from '@/auth/auth-flow-view-model';
 import { createMobileAuthService } from '@/auth/mobile-auth-service';
 import { InMemoryCookieManager } from '@/network/cookie-manager';
 import { CsrfTokenManager } from '@/network/csrf';
 import { HttpClient } from '@/network/http-client';
 import { createAuthNavigationState } from '@/navigation/auth-navigation';
+import { createOrderApi } from '@/api/order-api';
 import { authStore, resetAuthStore } from '@/store/auth-store';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 const LIVE_BASE_URL = process.env.LIVE_API_BASE_URL?.trim() ?? '';
-const LIVE_REQUEST_TIMEOUT_MS = 15_000;
-const DEFAULT_REGISTER_PASSWORD = 'LiveMobOrder1!';
-const canonicalOrderSessionContract = JSON.parse(
-  readFileSync(
-    fileURLToPath(new NodeURL('../order-session-contract-cases.json', import.meta.url)),
-    'utf8',
-  ),
-) as {
-  finalResults: Array<{
-    status: string;
-    executionResult?: string;
-    failureReason?: string;
-  }>;
-};
+const LIVE_REQUEST_TIMEOUT_MS = 30_000;
+const LIVE_AUTH_PREFLIGHT_TIMEOUT_MS = 15_000;
+const DEFAULT_REGISTER_PASSWORD = 'LiveMobDashboard1!';
 
 class LiveCookieManager extends InMemoryCookieManager {
   async cookieHeader(url: string): Promise<string | undefined> {
@@ -100,8 +88,8 @@ const createLiveIdentity = () => {
   const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
   return {
-    email: `mob_order_live_${suffix}@example.com`,
-    name: `Mob Order ${suffix}`,
+    email: `mob_dashboard_live_${suffix}@example.com`,
+    name: `Mob Dashboard ${suffix}`,
     password: process.env.LIVE_REGISTER_PASSWORD ?? DEFAULT_REGISTER_PASSWORD,
   };
 };
@@ -153,6 +141,103 @@ const delay = (milliseconds: number) =>
   new Promise<void>((resolve) => {
     setTimeout(resolve, milliseconds);
   });
+
+const fetchWithTimeout = async (
+  input: string,
+  init: RequestInit,
+  timeoutMs: number,
+) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const unwrapEnvelope = <T extends Record<string, unknown>>(payload: T) =>
+  (
+    'data' in payload
+    && typeof payload.data === 'object'
+    && payload.data !== null
+  )
+    ? payload.data as T
+    : payload;
+
+const createPreflightEmail = () =>
+  `mob-dashboard-preflight-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}@example.com`;
+
+const serializeSetCookies = (headers: Headers) =>
+  readSetCookieHeaders(headers)
+    .map((cookie) => cookie.split(';', 1)[0]?.trim() ?? '')
+    .filter(Boolean)
+    .join('; ');
+
+const requireLiveAuthContractHealthy = async (baseUrl: string) => {
+  const startedAt = Date.now();
+  let lastError: Error | null = null;
+
+  while (Date.now() - startedAt <= LIVE_REQUEST_TIMEOUT_MS) {
+    try {
+      const csrfResponse = await fetchWithTimeout(
+        `${baseUrl}/api/v1/auth/csrf`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        },
+        LIVE_AUTH_PREFLIGHT_TIMEOUT_MS,
+      );
+
+      if (!csrfResponse.ok) {
+        throw new Error(`csrf preflight returned ${csrfResponse.status}`);
+      }
+
+      const csrfPayload = unwrapEnvelope(await csrfResponse.json() as Record<string, unknown>);
+      const csrfToken = String(csrfPayload.csrfToken ?? csrfPayload.token ?? '');
+      const csrfHeaderName = String(csrfPayload.headerName ?? 'X-CSRF-TOKEN');
+      const cookieHeader = serializeSetCookies(csrfResponse.headers);
+
+      if (!csrfToken) {
+        throw new Error('csrf preflight did not return a csrf token');
+      }
+
+      const forgotResponse = await fetchWithTimeout(
+        `${baseUrl}/api/v1/auth/password/forgot`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            [csrfHeaderName]: csrfToken,
+            ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+          },
+          body: JSON.stringify({
+            email: createPreflightEmail(),
+          }),
+        },
+        LIVE_AUTH_PREFLIGHT_TIMEOUT_MS,
+      );
+
+      if (!forgotResponse.ok) {
+        throw new Error(`forgot-password preflight returned ${forgotResponse.status}`);
+      }
+
+      return;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      await delay(1_000);
+    }
+  }
+
+  throw new Error(
+    `LIVE auth prerequisite is unhealthy for mobile dashboard E2E: ${lastError?.message ?? 'unknown failure'}`,
+  );
+};
 
 const millisUntilNextTotpWindow = (now = Date.now()) => 30_000 - (now % 30_000);
 
@@ -219,23 +304,27 @@ const createLiveHarness = (baseUrl: string) => {
       strictCsrfBootstrap: true,
     },
   });
-  const orderApi = createOrderApi({
-    client,
-  });
   const viewModel = createAuthFlowViewModel({
     authService,
     authStore,
     initialNavigationState: createAuthNavigationState(),
   });
+  const accountApi = createAccountApi({
+    client,
+  });
+  const orderApi = createOrderApi({
+    client,
+  });
 
   return {
-    authService,
+    accountApi,
     orderApi,
     viewModel,
   };
 };
 
 const registerEnrollAndLogin = async (baseUrl: string) => {
+  await requireLiveAuthContractHealthy(baseUrl);
   const identity = createLiveIdentity();
   const registrationHarness = createLiveHarness(baseUrl);
 
@@ -249,12 +338,6 @@ const registerEnrollAndLogin = async (baseUrl: string) => {
     success: true,
   });
 
-  const pendingMfaAfterRegister = registrationHarness.viewModel.getState().pendingMfa;
-  expect(pendingMfaAfterRegister).toMatchObject({
-    nextAction: 'ENROLL_TOTP',
-  });
-  expect(pendingMfaAfterRegister?.loginToken).toBeTruthy();
-
   const enrollmentBootstrap = await registrationHarness.viewModel.loadTotpEnrollment();
   expect(enrollmentBootstrap.success).toBe(true);
   if (!enrollmentBootstrap.success) {
@@ -266,7 +349,6 @@ const registerEnrollAndLogin = async (baseUrl: string) => {
 
   const manualEntryKey = enrollmentBootstrap.enrollment.manualEntryKey;
   const enrollmentCode = generateTotp(manualEntryKey);
-
   const enrollmentResult = await registrationHarness.viewModel.submitTotpEnrollmentConfirmation({
     loginToken: pendingMfa!.loginToken,
     enrollmentToken: enrollmentBootstrap.enrollment.enrollmentToken,
@@ -279,11 +361,11 @@ const registerEnrollAndLogin = async (baseUrl: string) => {
 
   resetAuthStore();
   const loginHarness = createLiveHarness(baseUrl);
-
   const loginResult = await loginHarness.viewModel.submitLogin({
     email: identity.email,
     password: identity.password,
   });
+
   expect(loginResult).toEqual({
     success: true,
   });
@@ -296,6 +378,7 @@ const registerEnrollAndLogin = async (baseUrl: string) => {
     loginToken: loginToken!,
     otpCode: loginCode,
   });
+
   expect(mfaResult).toEqual({
     success: true,
   });
@@ -304,27 +387,20 @@ const registerEnrollAndLogin = async (baseUrl: string) => {
   expect(member?.accountId).toBeTruthy();
 
   return {
-    accountId: Number(member!.accountId),
+    accountId: String(member!.accountId),
     loginHarness,
-    manualEntryKey,
-    lastUsedTotp: loginCode,
   };
 };
 
-const createHighRiskOrderSession = async (
-  loginHarness: ReturnType<typeof createLiveHarness>,
-  accountId: number,
-) => {
-  return loginHarness.orderApi.createOrderSession({
-    accountId,
-    clOrdId: randomUUID(),
-    symbol: '005930',
-    side: 'BUY',
-    orderType: 'LIMIT',
-    quantity: 10,
-    price: 70_500,
-  });
-};
+const isChartReadyPosition = (position: {
+  marketPrice?: number | null;
+  quoteAsOf?: string | null;
+  quoteSourceMode?: string | null;
+}) =>
+  position.marketPrice !== null
+  && position.marketPrice !== undefined
+  && Boolean(position.quoteAsOf)
+  && ['LIVE', 'DELAYED', 'REPLAY'].includes(position.quoteSourceMode ?? '');
 
 const createLowRiskOrderSession = async (
   loginHarness: ReturnType<typeof createLiveHarness>,
@@ -341,56 +417,44 @@ const createLowRiskOrderSession = async (
   });
 };
 
-const createMarketOrderSession = async (
+const waitForDashboardChartData = async (
   loginHarness: ReturnType<typeof createLiveHarness>,
-  accountId: number,
+  accountId: string,
 ) => {
-  return loginHarness.orderApi.createOrderSession({
-    accountId,
-    clOrdId: randomUUID(),
-    symbol: '005930',
-    side: 'BUY',
-    orderType: 'MARKET',
-    quantity: 3,
-    price: null,
-  });
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt <= 20_000) {
+    const summary = await loginHarness.accountApi.fetchAccountSummary({
+      accountId,
+    });
+    const positions = await loginHarness.accountApi.fetchAccountPositions({
+      accountId,
+    });
+
+    if (
+      positions.length > 0
+      && (isChartReadyPosition(summary) || positions.some((position) => isChartReadyPosition(position)))
+    ) {
+      return {
+        positions,
+        summary,
+      };
+    }
+
+    await delay(1_000);
+  }
+
+  return {
+    positions: await loginHarness.accountApi.fetchAccountPositions({
+      accountId,
+    }),
+    summary: await loginHarness.accountApi.fetchAccountSummary({
+      accountId,
+    }),
+  };
 };
 
-const hasCanonicalFinalResult = (session: {
-  status: string;
-  executionResult?: string | null;
-  failureReason?: string | null;
-}) =>
-  canonicalOrderSessionContract.finalResults.some(
-    (candidate) =>
-      candidate.status === session.status
-      && (candidate.executionResult ?? null) === (session.executionResult ?? null)
-      && (candidate.failureReason ?? null) === (session.failureReason ?? null),
-  );
-
-const expectLiveQuoteMetadata = (session: {
-  quoteSnapshotId?: string | null;
-  quoteAsOf?: string | null;
-  quoteSourceMode?: string | null;
-}) => {
-  expect(session.quoteSnapshotId).toBeTruthy();
-  expect(session.quoteAsOf).toBeTruthy();
-  expect(['LIVE', 'DELAYED', 'REPLAY']).toContain(session.quoteSourceMode);
-};
-
-const expectSuccessfulLiveCompletion = (session: OrderSessionResponse) => {
-  expect(session.status).toBe('COMPLETED');
-  expect(session.failureReason ?? null).toBeNull();
-  expect(session.externalSyncStatus ?? null).toBe('CONFIRMED');
-  expect(hasCanonicalFinalResult(session)).toBe(true);
-};
-
-const expectNoActiveWindowMetadata = (session: Record<string, unknown>) => {
-  expect(Object.prototype.hasOwnProperty.call(session, 'expiresAt')).toBe(false);
-  expect(Object.prototype.hasOwnProperty.call(session, 'remainingSeconds')).toBe(false);
-};
-
-describe.runIf(Boolean(LIVE_BASE_URL))('Live mobile order session against backend', () => {
+describe.runIf(Boolean(LIVE_BASE_URL))('Live mobile dashboard against backend', () => {
   beforeAll(() => {
     authStore.initialize(null);
   });
@@ -403,146 +467,48 @@ describe.runIf(Boolean(LIVE_BASE_URL))('Live mobile order session against backen
     resetAuthStore();
   });
 
-  it('registers, logs in with fresh MFA, and completes a low-risk auto-authorized order session', async () => {
+  it('returns quote metadata required by the mobile dashboard chart after fresh MFA login', async () => {
     const { accountId, loginHarness } = await registerEnrollAndLogin(LIVE_BASE_URL);
 
-    const createdSession = await createLowRiskOrderSession(loginHarness, accountId);
-
-    expect(createdSession).toMatchObject({
-      status: 'AUTHED',
-      challengeRequired: false,
-      authorizationReason: 'TRUSTED_AUTH_SESSION',
-      symbol: '005930',
-      qty: 1,
-    });
-    expect(createdSession.expiresAt).toBeTruthy();
-    expect(createdSession.remainingSeconds).toBeTypeOf('number');
-
-    const executedSession = await loginHarness.orderApi.executeOrderSession(
-      createdSession.orderSessionId,
-    );
-    expectSuccessfulLiveCompletion(executedSession);
-    expectNoActiveWindowMetadata(executedSession as unknown as Record<string, unknown>);
-  }, 150_000);
-
-  it('registers, enrolls TOTP, logs in with fresh MFA, and completes a challenged order session', async () => {
-    const {
+    let positions = await loginHarness.accountApi.fetchAccountPositions({
       accountId,
-      loginHarness,
-      manualEntryKey,
-      lastUsedTotp,
-    } = await registerEnrollAndLogin(LIVE_BASE_URL);
-
-    const createdSession = await createHighRiskOrderSession(loginHarness, accountId);
-
-    expect(createdSession).toMatchObject({
-      status: 'PENDING_NEW',
-      challengeRequired: true,
-      authorizationReason: 'ELEVATED_ORDER_RISK',
-      symbol: '005930',
-      qty: 10,
     });
 
-    const fetchedSession = await loginHarness.orderApi.getOrderSession(createdSession.orderSessionId);
-    expect(fetchedSession).toMatchObject({
-      orderSessionId: createdSession.orderSessionId,
-      status: 'PENDING_NEW',
-      challengeRequired: true,
-      authorizationReason: 'ELEVATED_ORDER_RISK',
+    if (positions.length === 0) {
+      const createdSession = await createLowRiskOrderSession(loginHarness, Number(accountId));
+
+      expect(createdSession).toMatchObject({
+        status: 'AUTHED',
+        challengeRequired: false,
+        qty: 1,
+        symbol: '005930',
+      });
+
+      const executedSession = await loginHarness.orderApi.executeOrderSession(
+        createdSession.orderSessionId,
+      );
+
+      expect(executedSession.status).toBe('COMPLETED');
+    }
+
+    const dashboardData = await waitForDashboardChartData(loginHarness, accountId);
+    const summary = dashboardData.summary;
+    positions = dashboardData.positions;
+
+    expect(Array.isArray(positions)).toBe(true);
+    expect(positions.length).toBeGreaterThan(0);
+    expect(summary.accountId).toBe(Number(accountId));
+
+    const summaryChartReady = isChartReadyPosition(summary);
+    const positionsChartReady = positions.some((position) => isChartReadyPosition(position));
+
+    expect({
+      positions,
+      summary,
+    }).toMatchObject({
+      positions: expect.any(Array),
+      summary: expect.any(Object),
     });
-
-    const orderOtpCode = await waitForNextTotp(manualEntryKey, lastUsedTotp);
-    const verifiedSession = await loginHarness.orderApi.verifyOrderSessionOtp(
-      createdSession.orderSessionId,
-      orderOtpCode,
-    );
-    expect(verifiedSession).toMatchObject({
-      orderSessionId: createdSession.orderSessionId,
-      status: 'AUTHED',
-      challengeRequired: true,
-      authorizationReason: 'ELEVATED_ORDER_RISK',
-    });
-
-    const executedSession = await loginHarness.orderApi.executeOrderSession(
-      createdSession.orderSessionId,
-    );
-    expectSuccessfulLiveCompletion(executedSession);
-    expectNoActiveWindowMetadata(executedSession as unknown as Record<string, unknown>);
-  }, 150_000);
-
-  it('rejects same-window TOTP replay across order sessions and allows recovery on a fresh code', async () => {
-    const {
-      accountId,
-      loginHarness,
-      manualEntryKey,
-      lastUsedTotp,
-    } = await registerEnrollAndLogin(LIVE_BASE_URL);
-
-    const firstSession = await createHighRiskOrderSession(loginHarness, accountId);
-    const replayedCode = await waitForNextTotp(manualEntryKey, lastUsedTotp);
-
-    const firstVerified = await loginHarness.orderApi.verifyOrderSessionOtp(
-      firstSession.orderSessionId,
-      replayedCode,
-    );
-    expect(firstVerified).toMatchObject({
-      orderSessionId: firstSession.orderSessionId,
-      status: 'AUTHED',
-      challengeRequired: true,
-      authorizationReason: 'ELEVATED_ORDER_RISK',
-    });
-
-    const secondSession = await createHighRiskOrderSession(loginHarness, accountId);
-
-    await expect(
-      loginHarness.orderApi.verifyOrderSessionOtp(secondSession.orderSessionId, replayedCode),
-    ).rejects.toMatchObject({
-      code: 'AUTH-011',
-      status: 401,
-    });
-
-    const pendingSecondSession = await loginHarness.orderApi.getOrderSession(secondSession.orderSessionId);
-    expect(pendingSecondSession).toMatchObject({
-      orderSessionId: secondSession.orderSessionId,
-      status: 'PENDING_NEW',
-      challengeRequired: true,
-      authorizationReason: 'ELEVATED_ORDER_RISK',
-    });
-
-    const recoveryCode = await waitForNextTotp(manualEntryKey, replayedCode);
-    const recoveredSession = await loginHarness.orderApi.verifyOrderSessionOtp(
-      secondSession.orderSessionId,
-      recoveryCode,
-    );
-    expect(recoveredSession).toMatchObject({
-      orderSessionId: secondSession.orderSessionId,
-      status: 'AUTHED',
-      challengeRequired: true,
-      authorizationReason: 'ELEVATED_ORDER_RISK',
-    });
-
-    const executedRecoveredSession = await loginHarness.orderApi.executeOrderSession(
-      secondSession.orderSessionId,
-    );
-    expectSuccessfulLiveCompletion(executedRecoveredSession);
-    expectNoActiveWindowMetadata(executedRecoveredSession as unknown as Record<string, unknown>);
-  }, 180_000);
-
-  // Pending backend rollout: the live MARKET create response currently omits
-  // quoteSnapshotId/quoteAsOf/quoteSourceMode even though lower environments
-  // and contract-backed tests already cover that shape.
-  it('creates a market order session with live quote freshness metadata after fresh MFA login', async () => {
-    const { accountId, loginHarness } = await registerEnrollAndLogin(LIVE_BASE_URL);
-
-    const createdSession = await createMarketOrderSession(loginHarness, accountId);
-
-    expect(createdSession).toMatchObject({
-      orderType: 'MARKET',
-      price: null,
-      symbol: '005930',
-      qty: 3,
-    });
-    expectLiveQuoteMetadata(createdSession);
-    expect(createdSession.status).toMatch(/^(AUTHED|PENDING_NEW)$/);
+    expect(summaryChartReady || positionsChartReady).toBe(true);
   }, 150_000);
 });

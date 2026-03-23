@@ -6,6 +6,7 @@ describe('external order recovery section model', () => {
     const model = buildExternalOrderRecoverySectionModel({
       step: 'A',
       feedbackMessage: null,
+      staleQuoteGuidance: null,
       inlineError: null,
       isInteractionLocked: false,
       isCreating: false,
@@ -27,6 +28,7 @@ describe('external order recovery section model', () => {
     const model = buildExternalOrderRecoverySectionModel({
       step: 'C',
       feedbackMessage: null,
+      staleQuoteGuidance: null,
       inlineError: null,
       isInteractionLocked: false,
       isCreating: false,
@@ -74,6 +76,7 @@ describe('external order recovery section model', () => {
     const model = buildExternalOrderRecoverySectionModel({
       step: 'B',
       feedbackMessage: null,
+      staleQuoteGuidance: null,
       inlineError: '입력 값을 다시 확인해 주세요.',
       isInteractionLocked: true,
       isCreating: false,
@@ -101,6 +104,26 @@ describe('external order recovery section model', () => {
 
     expect(model.inlineError).toBe('입력 값을 다시 확인해 주세요.');
     expect(model.otpInput.helperText).toBe('OTP 검증 중...');
+    expect(model.clearAction.disabled).toBe(false);
+  });
+
+  it('keeps the clear action enabled when only stale-quote guidance is present', () => {
+    const model = buildExternalOrderRecoverySectionModel({
+      step: 'A',
+      feedbackMessage: null,
+      staleQuoteGuidance: '시장가 주문 사전검증에 사용한 시세가 최신이 아닙니다.',
+      inlineError: null,
+      isInteractionLocked: false,
+      isCreating: false,
+      isExecuting: false,
+      isVerifyingOtp: false,
+      orderSession: null,
+      presentation: null,
+      presets: externalOrderPresetOptions,
+      selectedPresetId: 'krx-market-buy-3',
+      draftSummary: '005930 · 삼성전자 · 3주 · 시장가',
+    });
+
     expect(model.clearAction.disabled).toBe(false);
   });
 });

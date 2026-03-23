@@ -40,7 +40,9 @@ describe('ExternalOrderRecoverySection', () => {
         <ExternalOrderRecoverySection
           step="C"
           feedbackMessage={null}
+          staleQuoteGuidance={null}
           inlineError={null}
+          marketTicker={null}
           symbolValue="005930"
           quantityValue="2"
           symbolError={null}
@@ -124,7 +126,9 @@ describe('ExternalOrderRecoverySection', () => {
         <ExternalOrderRecoverySection
           step="A"
           feedbackMessage={null}
+          staleQuoteGuidance={null}
           inlineError="입력 값을 다시 확인해 주세요."
+          marketTicker={null}
           symbolValue="005930"
           quantityValue="1"
           symbolError={null}
@@ -172,7 +176,9 @@ describe('ExternalOrderRecoverySection', () => {
         <ExternalOrderRecoverySection
           step="C"
           feedbackMessage={null}
+          staleQuoteGuidance={null}
           inlineError={null}
+          marketTicker={null}
           symbolValue="005930"
           quantityValue="2"
           symbolError={null}
@@ -236,7 +242,9 @@ describe('ExternalOrderRecoverySection', () => {
         <ExternalOrderRecoverySection
           step="B"
           feedbackMessage={null}
+          staleQuoteGuidance={null}
           inlineError={null}
+          marketTicker={null}
           symbolValue="005930"
           quantityValue="2"
           symbolError={null}
@@ -297,7 +305,9 @@ describe('ExternalOrderRecoverySection', () => {
         <ExternalOrderRecoverySection
           step="C"
           feedbackMessage={null}
+          staleQuoteGuidance={null}
           inlineError={null}
+          marketTicker={null}
           symbolValue="005930"
           quantityValue="2"
           symbolError={null}
@@ -357,7 +367,9 @@ describe('ExternalOrderRecoverySection', () => {
         <ExternalOrderRecoverySection
           step="COMPLETE"
           feedbackMessage="체결 결과를 다시 확인하고 있습니다. 잠시만 기다려 주세요."
+          staleQuoteGuidance={null}
           inlineError={null}
+          marketTicker={null}
           symbolValue="005930"
           quantityValue="2"
           symbolError={null}
@@ -421,7 +433,9 @@ describe('ExternalOrderRecoverySection', () => {
         <ExternalOrderRecoverySection
           step="COMPLETE"
           feedbackMessage="처리 중 문제가 발생해 수동 확인이 필요합니다. 고객센터에 문의해 주세요."
+          staleQuoteGuidance={null}
           inlineError={null}
+          marketTicker={null}
           symbolValue="005930"
           quantityValue="2"
           symbolError={null}
@@ -486,7 +500,9 @@ describe('ExternalOrderRecoverySection', () => {
         <ExternalOrderRecoverySection
           step="C"
           feedbackMessage={null}
+          staleQuoteGuidance={null}
           inlineError={null}
+          marketTicker={null}
           symbolValue="005930"
           quantityValue="2"
           symbolError={null}
