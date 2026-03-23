@@ -170,6 +170,7 @@ const quoteFreshnessScenarios = [
     quoteAsOf: '2026-03-11T09:09:00Z',
     quoteSourceMode: 'LIVE',
     stateLabel: '직결 시세',
+    statusNote: '실시간 기준',
   },
   {
     marketPrice: 70_200,
@@ -177,6 +178,7 @@ const quoteFreshnessScenarios = [
     quoteAsOf: '2026-03-12T08:15:00Z',
     quoteSourceMode: 'DELAYED',
     stateLabel: '지연 호가',
+    statusNote: '지연 도착 데이터',
   },
   {
     marketPrice: 70_300,
@@ -184,6 +186,7 @@ const quoteFreshnessScenarios = [
     quoteAsOf: '2026-03-12T07:45:00Z',
     quoteSourceMode: 'REPLAY',
     stateLabel: '리플레이 기준',
+    statusNote: '재생 스냅샷',
   },
 ] as const;
 
@@ -1629,17 +1632,65 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
         scenario.stateLabel,
       );
       expect(
+        getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-status-note')),
+      ).toBe(scenario.statusNote);
+      expect(
         getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-quote-as-of')),
       ).toBe(quoteDateFormatter.format(new Date(scenario.quoteAsOf)));
       expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-snapshot'))).toBe(
         scenario.quoteSnapshotId,
       );
+      expect(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-chart')).toBeTruthy();
       expect(
         findAllByTestId(renderer.root, 'mobile-dashboard-quote-ticker-candle'),
-      ).toHaveLength(18);
-      expect(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-chart')).toBeTruthy();
+      ).toHaveLength(0);
     });
   }
+
+  it('renders unknown quote source modes with neutral guidance instead of live styling', async () => {
+    const accountApi = createAccountApi({
+      fetchAccountPositions: vi.fn().mockResolvedValue([
+        {
+          ...positionsFixture[0],
+          marketPrice: 70_400,
+          quoteSnapshotId: 'quote-vendor-001',
+          quoteAsOf: '2026-03-12T08:40:00Z',
+          quoteSourceMode: 'VENDOR_STREAM',
+        },
+      ]),
+    });
+    const { renderer } = await renderScreen({ accountApi });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-mode'))).toBe(
+      'VENDOR_STREAM',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-state'))).toBe(
+      '미확인 시세',
+    );
+    expect(
+      getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-status-note')),
+    ).toBe('새 source mode');
+  });
+
+  it('falls back safely when quoteAsOf is malformed', async () => {
+    const accountApi = createAccountApi({
+      fetchAccountPositions: vi.fn().mockResolvedValue([
+        {
+          ...positionsFixture[0],
+          quoteAsOf: 'not-a-date',
+        },
+      ]),
+    });
+    const { renderer } = await renderScreen({ accountApi });
+
+    expect(findAllByTestId(renderer.root, 'mobile-dashboard-quote-as-of')).toHaveLength(0);
+    expect(
+      getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-quote-as-of')),
+    ).toBe('시각 확인 필요');
+    expect(
+      getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-freshness-age')),
+    ).toBe('시각 확인 필요');
+  });
 
   it('maps server-side Step A rejects back to quantity guidance', async () => {
     const createOrderSession = vi.fn().mockRejectedValue(

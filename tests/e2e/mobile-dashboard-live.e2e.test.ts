@@ -95,7 +95,7 @@ const createLiveIdentity = () => {
 };
 
 const decodeBase32 = (value: string): Buffer => {
-  const normalized = value.trim().replace(/=/g, '').toUpperCase();
+  const normalized = value.trim().replace(/[\s=-]/g, '').toUpperCase();
   let buffer = 0;
   let bitsLeft = 0;
   const output: number[] = [];
@@ -241,6 +241,17 @@ const requireLiveAuthContractHealthy = async (baseUrl: string) => {
 
 const millisUntilNextTotpWindow = (now = Date.now()) => 30_000 - (now % 30_000);
 
+const generateStableTotp = async (
+  manualEntryKey: string,
+  minRemainingMs = 8_000,
+) => {
+  if (millisUntilNextTotpWindow() < minRemainingMs) {
+    await delay(millisUntilNextTotpWindow() + 1_500);
+  }
+
+  return generateTotp(manualEntryKey);
+};
+
 const waitForNextTotp = async (
   manualEntryKey: string,
   previousCode: string,
@@ -348,7 +359,7 @@ const registerEnrollAndLogin = async (baseUrl: string) => {
   expect(pendingMfa?.loginToken).toBeTruthy();
 
   const manualEntryKey = enrollmentBootstrap.enrollment.manualEntryKey;
-  const enrollmentCode = generateTotp(manualEntryKey);
+  const enrollmentCode = await generateStableTotp(manualEntryKey);
   const enrollmentResult = await registrationHarness.viewModel.submitTotpEnrollmentConfirmation({
     loginToken: pendingMfa!.loginToken,
     enrollmentToken: enrollmentBootstrap.enrollment.enrollmentToken,
