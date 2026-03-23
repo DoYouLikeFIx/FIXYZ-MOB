@@ -15,12 +15,12 @@ appId: org.reactjs.native.example.FIXYZMob
     id: login-email
 - waitForAnimationToEnd:
     timeout: 5000
-- inputText: quote-story@fix.com
+- inputText: ${MOB_DEMO_EMAIL}
 - tapOn:
     id: login-password
 - waitForAnimationToEnd:
     timeout: 5000
-- inputText: Test1234!
+- inputText: ${MOB_DEMO_PASSWORD}
 - tapOn:
     id: login-submit
 - tapOn:
@@ -32,7 +32,7 @@ appId: org.reactjs.native.example.FIXYZMob
     timeout: 20000
 - tapOn:
     id: login-mfa-input
-- inputText: 123456
+- inputText: ${MOB_DEMO_OTP_CODE}
 - pressKey: Enter
 - tapOn:
     id: login-mfa-submit
@@ -46,16 +46,22 @@ appId: org.reactjs.native.example.FIXYZMob
     timeout: 20000
 - assertVisible:
     id: mobile-dashboard-market-price
-- assertVisible: LIVE
+- assertVisible:
+    id: mobile-dashboard-quote-source-mode
+    text: LIVE
 - tapOn:
     id: mobile-symbol-000660
 - extendedWaitUntil:
-    visible: DELAYED
+    visible:
+      id: mobile-dashboard-quote-source-mode
+      text: DELAYED
     timeout: 10000
 - tapOn:
     id: mobile-symbol-035420
 - extendedWaitUntil:
-    visible: REPLAY
+    visible:
+      id: mobile-dashboard-quote-source-mode
+      text: REPLAY
     timeout: 10000
 - swipe:
     start: "50%,84%"

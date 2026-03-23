@@ -12,12 +12,6 @@ appId: org.reactjs.native.example.FIXYZMob
     timeout: 20000
 - tapOn:
     id: login-email
-- extendedWaitUntil:
-    visible:
-      id: login-email
-    timeout: 10000
-- tapOn:
-    id: login-email
 - waitForAnimationToEnd:
     timeout: 5000
 - inputText: ${LIVE_EMAIL}
