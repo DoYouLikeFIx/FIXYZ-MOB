@@ -2309,6 +2309,8 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-processing-title'))).toContain(
       '다시 확인',
     );
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-reset')).toHaveLength(1);
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-execute')).toHaveLength(0);
     expect(findAllByTestId(renderer.root, 'mobile-order-session-feedback')).toHaveLength(0);
 
     await unmountRenderer(renderer);
@@ -2345,10 +2347,121 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     expect(getTextContent(findByTestId(renderer.root, 'mobile-order-session-manual-review'))).toContain(
       '수동 확인',
     );
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-reset')).toHaveLength(1);
+    expect(findAllByTestId(renderer.root, 'mobile-order-session-execute')).toHaveLength(0);
     expect(findAllByTestId(renderer.root, 'mobile-order-session-feedback')).toHaveLength(0);
 
     await unmountRenderer(renderer);
   });
+
+  it.each([
+    {
+      name: 'REQUERYING',
+      restoredSession: makeOrderSession({
+        orderSessionId: 'sess-restore-requery-reset',
+        clOrdId: 'cl-sess-restore-requery-reset',
+        status: 'REQUERYING',
+        challengeRequired: true,
+        authorizationReason: 'ELEVATED_ORDER_RISK',
+        qty: 5,
+      }),
+      stalePollResult: makeOrderSession({
+        orderSessionId: 'sess-restore-requery-reset',
+        clOrdId: 'cl-sess-restore-requery-reset',
+        status: 'COMPLETED',
+        challengeRequired: true,
+        authorizationReason: 'ELEVATED_ORDER_RISK',
+        qty: 5,
+        executionResult: 'FILLED',
+        executedPrice: 70100,
+        expiresAt: null,
+      }),
+      visibleStateTestId: 'mobile-order-session-processing',
+    },
+    {
+      name: 'ESCALATED',
+      restoredSession: makeOrderSession({
+        orderSessionId: 'sess-restore-escalated-reset',
+        clOrdId: 'cl-sess-restore-escalated-reset',
+        status: 'ESCALATED',
+        challengeRequired: true,
+        authorizationReason: 'ELEVATED_ORDER_RISK',
+        qty: 5,
+        failureReason: 'ESCALATED_MANUAL_REVIEW',
+      }),
+      stalePollResult: makeOrderSession({
+        orderSessionId: 'sess-restore-escalated-reset',
+        clOrdId: 'cl-sess-restore-escalated-reset',
+        status: 'COMPLETED',
+        challengeRequired: true,
+        authorizationReason: 'ELEVATED_ORDER_RISK',
+        qty: 5,
+        executionResult: 'FILLED',
+        executedPrice: 70100,
+        expiresAt: null,
+      }),
+      visibleStateTestId: 'mobile-order-session-manual-review',
+    },
+  ])(
+    'ignores a stale %s poll result after reset from a restored session',
+    async ({ restoredSession, stalePollResult, visibleStateTestId }) => {
+      const secureStore = {
+        get: vi.fn().mockResolvedValue(null),
+        remove: vi.fn().mockResolvedValue(undefined),
+        set: vi.fn().mockResolvedValue(undefined),
+      };
+      __setOrderSessionStorageRuntimeForTests({
+        isReactNativeRuntime: () => true,
+        loadSecureStore: vi.fn().mockResolvedValue(secureStore),
+      });
+      await persistOrderSessionForRestore(restoredSession.orderSessionId);
+
+      const stalePollDeferred = createDeferred<OrderSessionResponse>();
+      const getOrderSession = vi.fn()
+        .mockResolvedValueOnce(restoredSession)
+        .mockImplementationOnce(() => stalePollDeferred.promise);
+      const { renderer } = await renderScreen({
+        orderApi: createOrderApi({
+          getOrderSession,
+        }),
+      });
+
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      expect(findAllByTestId(renderer.root, visibleStateTestId)).toHaveLength(1);
+      expect(getOrderSession).toHaveBeenCalledWith(restoredSession.orderSessionId);
+
+      await act(async () => {
+        await findByTestId(renderer.root, 'mobile-order-session-reset').props.onPress();
+        await flushMicrotasks();
+      });
+
+      expect(findAllByTestId(renderer.root, 'mobile-order-session-create')).toHaveLength(1);
+      expect(findByTestId(renderer.root, 'mobile-order-input-symbol').props.value).toBe('005930');
+      expect(findByTestId(renderer.root, 'mobile-order-input-qty').props.value).toBe('1');
+      expect(findAllByTestId(renderer.root, visibleStateTestId)).toHaveLength(0);
+      expect(findAllByTestId(renderer.root, 'mobile-order-session-summary')).toHaveLength(0);
+      expect(findAllByTestId(renderer.root, 'mobile-order-session-feedback')).toHaveLength(0);
+      expect(secureStore.remove).toHaveBeenCalledWith('fixyz.order-session-id:1');
+
+      await act(async () => {
+        stalePollDeferred.resolve(stalePollResult);
+        await flushMicrotasks();
+      });
+
+      expect(findAllByTestId(renderer.root, 'mobile-order-session-create')).toHaveLength(1);
+      expect(findByTestId(renderer.root, 'mobile-order-input-symbol').props.value).toBe('005930');
+      expect(findByTestId(renderer.root, 'mobile-order-input-qty').props.value).toBe('1');
+      expect(findAllByTestId(renderer.root, visibleStateTestId)).toHaveLength(0);
+      expect(findAllByTestId(renderer.root, 'mobile-order-session-result')).toHaveLength(0);
+      expect(findAllByTestId(renderer.root, 'mobile-order-session-summary')).toHaveLength(0);
+      expect(findAllByTestId(renderer.root, 'mobile-order-session-feedback')).toHaveLength(0);
+
+      await unmountRenderer(renderer);
+    },
+  );
 
   it('ignores a stale restore result after the user edits the draft first', async () => {
     const secureStoreRead = createDeferred<string | null>();
@@ -2559,6 +2672,8 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
           sharedProcessingStateCases.find((candidate) => candidate.status === 'REQUERYING')?.body
             ?? '체결 결과를 재조회하는 중입니다. 완료로 간주하지 말고 상태가 바뀔 때까지 기다려 주세요.',
         );
+        expect(findAllByTestId(root, 'mobile-order-session-reset')).toHaveLength(1);
+        expect(findAllByTestId(root, 'mobile-order-session-execute')).toHaveLength(0);
       },
     },
     {
@@ -2578,6 +2693,8 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
         const manualReviewText = getTextContent(findByTestId(root, 'mobile-order-session-manual-review'));
         expect(manualReviewText).toContain('처리 중 문제가 발생해 수동 확인이 필요합니다.');
         expect(manualReviewText).toContain('주문 번호를 확인한 뒤 고객센터에 문의해 주세요.');
+        expect(findAllByTestId(root, 'mobile-order-session-reset')).toHaveLength(1);
+        expect(findAllByTestId(root, 'mobile-order-session-execute')).toHaveLength(0);
       },
     },
   ])('restores the saved order session into $name after session refresh completes', async ({
