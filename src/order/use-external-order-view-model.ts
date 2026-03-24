@@ -735,6 +735,8 @@ export const useExternalOrderViewModel = ({
         if (cancelled) {
           return;
         }
+        marketTickerPositionRef.current = null;
+        setMarketTickerPosition(null);
         setMarketTickerError(getErrorMessage(error));
       } finally {
         if (!cancelled) {
@@ -1274,9 +1276,14 @@ export const useExternalOrderViewModel = ({
     }),
     marketTicker: showMarketTicker ? {
       symbol: marketTickerSymbol,
+      avgPrice: marketTickerPosition?.avgPrice ?? null,
       marketPrice: marketTickerPosition?.marketPrice ?? null,
       quoteAsOf: marketTickerPosition?.quoteAsOf ?? null,
       quoteSourceMode: marketTickerPosition?.quoteSourceMode ?? null,
+      unrealizedPnl: marketTickerPosition?.unrealizedPnl ?? null,
+      realizedPnlDaily: marketTickerPosition?.realizedPnlDaily ?? null,
+      valuationStatus: marketTickerPosition?.valuationStatus ?? null,
+      valuationUnavailableReason: marketTickerPosition?.valuationUnavailableReason ?? null,
       isLoading: isMarketTickerLoading,
       error: marketTickerError,
     } : null,
