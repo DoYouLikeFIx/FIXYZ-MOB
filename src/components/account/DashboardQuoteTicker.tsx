@@ -1,5 +1,12 @@
 import { Text, View } from 'react-native';
 
+import {
+  isFreshValuationStatus,
+  resolveValuationGuidance,
+  resolveValuationStatusLabel,
+  resolveValuationStatus,
+  VALUATION_UNAVAILABLE_LABEL,
+} from '../../account/account-valuation';
 import type { AccountPosition, QuoteSourceMode } from '../../types/account';
 import { formatKRW } from '../../utils/formatters';
 
@@ -23,71 +30,132 @@ type QuoteTone = {
   statusText: string;
 };
 
-const getQuoteTone = (quoteSourceMode: QuoteSourceMode | null | undefined): QuoteTone => {
-  switch (quoteSourceMode) {
-    case 'LIVE':
-      return {
-        accent: '#FF8A3D',
-        accentSoft: 'rgba(255, 138, 61, 0.14)',
-        badgeBorder: 'rgba(255, 138, 61, 0.26)',
-        boardBackground: '#0B1018',
-        boardBorder: 'rgba(255,255,255,0.08)',
-        panelSurface: '#101722',
-        stateLabel: '직결 시세',
-        statusFill: 'rgba(255, 138, 61, 0.18)',
-        statusNote: '실시간 기준',
-        statusText: '#FFB07A',
-      };
-    case 'DELAYED':
-      return {
-        accent: '#F6B84A',
-        accentSoft: 'rgba(246, 184, 74, 0.14)',
-        badgeBorder: 'rgba(246, 184, 74, 0.28)',
-        boardBackground: '#0B1018',
-        boardBorder: 'rgba(255,255,255,0.08)',
-        panelSurface: '#101722',
-        stateLabel: '지연 호가',
-        statusFill: 'rgba(246, 184, 74, 0.18)',
-        statusNote: '지연 도착 데이터',
-        statusText: '#FFD27E',
-      };
-    case 'REPLAY':
-      return {
-        accent: '#72A9FF',
-        accentSoft: 'rgba(114, 169, 255, 0.14)',
-        badgeBorder: 'rgba(114, 169, 255, 0.26)',
-        boardBackground: '#0B1018',
-        boardBorder: 'rgba(255,255,255,0.08)',
-        panelSurface: '#101722',
-        stateLabel: '리플레이 기준',
-        statusFill: 'rgba(114, 169, 255, 0.18)',
-        statusNote: '재생 스냅샷',
-        statusText: '#A9CBFF',
-      };
+const getUnavailableStatusNote = (
+  reason: AccountPosition['valuationUnavailableReason'],
+) => {
+  switch (reason) {
+    case 'QUOTE_MISSING':
+      return '시세 없음';
+    case 'PROVIDER_UNAVAILABLE':
+      return '시세 제공 실패';
     default:
-      return {
-        accent: '#A7B2C6',
-        accentSoft: 'rgba(167, 178, 198, 0.14)',
-        badgeBorder: 'rgba(167, 178, 198, 0.24)',
-        boardBackground: '#0B1018',
-        boardBorder: 'rgba(255,255,255,0.08)',
-        panelSurface: '#101722',
-        stateLabel: '미확인 시세',
-        statusFill: 'rgba(167, 178, 198, 0.16)',
-        statusNote: '새 source mode',
-        statusText: '#D4DBE8',
-      };
+      return '시세 확인 불가';
   }
+};
+
+const getQuoteTone = (
+  quoteSourceMode: QuoteSourceMode | null | undefined,
+  valuationStatus: AccountPosition['valuationStatus'],
+  valuationUnavailableReason: AccountPosition['valuationUnavailableReason'],
+): QuoteTone => {
+  if (valuationStatus !== 'FRESH' && valuationStatus !== 'STALE' && valuationStatus !== 'UNAVAILABLE') {
+    return {
+      accent: '#A7B2C6',
+      accentSoft: 'rgba(167, 178, 198, 0.14)',
+      badgeBorder: 'rgba(167, 178, 198, 0.24)',
+      boardBackground: '#0B1018',
+      boardBorder: 'rgba(255,255,255,0.08)',
+      panelSurface: '#101722',
+      stateLabel: resolveValuationStatusLabel(valuationStatus),
+      statusFill: 'rgba(167, 178, 198, 0.16)',
+      statusNote: valuationStatus ? 'freshness 상태 미확인' : 'freshness 정보 없음',
+      statusText: '#D4DBE8',
+    };
+  }
+
+  const normalized = typeof quoteSourceMode === 'string' ? quoteSourceMode.trim() : '';
+
+  const baseTone = (() => {
+    switch (normalized) {
+      case 'LIVE':
+        return {
+          accent: '#FF8A3D',
+          accentSoft: 'rgba(255, 138, 61, 0.14)',
+          badgeBorder: 'rgba(255, 138, 61, 0.26)',
+          boardBackground: '#0B1018',
+          boardBorder: 'rgba(255,255,255,0.08)',
+          panelSurface: '#101722',
+          stateLabel: '직결 시세',
+          statusFill: 'rgba(255, 138, 61, 0.18)',
+          statusNote: '실시간 기준',
+          statusText: '#FFB07A',
+        };
+      case 'DELAYED':
+        return {
+          accent: '#F6B84A',
+          accentSoft: 'rgba(246, 184, 74, 0.14)',
+          badgeBorder: 'rgba(246, 184, 74, 0.28)',
+          boardBackground: '#0B1018',
+          boardBorder: 'rgba(255,255,255,0.08)',
+          panelSurface: '#101722',
+          stateLabel: '지연 호가',
+          statusFill: 'rgba(246, 184, 74, 0.18)',
+          statusNote: '지연 도착 데이터',
+          statusText: '#FFD27E',
+        };
+      case 'REPLAY':
+        return {
+          accent: '#72A9FF',
+          accentSoft: 'rgba(114, 169, 255, 0.14)',
+          badgeBorder: 'rgba(114, 169, 255, 0.26)',
+          boardBackground: '#0B1018',
+          boardBorder: 'rgba(255,255,255,0.08)',
+          panelSurface: '#101722',
+          stateLabel: '리플레이 기준',
+          statusFill: 'rgba(114, 169, 255, 0.18)',
+          statusNote: '재생 스냅샷',
+          statusText: '#A9CBFF',
+        };
+      default:
+        return {
+          accent: '#A7B2C6',
+          accentSoft: 'rgba(167, 178, 198, 0.14)',
+          badgeBorder: 'rgba(167, 178, 198, 0.24)',
+          boardBackground: '#0B1018',
+          boardBorder: 'rgba(255,255,255,0.08)',
+          panelSurface: '#101722',
+          stateLabel: '미확인 시세',
+          statusFill: 'rgba(167, 178, 198, 0.16)',
+          statusNote: normalized ? '확인되지 않은 source mode' : 'source 정보 없음',
+          statusText: '#D4DBE8',
+        };
+    }
+  })();
+
+  if (valuationStatus === 'STALE') {
+    return {
+      ...baseTone,
+      stateLabel: '시세 지연',
+      statusFill: 'rgba(246, 184, 74, 0.18)',
+      statusNote: '평가 손익 숨김',
+      statusText: '#FFD27E',
+    };
+  }
+
+  if (valuationStatus === 'UNAVAILABLE') {
+    return {
+      ...baseTone,
+      accent: '#A7B2C6',
+      accentSoft: 'rgba(167, 178, 198, 0.14)',
+      badgeBorder: 'rgba(167, 178, 198, 0.24)',
+      stateLabel: '평가 불가',
+      statusFill: 'rgba(167, 178, 198, 0.16)',
+      statusNote: getUnavailableStatusNote(valuationUnavailableReason),
+      statusText: '#D4DBE8',
+    };
+  }
+
+  return baseTone;
 };
 
 const formatModeLabel = (quoteSourceMode: QuoteSourceMode | null | undefined) => {
   const normalized = typeof quoteSourceMode === 'string' ? quoteSourceMode.trim() : '';
-  return normalized || 'UNKNOWN';
+  return normalized || VALUATION_UNAVAILABLE_LABEL;
 };
 
 const formatTimestampLabel = (value: string | null | undefined) => {
   if (!value) {
-    return '시각 확인 필요';
+    return VALUATION_UNAVAILABLE_LABEL;
   }
 
   const timestamp = new Date(value).getTime();
@@ -232,19 +300,38 @@ const SignalCard = ({
 
 export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) => {
   if (
-    position.marketPrice === null
-    || position.marketPrice === undefined
-    || !position.quoteAsOf
-    || !position.quoteSourceMode
+    (position.marketPrice === null || position.marketPrice === undefined)
+    && !position.quoteAsOf
+    && !position.quoteSourceMode
+    && !position.quoteSnapshotId
+    && !position.valuationStatus
   ) {
     return null;
   }
 
-  const quoteTone = getQuoteTone(position.quoteSourceMode);
+  const valuationStatus = resolveValuationStatus(position);
+  const valuationStatusLabel = resolveValuationStatusLabel(valuationStatus);
+  const valuationGuidance = resolveValuationGuidance(
+    valuationStatus,
+    position.valuationUnavailableReason ?? null,
+  );
+  const quoteTone = getQuoteTone(
+    position.quoteSourceMode,
+    valuationStatus,
+    position.valuationUnavailableReason ?? null,
+  );
   const modeLabel = formatModeLabel(position.quoteSourceMode);
-  const freshnessAge = formatFreshnessAge(position.quoteAsOf, position.asOf);
+  const freshnessAge = position.quoteAsOf
+    ? formatFreshnessAge(position.quoteAsOf, position.asOf)
+    : VALUATION_UNAVAILABLE_LABEL;
   const quoteAsOfLabel = formatTimestampLabel(position.quoteAsOf);
   const asOfLabel = formatTimestampLabel(position.asOf);
+  const priceLabel = !isFreshValuationStatus(valuationStatus)
+    || position.marketPrice === null
+    || position.marketPrice === undefined
+    ? VALUATION_UNAVAILABLE_LABEL
+    : formatKRW(position.marketPrice);
+  const snapshotLabel = position.quoteSnapshotId ?? VALUATION_UNAVAILABLE_LABEL;
 
   return (
     <View
@@ -416,7 +503,7 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
                 }}
                 testID="mobile-dashboard-quote-ticker-price"
               >
-                {formatKRW(position.marketPrice)}
+                {priceLabel}
               </Text>
               <Text
                 style={{
@@ -493,9 +580,9 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
               helper="quoteAsOf 대비 조회 기준 차이"
             />
             <SignalCard
-              label="Source 해석"
+              label="표시 상태"
               value={quoteTone.statusNote}
-              helper="backend source mode를 그대로 보여줍니다."
+              helper="backend freshness와 source metadata를 함께 반영합니다."
             />
             <SignalCard
               label="표시 원칙"
@@ -513,6 +600,18 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
           >
             서버가 내려준 quote freshness 메타데이터만 요약합니다.
           </Text>
+          {valuationGuidance ? (
+            <Text
+              style={{
+                fontSize: 11,
+                lineHeight: 17,
+                color: '#FFD27E',
+              }}
+              testID="mobile-dashboard-quote-ticker-guidance"
+            >
+              {valuationGuidance}
+            </Text>
+          ) : null}
         </View>
 
         <View
@@ -529,7 +628,7 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
           />
           <MetaChip
             label="Snapshot"
-            value={position.quoteSnapshotId ?? 'pending'}
+            value={snapshotLabel}
             valueTestID="mobile-dashboard-quote-ticker-snapshot"
           />
           <MetaChip
@@ -537,8 +636,9 @@ export const DashboardQuoteTicker = ({ position }: DashboardQuoteTickerProps) =>
             value={asOfLabel}
           />
           <MetaChip
-            label="데이터 상태"
-            value={quoteTone.stateLabel}
+            label="평가 상태"
+            value={valuationStatusLabel}
+            valueTestID="mobile-dashboard-quote-ticker-valuation-status"
           />
         </View>
       </View>

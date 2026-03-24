@@ -2,6 +2,7 @@ import type { HttpClient } from '../network/http-client';
 import type {
   AccountOrderHistoryPage,
   AccountPosition,
+  AccountSummary,
 } from '../types/account';
 
 export interface AccountApi {
@@ -11,7 +12,7 @@ export interface AccountApi {
   }) => Promise<AccountPosition>;
   fetchAccountSummary: (payload: {
     accountId: string;
-  }) => Promise<AccountPosition>;
+  }) => Promise<AccountSummary>;
   fetchAccountPositions: (payload: {
     accountId: string;
   }) => Promise<AccountPosition[]>;
@@ -42,7 +43,7 @@ export const createAccountApi = ({
     return response.body;
   },
   fetchAccountSummary: async (payload) => {
-    const response = await client.get<AccountPosition>(
+    const response = await client.get<AccountSummary>(
       `/api/v1/accounts/${payload.accountId}/summary`,
       {
         headers: {

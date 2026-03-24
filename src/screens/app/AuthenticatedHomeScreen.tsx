@@ -8,6 +8,13 @@ import {
 } from 'react-native';
 
 import type { AccountApi } from '../../api/account-api';
+import {
+  isFreshValuationStatus,
+  resolveValuationGuidance,
+  resolveValuationStatus,
+  resolveValuationStatusLabel,
+  VALUATION_UNAVAILABLE_LABEL,
+} from '../../account/account-valuation';
 import type { NotificationApi } from '../../api/notification-api';
 import type { OrderApi } from '../../api/order-api';
 import { useAccountDashboardViewModel } from '../../account/use-account-dashboard-view-model';
@@ -17,7 +24,8 @@ import { useNotificationFeedViewModel } from '../../notification/use-notificatio
 import { hasExternalOrderAccountId } from '../../order/external-order-recovery';
 import { useExternalOrderViewModel } from '../../order/use-external-order-view-model';
 import type { Member } from '../../types/auth';
-import { formatKRW, formatQuantity } from '../../utils/formatters';
+import type { AccountPosition } from '../../types/account';
+import { formatKRW, formatQuantity, formatSignedKRW } from '../../utils/formatters';
 import { palette } from '../../components/auth/auth-styles';
 
 const quoteDateFormatter = new Intl.DateTimeFormat('ko-KR', {
@@ -38,6 +46,47 @@ const formatQuoteTimestamp = (value: string | null | undefined) => {
   }
 
   return quoteDateFormatter.format(new Date(timestamp));
+};
+
+const NO_HOLDING_LABEL = '보유 없음';
+
+const formatDashboardTimestamp = (value: string | null | undefined) => {
+  if (!value) {
+    return VALUATION_UNAVAILABLE_LABEL;
+  }
+
+  return formatQuoteTimestamp(value) ?? '시각 확인 필요';
+};
+
+const formatOptionalQuoteSource = (value: string | null | undefined) =>
+  typeof value === 'string' && value.trim() ? value : VALUATION_UNAVAILABLE_LABEL;
+
+const formatValuationPriceValue = (
+  value: number | null | undefined,
+  valuationStatus: string | null | undefined,
+) =>
+  !isFreshValuationStatus(valuationStatus)
+  || value === null
+  || value === undefined
+    ? VALUATION_UNAVAILABLE_LABEL
+    : formatKRW(value);
+
+const formatPnlValue = (
+  value: number | null | undefined,
+  valuationStatus: string | null | undefined,
+) =>
+  !isFreshValuationStatus(valuationStatus)
+  || value === null
+  || value === undefined
+    ? VALUATION_UNAVAILABLE_LABEL
+    : formatSignedKRW(value);
+
+const formatAveragePriceValue = (position: AccountPosition) => {
+  if (position.avgPrice === null || position.avgPrice === undefined) {
+    return position.quantity === 0 ? NO_HOLDING_LABEL : VALUATION_UNAVAILABLE_LABEL;
+  }
+
+  return formatKRW(position.avgPrice);
 };
 
 interface AuthenticatedHomeScreenProps {
@@ -91,9 +140,51 @@ export const AuthenticatedHomeScreen = ({
     orderApi,
   });
   const dashboardPosition = accountDashboard.position;
-  const formattedDashboardQuoteAsOf = formatQuoteTimestamp(
-    dashboardPosition ? dashboardPosition.quoteAsOf : null,
+  const dashboardValuationPosition = accountDashboard.valuationPosition;
+  const dashboardValuationError = accountDashboard.valuationError;
+  const dashboardValuationStatus = resolveValuationStatus(dashboardValuationPosition);
+  const dashboardValuationGuidance = resolveValuationGuidance(
+    dashboardValuationStatus,
+    dashboardValuationPosition?.valuationUnavailableReason ?? null,
   );
+  const dashboardValuationGuidanceText = dashboardValuationGuidance
+    ?? (
+      dashboardValuationError
+        ? `보유 종목 상세를 불러오지 못해 평가 정보를 표시하지 못했습니다. ${dashboardValuationError.message} ${dashboardValuationError.nextStep}`
+        : null
+    );
+  const dashboardRows = dashboardPosition
+    ? [
+        ['가용 수량', `${formatQuantity(dashboardPosition.availableQuantity)}주`],
+        ['보유 수량', `${formatQuantity(dashboardPosition.quantity)}주`],
+        ...(
+          dashboardValuationPosition
+            ? [
+                ['평가 상태', resolveValuationStatusLabel(dashboardValuationStatus), 'mobile-dashboard-valuation-status'] as const,
+                ['평균 단가', formatAveragePriceValue(dashboardValuationPosition), 'mobile-dashboard-avg-price'] as const,
+                ['평가 단가', formatValuationPriceValue(dashboardValuationPosition.marketPrice, dashboardValuationStatus), 'mobile-dashboard-market-price'] as const,
+                ['미실현 손익', formatPnlValue(dashboardValuationPosition.unrealizedPnl, dashboardValuationStatus), 'mobile-dashboard-unrealized-pnl'] as const,
+                ['당일 실현 손익', formatPnlValue(dashboardValuationPosition.realizedPnlDaily, dashboardValuationStatus), 'mobile-dashboard-realized-pnl-daily'] as const,
+                ['호가 기준 시각', formatDashboardTimestamp(dashboardValuationPosition.quoteAsOf), 'mobile-dashboard-quote-as-of'] as const,
+                ['호가 source', formatOptionalQuoteSource(dashboardValuationPosition.quoteSourceMode), 'mobile-dashboard-quote-source-mode'] as const,
+              ]
+            : dashboardValuationError
+              ? [
+                  ['평가 상태', resolveValuationStatusLabel(null), 'mobile-dashboard-valuation-status'] as const,
+                  ['평균 단가', VALUATION_UNAVAILABLE_LABEL, 'mobile-dashboard-avg-price'] as const,
+                  ['평가 단가', VALUATION_UNAVAILABLE_LABEL, 'mobile-dashboard-market-price'] as const,
+                  ['미실현 손익', VALUATION_UNAVAILABLE_LABEL, 'mobile-dashboard-unrealized-pnl'] as const,
+                  ['당일 실현 손익', VALUATION_UNAVAILABLE_LABEL, 'mobile-dashboard-realized-pnl-daily'] as const,
+                  ['호가 기준 시각', VALUATION_UNAVAILABLE_LABEL, 'mobile-dashboard-quote-as-of'] as const,
+                  ['호가 source', VALUATION_UNAVAILABLE_LABEL, 'mobile-dashboard-quote-source-mode'] as const,
+                ]
+            : []
+        ),
+        ...(dashboardPosition.symbol
+          ? [['조회 종목', dashboardPosition.symbol] as const]
+          : []),
+      ]
+    : [];
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9F5F1' }}>
@@ -566,7 +657,9 @@ export const AuthenticatedHomeScreen = ({
                 gap: 10,
               }}
             >
-              <DashboardQuoteTicker position={accountDashboard.position} />
+              {dashboardValuationPosition ? (
+                <DashboardQuoteTicker position={dashboardValuationPosition} />
+              ) : null}
               <View
                 style={{
                   flexDirection: 'row',
@@ -595,33 +688,7 @@ export const AuthenticatedHomeScreen = ({
                 </Text>
               </View>
 
-              {[
-                ['가용 수량', `${formatQuantity(accountDashboard.position.availableQuantity)}주`],
-                ['보유 수량', `${formatQuantity(accountDashboard.position.quantity)}주`],
-                ...(
-                  accountDashboard.position.marketPrice !== null
-                  && accountDashboard.position.marketPrice !== undefined
-                  && formattedDashboardQuoteAsOf
-                  && accountDashboard.position.quoteSourceMode
-                    ? [
-                        ['평가 단가', formatKRW(accountDashboard.position.marketPrice), 'mobile-dashboard-market-price'] as const,
-                        [
-                          '호가 기준 시각',
-                          formattedDashboardQuoteAsOf,
-                          'mobile-dashboard-quote-as-of',
-                        ] as const,
-                        [
-                          '호가 source',
-                          accountDashboard.position.quoteSourceMode,
-                          'mobile-dashboard-quote-source-mode',
-                        ] as const,
-                      ]
-                    : []
-                ),
-                ...(accountDashboard.position.symbol
-                  ? [['조회 종목', accountDashboard.position.symbol] as const]
-                  : []),
-              ].map(([label, value, testId]) => (
+              {dashboardRows.map(([label, value, testId]) => (
                 <View
                   key={label}
                   style={{
@@ -654,6 +721,19 @@ export const AuthenticatedHomeScreen = ({
                   </Text>
                 </View>
               ))}
+
+              {dashboardValuationGuidanceText ? (
+                <Text
+                  style={{
+                    fontSize: 13,
+                    lineHeight: 19,
+                    color: palette.inkSoft,
+                  }}
+                  testID="mobile-dashboard-valuation-guidance"
+                >
+                  {dashboardValuationGuidanceText}
+                </Text>
+              ) : null}
             </View>
           ) : null}
 
