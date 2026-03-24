@@ -101,6 +101,20 @@ const formatMarketTickerTimestamp = (value: string | null) => {
   return quoteDateFormatter.format(new Date(timestamp));
 };
 
+const normalizeMarketTickerSourceMode = (value: string | null | undefined) => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value.trim();
+};
+
+const isKnownMarketTickerSourceMode = (value: string | null | undefined) => {
+  const normalized = normalizeMarketTickerSourceMode(value);
+
+  return normalized === 'LIVE' || normalized === 'DELAYED' || normalized === 'REPLAY';
+};
+
 const isProcessingStatus = (status?: OrderSessionResponse['status']) =>
   status === 'EXECUTING' || status === 'REQUERYING';
 
@@ -179,16 +193,17 @@ export const ExternalOrderRecoverySection = ({
     marketTickerValuationStatus,
     marketTicker?.valuationUnavailableReason ?? null,
   );
+  const marketTickerSourceMode = normalizeMarketTickerSourceMode(marketTicker?.quoteSourceMode);
   const hasMarketTickerQuote =
     isFreshValuationStatus(marketTickerValuationStatus)
     && marketTicker?.marketPrice !== null
     && marketTicker?.marketPrice !== undefined
     && Boolean(marketTicker?.quoteAsOf)
-    && Boolean(marketTicker?.quoteSourceMode);
+    && isKnownMarketTickerSourceMode(marketTicker?.quoteSourceMode);
   const hasMarketTickerMetadata = Boolean(
     (marketTicker?.marketPrice !== null && marketTicker?.marketPrice !== undefined)
     || marketTicker?.quoteAsOf
-    || marketTicker?.quoteSourceMode
+    || marketTickerSourceMode
     || marketTicker?.valuationStatus,
   );
   const marketTickerStatus = marketTicker === null
@@ -625,8 +640,8 @@ export const ExternalOrderRecoverySection = ({
                   style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}
                   testID="mobile-market-order-live-ticker-source-mode"
                 >
-                  {marketTicker.quoteSourceMode && marketTicker.quoteSourceMode.trim()
-                    ? marketTicker.quoteSourceMode
+                  {marketTickerSourceMode
+                    ? marketTickerSourceMode
                     : VALUATION_UNAVAILABLE_LABEL}
                 </Text>
               </View>
