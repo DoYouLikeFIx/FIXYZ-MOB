@@ -1,13 +1,19 @@
 import CookieManager from '@react-native-cookies/cookies';
 
 import {
+  assertSafeApiBaseUrl,
   resolveApiBaseUrl,
   resolveSessionCookiePolicy,
+  type ApiIngressMode,
   type RuntimeTarget,
 } from '../config/environment';
 import {
+  isDevelopmentRuntime,
+  resolveApiIngressMode,
+  resolveRuntimeEdgeBaseUrl,
   resolveRuntimeTarget,
   resolveRuntimeUrlOverride,
+  shouldAllowInsecureDevBaseUrl,
 } from '../config/runtime-options';
 
 import { CsrfTokenManager, type CsrfBootstrapPayload } from './csrf';
@@ -18,6 +24,10 @@ interface CreateMobileNetworkRuntimeInput {
   lanIp?: string;
   target?: RuntimeTarget;
   overrideUrl?: string;
+  ingressMode?: ApiIngressMode;
+  edgeBaseUrl?: string;
+  allowInsecureDevBaseUrl?: boolean;
+  isDevelopmentRuntime?: boolean;
 }
 
 type CookieManagerBridge = {
@@ -58,10 +68,20 @@ export const createMobileNetworkRuntime = (
   input: CreateMobileNetworkRuntimeInput = {},
 ) => {
   const target = input.target ?? resolveRuntimeTarget();
+  const ingressMode = input.ingressMode ?? resolveApiIngressMode();
   const baseUrl = resolveApiBaseUrl({
     target,
     lanIp: input.lanIp ?? process.env.MOB_LAN_IP,
     overrideUrl: input.overrideUrl ?? resolveRuntimeUrlOverride(),
+    ingressMode,
+    edgeBaseUrl: input.edgeBaseUrl ?? resolveRuntimeEdgeBaseUrl(),
+  });
+  assertSafeApiBaseUrl({
+    baseUrl,
+    allowInsecureDevBaseUrl:
+      input.allowInsecureDevBaseUrl ?? shouldAllowInsecureDevBaseUrl(),
+    isDevelopmentRuntime:
+      input.isDevelopmentRuntime ?? isDevelopmentRuntime(),
   });
   const cookiePolicy = resolveSessionCookiePolicy(baseUrl);
   const cookieReader = new ReactNativeCookieReader();
