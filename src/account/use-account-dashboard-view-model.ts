@@ -9,6 +9,7 @@ import { maskAccountNumber } from './account-masking';
 import type {
   AccountOrderHistoryPage,
   AccountPosition,
+  AccountSummary,
 } from '../types/account';
 
 interface AsyncState<T> {
@@ -55,8 +56,8 @@ export const useAccountDashboardViewModel = ({
     [accountId],
   );
   const [preferredSymbol, setPreferredSymbol] = useState<string | null>(null);
-  const [summaryState, setSummaryState] = useState<AsyncState<AccountPosition>>(() =>
-    createAsyncState<AccountPosition>(currentScopeKey, Boolean(currentScopeKey)),
+  const [summaryState, setSummaryState] = useState<AsyncState<AccountSummary>>(() =>
+    createAsyncState<AccountSummary>(currentScopeKey, Boolean(currentScopeKey)),
   );
   const [positionsState, setPositionsState] = useState<AsyncState<AccountPosition[]>>(() =>
     createAsyncState<AccountPosition[]>(currentScopeKey, Boolean(currentScopeKey)),
@@ -78,7 +79,7 @@ export const useAccountDashboardViewModel = ({
 
   useEffect(() => {
     if (!currentScopeKey) {
-      setSummaryState(createAsyncState<AccountPosition>(null));
+      setSummaryState(createAsyncState<AccountSummary>(null));
       setPositionsState(createAsyncState<AccountPosition[]>(null));
       setHistoryState(createAsyncState<AccountOrderHistoryPage>(null));
       setRefreshState({
@@ -269,6 +270,7 @@ export const useAccountDashboardViewModel = ({
   );
   const position = selectedPosition ?? summary;
   const positionError = position ? null : (summaryError ?? symbolOptionsError);
+  const valuationError = selectedPosition ? null : symbolOptionsError;
   const symbolOptions = useMemo(
     () => positionItems.map((item) => item.symbol),
     [positionItems],
@@ -295,11 +297,13 @@ export const useAccountDashboardViewModel = ({
     isRefreshing: refreshState.positions || refreshState.summary || refreshState.history,
     maskedAccountNumber,
     position,
+    valuationPosition: selectedPosition,
+    valuationError,
     positionError,
     positionLoading,
     refresh: () => {
       if (!currentScopeKey) {
-        setSummaryState(createAsyncState<AccountPosition>(null));
+        setSummaryState(createAsyncState<AccountSummary>(null));
         setPositionsState(createAsyncState<AccountPosition[]>(null));
         setHistoryState(createAsyncState<AccountOrderHistoryPage>(null));
         setRefreshState({
@@ -353,7 +357,7 @@ export const useAccountDashboardViewModel = ({
     },
     retryPosition: () => {
       if (!currentScopeKey) {
-        setSummaryState(createAsyncState<AccountPosition>(null));
+        setSummaryState(createAsyncState<AccountSummary>(null));
         setPositionsState(createAsyncState<AccountPosition[]>(null));
         return;
       }
