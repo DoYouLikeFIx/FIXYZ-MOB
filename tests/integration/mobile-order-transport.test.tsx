@@ -334,10 +334,15 @@ describe('mobile order transport-backed screen coverage', () => {
             availableBalance: 100_000_000,
             currency: 'KRW',
             asOf: '2026-03-11T09:10:00Z',
+            avgPrice: 68_900,
             marketPrice: 70_100,
             quoteSnapshotId: 'quote-delayed-001',
             quoteAsOf: '2026-03-11T09:09:00Z',
             quoteSourceMode: 'DELAYED',
+            unrealizedPnl: 144_000,
+            realizedPnlDaily: 12_000,
+            valuationStatus: 'FRESH',
+            valuationUnavailableReason: null,
           },
           {
             accountId: 1,
@@ -350,10 +355,15 @@ describe('mobile order transport-backed screen coverage', () => {
             availableBalance: 98_500_000,
             currency: 'KRW',
             asOf: '2026-03-11T09:20:00Z',
-            marketPrice: 203_000,
+            avgPrice: 200_000,
+            marketPrice: null,
             quoteSnapshotId: 'quote-replay-001',
             quoteAsOf: '2026-03-11T09:19:00Z',
             quoteSourceMode: 'REPLAY',
+            unrealizedPnl: null,
+            realizedPnlDaily: null,
+            valuationStatus: 'STALE',
+            valuationUnavailableReason: 'STALE_QUOTE',
           },
         ]);
       }
@@ -370,6 +380,15 @@ describe('mobile order transport-backed screen coverage', () => {
     expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-market-price'))).toBe(
       '₩70,100',
     );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-avg-price'))).toBe(
+      '₩68,900',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-unrealized-pnl'))).toBe(
+      '+₩144,000',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-valuation-status'))).toBe(
+      '평가 가능',
+    );
     expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-source-mode'))).toBe(
       'DELAYED',
     );
@@ -383,7 +402,16 @@ describe('mobile order transport-backed screen coverage', () => {
     });
 
     expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-market-price'))).toBe(
-      '₩203,000',
+      '확인 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-unrealized-pnl'))).toBe(
+      '확인 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-valuation-status'))).toBe(
+      '시세 지연',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-valuation-guidance'))).toContain(
+      '호가 기준이 오래되어',
     );
     expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-source-mode'))).toBe(
       'REPLAY',
@@ -432,10 +460,15 @@ describe('mobile order transport-backed screen coverage', () => {
             availableBalance: 100_000_000,
             currency: 'KRW',
             asOf: '2026-03-11T09:10:00Z',
+            avgPrice: 68_900,
             marketPrice: 70_100,
             quoteSnapshotId: 'quote-live-001',
             quoteAsOf: '2026-03-11T09:09:00Z',
             quoteSourceMode: 'LIVE',
+            unrealizedPnl: 144_000,
+            realizedPnlDaily: 12_000,
+            valuationStatus: 'FRESH',
+            valuationUnavailableReason: null,
           },
         ]);
       }

@@ -10,6 +10,7 @@ import { HttpClient } from '@/network/http-client';
 import { createAuthNavigationState } from '@/navigation/auth-navigation';
 import { createOrderApi } from '@/api/order-api';
 import { authStore, resetAuthStore } from '@/store/auth-store';
+import type { AccountPosition, AccountSummary } from '@/types/account';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -403,15 +404,20 @@ const registerEnrollAndLogin = async (baseUrl: string) => {
   };
 };
 
-const isChartReadyPosition = (position: {
-  marketPrice?: number | null;
-  quoteAsOf?: string | null;
-  quoteSourceMode?: string | null;
-}) =>
-  position.marketPrice !== null
-  && position.marketPrice !== undefined
-  && Boolean(position.quoteAsOf)
-  && ['LIVE', 'DELAYED', 'REPLAY'].includes(position.quoteSourceMode ?? '');
+const isChartReadyPosition = (position: AccountPosition | AccountSummary) => {
+  const marketPrice = 'marketPrice' in position ? position.marketPrice : undefined;
+  const quoteAsOf = 'quoteAsOf' in position ? position.quoteAsOf : undefined;
+  const quoteSourceMode = 'quoteSourceMode' in position ? position.quoteSourceMode : undefined;
+  const valuationStatus = 'valuationStatus' in position ? position.valuationStatus : undefined;
+
+  return (
+    valuationStatus === 'FRESH'
+    && marketPrice !== null
+    && marketPrice !== undefined
+    && Boolean(quoteAsOf)
+    && ['LIVE', 'DELAYED', 'REPLAY'].includes(quoteSourceMode ?? '')
+  );
+};
 
 const createLowRiskOrderSession = async (
   loginHarness: ReturnType<typeof createLiveHarness>,

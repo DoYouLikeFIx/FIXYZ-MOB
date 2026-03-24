@@ -144,10 +144,15 @@ const positionsFixture: AccountPosition[] = [
     availableBalance: 100_000_000,
     currency: 'KRW',
     asOf: '2026-03-11T09:10:00Z',
+    avgPrice: 68_900,
     marketPrice: 70_100,
     quoteSnapshotId: 'quote-live-001',
     quoteAsOf: '2026-03-11T09:09:00Z',
     quoteSourceMode: 'LIVE',
+    unrealizedPnl: 144_000,
+    realizedPnlDaily: 12_000,
+    valuationStatus: 'FRESH',
+    valuationUnavailableReason: null,
   },
   {
     accountId: 1,
@@ -165,26 +170,38 @@ const positionsFixture: AccountPosition[] = [
 
 const quoteFreshnessScenarios = [
   {
+    avgPrice: 68_900,
     marketPrice: 70_100,
     quoteSnapshotId: 'quote-live-001',
     quoteAsOf: '2026-03-11T09:09:00Z',
     quoteSourceMode: 'LIVE',
+    unrealizedPnl: 144_000,
+    realizedPnlDaily: 12_000,
+    valuationStatus: 'FRESH',
     stateLabel: '직결 시세',
     statusNote: '실시간 기준',
   },
   {
+    avgPrice: 71_000,
     marketPrice: 70_200,
     quoteSnapshotId: 'quote-delayed-001',
     quoteAsOf: '2026-03-12T08:15:00Z',
     quoteSourceMode: 'DELAYED',
+    unrealizedPnl: -96_000,
+    realizedPnlDaily: -8_000,
+    valuationStatus: 'FRESH',
     stateLabel: '지연 호가',
     statusNote: '지연 도착 데이터',
   },
   {
+    avgPrice: 70_300,
     marketPrice: 70_300,
     quoteSnapshotId: 'quote-replay-001',
     quoteAsOf: '2026-03-12T07:45:00Z',
     quoteSourceMode: 'REPLAY',
+    unrealizedPnl: 0,
+    realizedPnlDaily: 0,
+    valuationStatus: 'FRESH',
     stateLabel: '리플레이 기준',
     statusNote: '재생 스냅샷',
   },
@@ -630,6 +647,48 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
       '아직 보유 중인 종목이 없습니다.',
     );
     expect(findAllByTestId(renderer.root, 'mobile-dashboard-empty')).toHaveLength(0);
+  });
+
+  it('keeps the summary visible and explains missing valuation data when positions fail', async () => {
+    const accountApi = createAccountApi({
+      fetchAccountSummary: vi.fn().mockResolvedValue({
+        accountId: 1,
+        memberId: 1,
+        symbol: '005930',
+        quantity: 120,
+        availableQuantity: 20,
+        availableQty: 20,
+        balance: 88_800_000,
+        availableBalance: 88_800_000,
+        currency: 'KRW',
+        asOf: '2026-03-11T09:05:00Z',
+      }),
+      fetchAccountPositions: vi.fn().mockRejectedValue(
+        createNormalizedHttpError('positions unavailable'),
+      ),
+    });
+
+    const { renderer } = await renderScreen({ accountApi });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-balance'))).toBe(
+      '₩88,800,000',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-symbol-error'))).toContain(
+      'positions unavailable',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-valuation-status'))).toBe(
+      '상태 확인 필요',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-market-price'))).toBe(
+      '확인 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-unrealized-pnl'))).toBe(
+      '확인 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-valuation-guidance'))).toContain(
+      '보유 종목 상세를 불러오지 못해 평가 정보를 표시하지 못했습니다.',
+    );
+    expect(findAllByTestId(renderer.root, 'mobile-dashboard-quote-ticker')).toHaveLength(0);
   });
 
   it('shows standardized retry guidance when history loading fails', async () => {
@@ -1600,17 +1659,42 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
         fetchAccountPositions: vi.fn().mockResolvedValue([
           {
             ...positionsFixture[0],
+            avgPrice: scenario.avgPrice,
             marketPrice: scenario.marketPrice,
             quoteSnapshotId: scenario.quoteSnapshotId,
             quoteAsOf: scenario.quoteAsOf,
             quoteSourceMode: scenario.quoteSourceMode,
+            unrealizedPnl: scenario.unrealizedPnl,
+            realizedPnlDaily: scenario.realizedPnlDaily,
+            valuationStatus: scenario.valuationStatus,
+            valuationUnavailableReason: null,
           },
         ]),
       });
       const { renderer } = await renderScreen({ accountApi });
 
+      expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-avg-price'))).toBe(
+        `₩${scenario.avgPrice.toLocaleString('en-US')}`,
+      );
       expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-market-price'))).toBe(
         `₩${scenario.marketPrice.toLocaleString('en-US')}`,
+      );
+      expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-unrealized-pnl'))).toBe(
+        scenario.unrealizedPnl > 0
+          ? `+₩${scenario.unrealizedPnl.toLocaleString('en-US')}`
+          : scenario.unrealizedPnl < 0
+            ? `-₩${Math.abs(scenario.unrealizedPnl).toLocaleString('en-US')}`
+            : '₩0',
+      );
+      expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-realized-pnl-daily'))).toBe(
+        scenario.realizedPnlDaily > 0
+          ? `+₩${scenario.realizedPnlDaily.toLocaleString('en-US')}`
+          : scenario.realizedPnlDaily < 0
+            ? `-₩${Math.abs(scenario.realizedPnlDaily).toLocaleString('en-US')}`
+            : '₩0',
+      );
+      expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-valuation-status'))).toBe(
+        '평가 가능',
       );
       expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-as-of'))).toBe(
         quoteDateFormatter.format(new Date(scenario.quoteAsOf)),
@@ -1618,6 +1702,7 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
       expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-source-mode'))).toBe(
         scenario.quoteSourceMode,
       );
+      expect(findAllByTestId(renderer.root, 'mobile-dashboard-valuation-guidance')).toHaveLength(0);
       expect(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker')).toBeTruthy();
       expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-symbol'))).toBe(
         '005930',
@@ -1631,6 +1716,9 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
       expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-state'))).toBe(
         scenario.stateLabel,
       );
+      expect(
+        getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-valuation-status')),
+      ).toBe('평가 가능');
       expect(
         getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-status-note')),
       ).toBe(scenario.statusNote);
@@ -1646,6 +1734,174 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
       ).toHaveLength(0);
     });
   }
+
+  it('renders stale valuation guidance without inventing market-derived values', async () => {
+    const accountApi = createAccountApi({
+      fetchAccountPositions: vi.fn().mockResolvedValue([
+        {
+          ...positionsFixture[0],
+          avgPrice: 70_000,
+          marketPrice: 70_200,
+          quoteSnapshotId: 'quote-stale-001',
+          quoteAsOf: '2026-03-12T08:40:00Z',
+          quoteSourceMode: 'REPLAY',
+          unrealizedPnl: -96_000,
+          realizedPnlDaily: -8_000,
+          valuationStatus: 'STALE',
+          valuationUnavailableReason: 'STALE_QUOTE',
+        },
+      ]),
+    });
+    const { renderer } = await renderScreen({ accountApi });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-avg-price'))).toBe(
+      '₩70,000',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-market-price'))).toBe(
+      '확인 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-unrealized-pnl'))).toBe(
+      '확인 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-realized-pnl-daily'))).toBe(
+      '확인 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-valuation-status'))).toBe(
+      '시세 지연',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-valuation-guidance'))).toContain(
+      '호가 기준이 오래되어',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-source-mode'))).toBe(
+      'REPLAY',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-valuation-status'))).toBe(
+      '시세 지연',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-state'))).toBe(
+      '시세 지연',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-status-note'))).toBe(
+      '평가 손익 숨김',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-guidance'))).toContain(
+      '호가 기준이 오래되어',
+    );
+  });
+
+  it('renders unavailable valuation guidance with explicit placeholders', async () => {
+    const accountApi = createAccountApi({
+      fetchAccountPositions: vi.fn().mockResolvedValue([
+        {
+          ...positionsFixture[0],
+          avgPrice: 70_000,
+          marketPrice: 70_500,
+          quoteSnapshotId: null,
+          quoteAsOf: null,
+          quoteSourceMode: null,
+          unrealizedPnl: 0,
+          realizedPnlDaily: 1_000,
+          valuationStatus: 'UNAVAILABLE',
+          valuationUnavailableReason: 'PROVIDER_UNAVAILABLE',
+        },
+      ]),
+    });
+    const { renderer } = await renderScreen({ accountApi });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-market-price'))).toBe(
+      '확인 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-unrealized-pnl'))).toBe(
+      '확인 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-realized-pnl-daily'))).toBe(
+      '확인 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-valuation-status'))).toBe(
+      '평가 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-as-of'))).toBe(
+      '확인 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-source-mode'))).toBe(
+      '확인 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-valuation-guidance'))).toContain(
+      '시세 제공자가 응답하지 않아',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-valuation-status'))).toBe(
+      '평가 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-state'))).toBe(
+      '평가 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-status-note'))).toBe(
+      '시세 제공 실패',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-guidance'))).toContain(
+      '시세 제공자가 응답하지 않아',
+    );
+  });
+
+  it('renders quote-missing unavailable guidance explicitly', async () => {
+    const accountApi = createAccountApi({
+      fetchAccountPositions: vi.fn().mockResolvedValue([
+        {
+          ...positionsFixture[0],
+          avgPrice: 70_000,
+          marketPrice: null,
+          quoteSnapshotId: null,
+          quoteAsOf: null,
+          quoteSourceMode: null,
+          unrealizedPnl: null,
+          realizedPnlDaily: null,
+          valuationStatus: 'UNAVAILABLE',
+          valuationUnavailableReason: 'QUOTE_MISSING',
+        },
+      ]),
+    });
+    const { renderer } = await renderScreen({ accountApi });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-valuation-guidance'))).toContain(
+      '시세 스냅샷이 없어',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-status-note'))).toBe(
+      '시세 없음',
+    );
+  });
+
+  it('distinguishes zero valuation values from unavailable data', async () => {
+    const accountApi = createAccountApi({
+      fetchAccountPositions: vi.fn().mockResolvedValue([
+        {
+          ...positionsFixture[0],
+          quantity: 0,
+          availableQuantity: 0,
+          availableQty: 0,
+          avgPrice: null,
+          marketPrice: 70_100,
+          quoteSnapshotId: 'quote-live-001',
+          quoteAsOf: '2026-03-18T09:00:00Z',
+          quoteSourceMode: 'LIVE',
+          unrealizedPnl: 0,
+          realizedPnlDaily: 0,
+          valuationStatus: 'FRESH',
+          valuationUnavailableReason: null,
+        },
+      ]),
+    });
+    const { renderer } = await renderScreen({ accountApi });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-avg-price'))).toBe(
+      '보유 없음',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-unrealized-pnl'))).toBe(
+      '₩0',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-realized-pnl-daily'))).toBe(
+      '₩0',
+    );
+  });
 
   it('renders unknown quote source modes with neutral guidance instead of live styling', async () => {
     const accountApi = createAccountApi({
@@ -1669,7 +1925,46 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     );
     expect(
       getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-status-note')),
-    ).toBe('새 source mode');
+    ).toBe('확인되지 않은 source mode');
+  });
+
+  it('treats unknown valuation statuses as conservative placeholders instead of fresh data', async () => {
+    const accountApi = createAccountApi({
+      fetchAccountPositions: vi.fn().mockResolvedValue([
+        {
+          ...positionsFixture[0],
+          avgPrice: 68_900,
+          marketPrice: 70_400,
+          quoteSnapshotId: 'quote-vendor-001',
+          quoteAsOf: '2026-03-12T08:40:00Z',
+          quoteSourceMode: 'LIVE',
+          unrealizedPnl: 155_000,
+          realizedPnlDaily: 12_000,
+          valuationStatus: 'BACKFILL_PENDING',
+          valuationUnavailableReason: null,
+        },
+      ]),
+    });
+    const { renderer } = await renderScreen({ accountApi });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-valuation-status'))).toBe(
+      '상태 확인 필요',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-market-price'))).toBe(
+      '확인 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-unrealized-pnl'))).toBe(
+      '확인 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-valuation-guidance'))).toContain(
+      'freshness 상태를 확인할 수 없어',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-state'))).toBe(
+      '상태 확인 필요',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-price'))).toBe(
+      '확인 불가',
+    );
   });
 
   it('falls back safely when quoteAsOf is malformed', async () => {
@@ -1683,7 +1978,9 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     });
     const { renderer } = await renderScreen({ accountApi });
 
-    expect(findAllByTestId(renderer.root, 'mobile-dashboard-quote-as-of')).toHaveLength(0);
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-as-of'))).toBe(
+      '시각 확인 필요',
+    );
     expect(
       getTextContent(findByTestId(renderer.root, 'mobile-dashboard-quote-ticker-quote-as-of')),
     ).toBe('시각 확인 필요');
@@ -1903,10 +2200,15 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
         availableBalance: 100_000_000,
         currency: 'KRW',
         asOf: '2026-03-18T09:00:00Z',
+        avgPrice: 68_900,
         marketPrice: 70_100,
         quoteSnapshotId: 'quote-live-001',
         quoteAsOf: '2026-03-18T09:00:00Z',
         quoteSourceMode: 'LIVE',
+        unrealizedPnl: 144_000,
+        realizedPnlDaily: 12_000,
+        valuationStatus: 'FRESH',
+        valuationUnavailableReason: null,
       })
       .mockResolvedValue({
         accountId: 1,
@@ -1919,10 +2221,15 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
         availableBalance: 100_000_000,
         currency: 'KRW',
         asOf: '2026-03-18T09:00:00Z',
+        avgPrice: 68_900,
         marketPrice: 70_300,
         quoteSnapshotId: 'quote-replay-001',
         quoteAsOf: '2026-03-18T09:05:00Z',
         quoteSourceMode: 'REPLAY',
+        unrealizedPnl: 168_000,
+        realizedPnlDaily: 12_000,
+        valuationStatus: 'FRESH',
+        valuationUnavailableReason: null,
       });
     const accountApi = createAccountApi({
       fetchAccountPosition,
@@ -1947,6 +2254,9 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-source-mode'))).toBe(
       'LIVE',
     );
+    expect(
+      getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-valuation-status')),
+    ).toBe('평가 가능');
     expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-status'))).toBe(
       '5초마다 자동 갱신',
     );
@@ -1965,6 +2275,156 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     );
     expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-source-mode'))).toBe(
       'REPLAY',
+    );
+  });
+
+  it('drops cached market-order ticker prices after a refresh failure', async () => {
+    vi.useFakeTimers();
+
+    const fetchAccountPosition = vi.fn()
+      .mockResolvedValueOnce({
+        accountId: 1,
+        memberId: 1,
+        symbol: '005930',
+        quantity: 120,
+        availableQuantity: 20,
+        availableQty: 20,
+        balance: 100_000_000,
+        availableBalance: 100_000_000,
+        currency: 'KRW',
+        asOf: '2026-03-18T09:00:00Z',
+        avgPrice: 68_900,
+        marketPrice: 70_100,
+        quoteSnapshotId: 'quote-live-001',
+        quoteAsOf: '2026-03-18T09:00:00Z',
+        quoteSourceMode: 'LIVE',
+        unrealizedPnl: 144_000,
+        realizedPnlDaily: 12_000,
+        valuationStatus: 'FRESH',
+        valuationUnavailableReason: null,
+      })
+      .mockRejectedValueOnce(new Error('ticker down'));
+    const accountApi = createAccountApi({
+      fetchAccountPosition,
+    });
+    const { renderer } = await renderScreen({ accountApi });
+
+    await act(async () => {
+      findByTestId(renderer.root, 'mobile-external-order-preset-krx-market-buy-3').props.onPress();
+      await flushMicrotasks();
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-price'))).toBe(
+      '₩70,100',
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(5_000);
+      await flushMicrotasks();
+    });
+
+    expect(fetchAccountPosition).toHaveBeenCalledTimes(2);
+    expect(findAllByTestId(renderer.root, 'mobile-market-order-live-ticker-price')).toHaveLength(0);
+    expect(findAllByTestId(renderer.root, 'mobile-market-order-live-ticker-quote-as-of')).toHaveLength(0);
+    expect(findAllByTestId(renderer.root, 'mobile-market-order-live-ticker-source-mode')).toHaveLength(0);
+    expect(findAllByTestId(renderer.root, 'mobile-market-order-live-ticker-valuation-status')).toHaveLength(0);
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-status'))).toBe(
+      '실시간 ticker를 불러오지 못했습니다.',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-error'))).toBe(
+      'ticker down',
+    );
+  });
+
+  it('carries stale valuation metadata into the market-order ticker without fabricating price', async () => {
+    const fetchAccountPosition = vi.fn().mockResolvedValue({
+      accountId: 1,
+      memberId: 1,
+      symbol: '005930',
+      quantity: 120,
+      availableQuantity: 20,
+      availableQty: 20,
+      balance: 100_000_000,
+      availableBalance: 100_000_000,
+      currency: 'KRW',
+      asOf: '2026-03-18T09:00:00Z',
+      avgPrice: 68_900,
+      marketPrice: null,
+      quoteSnapshotId: 'quote-stale-001',
+      quoteAsOf: '2026-03-18T09:00:00Z',
+      quoteSourceMode: 'REPLAY',
+      unrealizedPnl: null,
+      realizedPnlDaily: null,
+      valuationStatus: 'STALE',
+      valuationUnavailableReason: 'STALE_QUOTE',
+    });
+    const accountApi = createAccountApi({
+      fetchAccountPosition,
+    });
+    const { renderer } = await renderScreen({ accountApi });
+
+    await act(async () => {
+      findByTestId(renderer.root, 'mobile-external-order-preset-krx-market-buy-3').props.onPress();
+      await flushMicrotasks();
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-valuation-status'))).toBe(
+      '시세 지연',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-price'))).toBe(
+      '확인 불가',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-guidance'))).toContain(
+      '호가 기준이 오래되어',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-quote-as-of'))).toBe(
+      quoteDateFormatter.format(new Date('2026-03-18T09:00:00Z')),
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-source-mode'))).toBe(
+      'REPLAY',
+    );
+  });
+
+  it('keeps market-order ticker conservative when the backend returns an unknown valuation status', async () => {
+    const fetchAccountPosition = vi.fn().mockResolvedValue({
+      accountId: 1,
+      memberId: 1,
+      symbol: '005930',
+      quantity: 120,
+      availableQuantity: 20,
+      availableQty: 20,
+      balance: 100_000_000,
+      availableBalance: 100_000_000,
+      currency: 'KRW',
+      asOf: '2026-03-18T09:00:00Z',
+      avgPrice: 68_900,
+      marketPrice: 70_100,
+      quoteSnapshotId: 'quote-pending-001',
+      quoteAsOf: '2026-03-18T09:00:00Z',
+      quoteSourceMode: 'LIVE',
+      unrealizedPnl: 144_000,
+      realizedPnlDaily: 12_000,
+      valuationStatus: 'BACKFILL_PENDING',
+      valuationUnavailableReason: null,
+    });
+    const accountApi = createAccountApi({
+      fetchAccountPosition,
+    });
+    const { renderer } = await renderScreen({ accountApi });
+
+    await act(async () => {
+      findByTestId(renderer.root, 'mobile-external-order-preset-krx-market-buy-3').props.onPress();
+      await flushMicrotasks();
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-status'))).toBe(
+      '백엔드 freshness 상태를 확인할 수 없습니다.',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-valuation-status'))).toBe(
+      '상태 확인 필요',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-price'))).toBe(
+      '확인 불가',
     );
   });
 
