@@ -10,10 +10,11 @@ import { CsrfTokenManager } from '@/network/csrf';
 import { HttpClient } from '@/network/http-client';
 import { createAuthNavigationState } from '@/navigation/auth-navigation';
 import { authStore, resetAuthStore } from '@/store/auth-store';
+import { resolveLiveHarnessBaseUrl } from './live-runtime-config';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-const LIVE_BASE_URL = process.env.LIVE_API_BASE_URL?.trim() ?? '';
+const LIVE_BASE_URL = resolveLiveHarnessBaseUrl();
 const DEFAULT_REGISTER_PASSWORD = 'LiveMobAuth1!';
 const DEFAULT_EXISTING_NAME = 'Live Mob Auth';
 
