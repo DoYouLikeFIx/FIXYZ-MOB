@@ -159,7 +159,12 @@ popd >/dev/null
 
 if [[ -n "$SETUP_FLOW_PATH" ]]; then
   pushd "$ROOT_DIR" >/dev/null
-  maestro test --device "$simulator_udid" "$SETUP_FLOW_PATH"
+  maestro test \
+    --device "$simulator_udid" \
+    -e MOB_DEMO_EMAIL="$MOB_DEMO_EMAIL" \
+    -e MOB_DEMO_PASSWORD="$MOB_DEMO_PASSWORD" \
+    -e MOB_DEMO_OTP_CODE="$MOB_DEMO_OTP_CODE" \
+    "$SETUP_FLOW_PATH"
   popd >/dev/null
 else
   xcrun simctl launch --terminate-running-process "$simulator_udid" "$APP_ID" \
@@ -174,7 +179,12 @@ recorder_pid="$!"
 sleep 1
 
 pushd "$ROOT_DIR" >/dev/null
-maestro test --device "$simulator_udid" "$FLOW_PATH"
+maestro test \
+  --device "$simulator_udid" \
+  -e MOB_DEMO_EMAIL="$MOB_DEMO_EMAIL" \
+  -e MOB_DEMO_PASSWORD="$MOB_DEMO_PASSWORD" \
+  -e MOB_DEMO_OTP_CODE="$MOB_DEMO_OTP_CODE" \
+  "$FLOW_PATH"
 popd >/dev/null
 
 if [[ -n "$recorder_pid" ]] && kill -0 "$recorder_pid" >/dev/null 2>&1; then

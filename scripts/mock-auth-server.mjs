@@ -413,10 +413,15 @@ const createPortfolioFixture = (accountId) => {
       asOf: PORTFOLIO_AS_OF,
       ...(accountId === '14'
         ? {
+            avgPrice: 68_900,
             marketPrice: 70_100,
             quoteSnapshotId: 'qsnap-live-001',
             quoteAsOf: '2026-03-12T08:45:00Z',
             quoteSourceMode: 'LIVE',
+            unrealizedPnl: 144_000,
+            realizedPnlDaily: 12_000,
+            valuationStatus: 'FRESH',
+            valuationUnavailableReason: null,
           }
         : {}),
     },
@@ -433,10 +438,15 @@ const createPortfolioFixture = (accountId) => {
       asOf: PORTFOLIO_AS_OF,
       ...(accountId === '14'
         ? {
-            marketPrice: 194_000,
+            avgPrice: 200_000,
+            marketPrice: null,
             quoteSnapshotId: 'qsnap-delayed-001',
             quoteAsOf: '2026-03-12T08:15:00Z',
             quoteSourceMode: 'DELAYED',
+            unrealizedPnl: null,
+            realizedPnlDaily: null,
+            valuationStatus: 'STALE',
+            valuationUnavailableReason: 'STALE_QUOTE',
           }
         : {}),
     },
@@ -453,10 +463,15 @@ const createPortfolioFixture = (accountId) => {
             availableBalance: 97_100_000,
             currency: 'KRW',
             asOf: PORTFOLIO_AS_OF,
-            marketPrice: 223_000,
-            quoteSnapshotId: 'qsnap-replay-001',
-            quoteAsOf: '2026-03-12T07:45:00Z',
-            quoteSourceMode: 'REPLAY',
+            avgPrice: 221_000,
+            marketPrice: null,
+            quoteSnapshotId: null,
+            quoteAsOf: null,
+            quoteSourceMode: null,
+            unrealizedPnl: null,
+            realizedPnlDaily: null,
+            valuationStatus: 'UNAVAILABLE',
+            valuationUnavailableReason: 'PROVIDER_UNAVAILABLE',
           },
         ]
       : []),
@@ -1658,6 +1673,10 @@ const server = http.createServer(async (request, response) => {
             quoteSnapshotId: 'qsnap-replay-ticker-001',
             quoteAsOf: '2026-03-12T09:05:00Z',
             quoteSourceMode: 'REPLAY',
+            unrealizedPnl: 168_000,
+            realizedPnlDaily: 12_000,
+            valuationStatus: 'FRESH',
+            valuationUnavailableReason: null,
           }
         : matchedPosition;
 
