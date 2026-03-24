@@ -2428,6 +2428,49 @@ describe('AuthenticatedHomeScreen account dashboard and order boundary', () => {
     );
   });
 
+  it('does not promote market-order ticker to the live branch for unknown quote source modes', async () => {
+    const fetchAccountPosition = vi.fn().mockResolvedValue({
+      accountId: 1,
+      memberId: 1,
+      symbol: '005930',
+      quantity: 120,
+      availableQuantity: 20,
+      availableQty: 20,
+      balance: 100_000_000,
+      availableBalance: 100_000_000,
+      currency: 'KRW',
+      asOf: '2026-03-18T09:00:00Z',
+      avgPrice: 68_900,
+      marketPrice: 70_100,
+      quoteSnapshotId: 'quote-vendor-001',
+      quoteAsOf: '2026-03-18T09:00:00Z',
+      quoteSourceMode: ' VENDOR_STREAM ',
+      unrealizedPnl: 144_000,
+      realizedPnlDaily: 12_000,
+      valuationStatus: 'FRESH',
+      valuationUnavailableReason: null,
+    });
+    const accountApi = createAccountApi({
+      fetchAccountPosition,
+    });
+    const { renderer } = await renderScreen({ accountApi });
+
+    await act(async () => {
+      findByTestId(renderer.root, 'mobile-external-order-preset-krx-market-buy-3').props.onPress();
+      await flushMicrotasks();
+    });
+
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-status'))).toBe(
+      '백엔드 freshness metadata 반영',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-source-mode'))).toBe(
+      'VENDOR_STREAM',
+    );
+    expect(getTextContent(findByTestId(renderer.root, 'mobile-market-order-live-ticker-price'))).toBe(
+      '₩70,100',
+    );
+  });
+
   it('keeps manually entered 3-share drafts on the limit path', async () => {
     const createOrderSession = vi.fn().mockResolvedValue(makeOrderSession({
       orderSessionId: 'sess-limit-3',
