@@ -1,11 +1,20 @@
 import { LaunchArguments } from 'react-native-launch-arguments';
 
-import type { RuntimeTarget } from './environment';
+import { type ApiIngressMode, type RuntimeTarget } from './environment';
+import {
+  isRuntimeTarget,
+  parseApiIngressMode,
+  toBoolean,
+  trimToUndefined,
+} from './runtime-option-parsing';
 
 declare const __DEV__: boolean;
 
 export interface MobileLaunchArguments {
   mobApiBaseUrl?: string;
+  mobApiIngressMode?: ApiIngressMode | string;
+  mobEdgeBaseUrl?: string;
+  mobAllowInsecureDevBaseUrl?: boolean | string;
   mobRuntimeTarget?: RuntimeTarget;
   mobDisableAnimations?: boolean | string;
   mobHideDevWarningsOverlay?: boolean | string;
@@ -15,30 +24,22 @@ export interface MobileLaunchArguments {
 
 let cachedArguments: MobileLaunchArguments | null = null;
 
-const isRuntimeTarget = (value: string | undefined): value is RuntimeTarget =>
-  value === 'android-emulator' ||
-  value === 'ios-simulator' ||
-  value === 'physical-device';
-
-const toBoolean = (value: string | undefined): boolean | undefined => {
-  if (!value) {
-    return undefined;
+const resolveBooleanLaunchPreference = (
+  launchValue: boolean | string | undefined,
+  envValue: string | undefined,
+): boolean | undefined => {
+  if (typeof launchValue === 'boolean') {
+    return launchValue;
   }
 
-  const normalized = value.trim().toLowerCase();
-
-  if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
-    return true;
+  if (typeof launchValue === 'string') {
+    return toBoolean(launchValue);
   }
 
-  if (normalized === 'false' || normalized === '0' || normalized === 'no') {
-    return false;
-  }
-
-  return undefined;
+  return toBoolean(envValue);
 };
 
-const isDevelopmentRuntime = (): boolean => {
+export const isDevelopmentRuntime = (): boolean => {
   if (typeof __DEV__ !== 'undefined') {
     return __DEV__;
   }
@@ -67,7 +68,32 @@ export const resolveRuntimeTarget = (): RuntimeTarget => {
 };
 
 export const resolveRuntimeUrlOverride = (): string | undefined =>
-  getMobileLaunchArguments().mobApiBaseUrl ?? process.env.MOB_API_BASE_URL;
+  trimToUndefined(getMobileLaunchArguments().mobApiBaseUrl)
+  ?? trimToUndefined(process.env.MOB_API_BASE_URL);
+
+export const resolveApiIngressMode = (): ApiIngressMode => {
+  const value = trimToUndefined(
+    typeof getMobileLaunchArguments().mobApiIngressMode === 'string'
+      ? getMobileLaunchArguments().mobApiIngressMode
+      : process.env.MOB_API_INGRESS_MODE,
+  );
+
+  return parseApiIngressMode(value) ?? 'direct';
+};
+
+export const resolveRuntimeEdgeBaseUrl = (): string | undefined =>
+  trimToUndefined(getMobileLaunchArguments().mobEdgeBaseUrl)
+  ?? trimToUndefined(process.env.MOB_EDGE_BASE_URL);
+
+export const shouldAllowInsecureDevBaseUrl = (): boolean => {
+  const { mobAllowInsecureDevBaseUrl } = getMobileLaunchArguments();
+  const resolvedPreference = resolveBooleanLaunchPreference(
+    mobAllowInsecureDevBaseUrl,
+    process.env.MOB_ALLOW_INSECURE_DEV_BASE_URL,
+  );
+
+  return isDevelopmentRuntime() && resolvedPreference === true;
+};
 
 export const isMotionDisabled = (): boolean => {
   const { mobDisableAnimations } = getMobileLaunchArguments();
