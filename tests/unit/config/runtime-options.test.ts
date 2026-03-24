@@ -133,6 +133,16 @@ describe('runtime options', () => {
     expect(() => resolveApiIngressMode()).toThrowError(/MOB-CONFIG-005/);
   });
 
+  it('falls back to the env ingress mode when the launch arg is blank', () => {
+    process.env.MOB_API_INGRESS_MODE = 'edge';
+    hoisted.launchArgumentsValueMock.mockReturnValue({
+      mobApiIngressMode: '   ',
+    });
+    resetMobileLaunchArgumentsCache();
+
+    expect(resolveApiIngressMode()).toBe('edge');
+  });
+
   it('trims empty edge values', () => {
     process.env.MOB_EDGE_BASE_URL = '   ';
 

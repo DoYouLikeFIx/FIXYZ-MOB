@@ -186,4 +186,12 @@ describe('transport safety', () => {
       allowInsecureDevBaseUrl: true,
     })).toThrowError(/MOB-CONFIG-004/);
   });
+
+  it('rejects unsupported URL schemes even for localhost-style hosts', () => {
+    expect(() => assertSafeApiBaseUrl({
+      baseUrl: 'ftp://localhost',
+      isDevelopmentRuntime: true,
+      allowInsecureDevBaseUrl: true,
+    })).toThrowError(/MOB-CONFIG-009/);
+  });
 });
