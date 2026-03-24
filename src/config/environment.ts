@@ -262,6 +262,13 @@ export const assertSafeApiBaseUrl = ({
   isDevelopmentRuntime = false,
 }: AssertSafeApiBaseUrlInput): void => {
   const parsed = new URL(baseUrl);
+
+  assertHttpTransport(
+    parsed,
+    'MOB-CONFIG-009',
+    'Mobile base URL must use http or https transport',
+  );
+
   const cookiePolicy = resolveSessionCookiePolicy(baseUrl);
 
   if (!cookiePolicy.secure || parsed.protocol === 'https:') {

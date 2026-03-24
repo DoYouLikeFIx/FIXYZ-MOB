@@ -72,11 +72,13 @@ export const resolveRuntimeUrlOverride = (): string | undefined =>
   ?? trimToUndefined(process.env.MOB_API_BASE_URL);
 
 export const resolveApiIngressMode = (): ApiIngressMode => {
-  const value = trimToUndefined(
+  const launchValue = trimToUndefined(
     typeof getMobileLaunchArguments().mobApiIngressMode === 'string'
       ? getMobileLaunchArguments().mobApiIngressMode
-      : process.env.MOB_API_INGRESS_MODE,
+      : undefined,
   );
+  const envValue = trimToUndefined(process.env.MOB_API_INGRESS_MODE);
+  const value = launchValue ?? envValue;
 
   return parseApiIngressMode(value) ?? 'direct';
 };
