@@ -1,5 +1,12 @@
 import { Pressable, Text, TextInput, View } from 'react-native';
 
+import {
+  isFreshValuationStatus,
+  isKnownValuationStatus,
+  resolveValuationGuidance,
+  resolveValuationStatusLabel,
+  VALUATION_UNAVAILABLE_LABEL,
+} from '../../account/account-valuation';
 import { useExpiryCountdown } from '../../auth/use-expiry-countdown';
 import type {
   ExternalOrderPresetId,
@@ -7,6 +14,10 @@ import type {
 } from '../../order/external-order-recovery';
 import type { ExternalOrderErrorPresentation } from '../../order/external-errors';
 import type { OrderFlowStep, OrderSessionResponse } from '../../types/order';
+import type {
+  ValuationStatus,
+  ValuationUnavailableReason,
+} from '../../types/account';
 import {
   resolveOrderFinalResultContent,
   resolveOrderProcessingContent,
@@ -29,9 +40,14 @@ interface ExternalOrderRecoverySectionProps {
   draftSummary: string;
   marketTicker: {
     symbol: string;
+    avgPrice?: number | null;
     marketPrice: number | null;
     quoteAsOf: string | null;
     quoteSourceMode: string | null;
+    unrealizedPnl?: number | null;
+    realizedPnlDaily?: number | null;
+    valuationStatus?: ValuationStatus | null;
+    valuationUnavailableReason?: ValuationUnavailableReason | null;
     isLoading: boolean;
     error: string | null;
   } | null;
@@ -71,6 +87,19 @@ const quoteDateFormatter = new Intl.DateTimeFormat('ko-KR', {
   hour: '2-digit',
   minute: '2-digit',
 });
+
+const formatMarketTickerTimestamp = (value: string | null) => {
+  if (!value) {
+    return VALUATION_UNAVAILABLE_LABEL;
+  }
+
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) {
+    return '시각 확인 필요';
+  }
+
+  return quoteDateFormatter.format(new Date(timestamp));
+};
 
 const isProcessingStatus = (status?: OrderSessionResponse['status']) =>
   status === 'EXECUTING' || status === 'REQUERYING';
@@ -144,22 +173,41 @@ export const ExternalOrderRecoverySection = ({
     step === 'COMPLETE' && hasCompleteStateCard ? null : feedbackMessage;
   const showDedicatedStaleQuoteGuidance =
     step !== 'COMPLETE' && staleQuoteGuidance !== null;
+  const marketTickerValuationStatus = marketTicker?.valuationStatus ?? null;
+  const marketTickerValuationLabel = resolveValuationStatusLabel(marketTickerValuationStatus);
+  const marketTickerGuidance = resolveValuationGuidance(
+    marketTickerValuationStatus,
+    marketTicker?.valuationUnavailableReason ?? null,
+  );
   const hasMarketTickerQuote =
-    marketTicker?.marketPrice !== null
+    isFreshValuationStatus(marketTickerValuationStatus)
+    && marketTicker?.marketPrice !== null
     && marketTicker?.marketPrice !== undefined
     && Boolean(marketTicker?.quoteAsOf)
     && Boolean(marketTicker?.quoteSourceMode);
+  const hasMarketTickerMetadata = Boolean(
+    (marketTicker?.marketPrice !== null && marketTicker?.marketPrice !== undefined)
+    || marketTicker?.quoteAsOf
+    || marketTicker?.quoteSourceMode
+    || marketTicker?.valuationStatus,
+  );
   const marketTickerStatus = marketTicker === null
     ? null
     : marketTicker.error
-      ? hasMarketTickerQuote
-        ? '마지막 시세를 유지 중입니다. 새 ticker를 다시 연결하고 있어요.'
-        : '실시간 ticker를 불러오지 못했습니다.'
+      ? '실시간 ticker를 불러오지 못했습니다.'
+      : marketTickerValuationStatus === 'STALE'
+        ? '백엔드가 시세 지연으로 평가값을 숨겼습니다.'
+      : marketTickerValuationStatus === 'UNAVAILABLE'
+        ? '백엔드가 시세 확인 실패로 평가값을 숨겼습니다.'
+      : marketTickerValuationStatus && !isKnownValuationStatus(marketTickerValuationStatus)
+        ? '백엔드 freshness 상태를 확인할 수 없습니다.'
       : marketTicker.isLoading && !hasMarketTickerQuote
         ? '실시간 ticker 연결 중...'
-        : hasMarketTickerQuote
-          ? '5초마다 자동 갱신'
-          : '실시간 ticker 데이터가 아직 준비되지 않았습니다.';
+      : hasMarketTickerQuote
+        ? '5초마다 자동 갱신'
+      : hasMarketTickerMetadata
+          ? '백엔드 freshness metadata 반영'
+        : '실시간 ticker 데이터가 아직 준비되지 않았습니다.';
   const expiredModalMessage = hasExpiry && countdown.isExpired
     ? `${countdown.expiresAtLabel}에 세션이 종료되었습니다. 입력한 주문을 확인한 뒤 다시 시작해 주세요.`
     : '주문 세션이 더 이상 유효하지 않습니다. 입력한 주문을 확인한 뒤 다시 시작해 주세요.';
@@ -547,7 +595,7 @@ export const ExternalOrderRecoverySection = ({
             </Text>
           </View>
 
-          {hasMarketTickerQuote ? (
+          {hasMarketTickerQuote || hasMarketTickerMetadata ? (
             <View style={{ gap: 8 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
                 <Text style={{ fontSize: 13, color: palette.inkSoft }}>현재 시세</Text>
@@ -555,7 +603,11 @@ export const ExternalOrderRecoverySection = ({
                   style={{ fontSize: 16, fontWeight: '800', color: palette.ink }}
                   testID="mobile-market-order-live-ticker-price"
                 >
-                  {formatKRW(marketTicker.marketPrice ?? 0)}
+                  {isFreshValuationStatus(marketTickerValuationStatus)
+                  && marketTicker.marketPrice !== null
+                  && marketTicker.marketPrice !== undefined
+                    ? formatKRW(marketTicker.marketPrice)
+                    : VALUATION_UNAVAILABLE_LABEL}
                 </Text>
               </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
@@ -564,7 +616,7 @@ export const ExternalOrderRecoverySection = ({
                   style={{ fontSize: 14, fontWeight: '700', color: palette.ink }}
                   testID="mobile-market-order-live-ticker-quote-as-of"
                 >
-                  {quoteDateFormatter.format(new Date(marketTicker.quoteAsOf ?? ''))}
+                  {formatMarketTickerTimestamp(marketTicker.quoteAsOf)}
                 </Text>
               </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
@@ -573,9 +625,32 @@ export const ExternalOrderRecoverySection = ({
                   style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}
                   testID="mobile-market-order-live-ticker-source-mode"
                 >
-                  {marketTicker.quoteSourceMode}
+                  {marketTicker.quoteSourceMode && marketTicker.quoteSourceMode.trim()
+                    ? marketTicker.quoteSourceMode
+                    : VALUATION_UNAVAILABLE_LABEL}
                 </Text>
               </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
+                <Text style={{ fontSize: 13, color: palette.inkSoft }}>평가 상태</Text>
+                <Text
+                  style={{ fontSize: 14, fontWeight: '800', color: palette.ink }}
+                  testID="mobile-market-order-live-ticker-valuation-status"
+                >
+                  {marketTickerValuationLabel}
+                </Text>
+              </View>
+              {marketTickerGuidance ? (
+                <Text
+                  style={{
+                    fontSize: 13,
+                    lineHeight: 18,
+                    color: '#B45309',
+                  }}
+                  testID="mobile-market-order-live-ticker-guidance"
+                >
+                  {marketTickerGuidance}
+                </Text>
+              ) : null}
             </View>
           ) : null}
 
