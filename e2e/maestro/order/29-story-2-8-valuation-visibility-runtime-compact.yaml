@@ -1,0 +1,104 @@
+appId: org.reactjs.native.example.FIXYZMob
+---
+- assertVisible:
+    id: mobile-dashboard-quote-ticker
+- assertVisible:
+    id: mobile-dashboard-quote-ticker-price
+    text: "₩70,100"
+- scrollUntilVisible:
+    element:
+      id: mobile-symbol-000660
+    direction: UP
+    timeout: 10000
+    visibilityPercentage: 60
+    centerElement: true
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    id: mobile-symbol-000660
+    retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 1200
+- extendedWaitUntil:
+    visible: "현재 조회 종목 000660"
+    timeout: 8000
+- scrollUntilVisible:
+    element:
+      id: mobile-dashboard-valuation-status
+    direction: DOWN
+    timeout: 10000
+    visibilityPercentage: 60
+- assertVisible:
+    id: mobile-dashboard-valuation-status
+    text: 시세 지연
+- assertVisible:
+    id: mobile-dashboard-valuation-guidance
+- scrollUntilVisible:
+    element:
+      id: mobile-symbol-035420
+    direction: UP
+    timeout: 10000
+    visibilityPercentage: 60
+    centerElement: true
+- waitForAnimationToEnd:
+    timeout: 1000
+- tapOn:
+    id: mobile-symbol-035420
+    retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 1200
+- extendedWaitUntil:
+    visible: "현재 조회 종목 035420"
+    timeout: 8000
+- scrollUntilVisible:
+    element:
+      id: mobile-dashboard-valuation-status
+    direction: DOWN
+    timeout: 10000
+    visibilityPercentage: 60
+- assertVisible:
+    id: mobile-dashboard-valuation-status
+    text: 평가 불가
+- assertVisible:
+    id: mobile-dashboard-valuation-guidance
+- scrollUntilVisible:
+    element:
+      id: mobile-dashboard-quote-ticker-guidance
+    direction: UP
+    timeout: 8000
+    visibilityPercentage: 20
+    centerElement: true
+- assertVisible:
+    id: mobile-dashboard-quote-ticker-guidance
+- swipe:
+    start: "50%,84%"
+    end: "50%,24%"
+    duration: 500
+    waitToSettleTimeoutMs: 1000
+- swipe:
+    start: "50%,84%"
+    end: "50%,24%"
+    duration: 500
+    waitToSettleTimeoutMs: 1000
+- swipe:
+    start: "50%,84%"
+    end: "50%,24%"
+    duration: 500
+    waitToSettleTimeoutMs: 1000
+- extendedWaitUntil:
+    visible:
+      id: mobile-external-order-preset-krx-market-buy-3
+    timeout: 8000
+- tapOn:
+    id: mobile-external-order-preset-krx-market-buy-3
+    retryTapIfNoChange: true
+    waitToSettleTimeoutMs: 1200
+- extendedWaitUntil:
+    visible:
+      id: mobile-market-order-live-ticker
+    timeout: 8000
+- assertVisible:
+    id: mobile-market-order-live-ticker
+- assertVisible:
+    id: mobile-market-order-live-ticker-valuation-status
+    text: 평가 가능
+- waitForAnimationToEnd:
+    timeout: 1200
