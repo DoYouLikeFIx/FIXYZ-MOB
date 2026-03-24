@@ -39,7 +39,7 @@ Launch arguments map to the same contract:
 Examples:
 
 - Env-driven physical device lane: `MOB_RUNTIME_TARGET=physical-device MOB_LAN_IP=192.168.0.77`
-- Launch-arg physical device lane: `mobRuntimeTarget='physical-device'`
+- Launch-arg physical-device selector: `mobRuntimeTarget='physical-device'` plus env `MOB_LAN_IP=192.168.0.77` or explicit `mobApiBaseUrl` / `MOB_API_BASE_URL`
 
 ### Edge mode
 
