@@ -82,6 +82,7 @@ describe('createMobileAuthRuntime', () => {
       clOrdId: 'edge-order-1',
       symbol: '005930',
       side: 'BUY',
+      orderType: 'LIMIT',
       quantity: 1,
       price: 70_500,
     });
