@@ -5,6 +5,7 @@ const hoisted = vi.hoisted(() => ({
     sameSite: 'Lax' as const,
     secure: false,
   })),
+  assertSafeApiBaseUrlMock: vi.fn(() => undefined),
   checkHealthMock: vi.fn(async () => ({
     statusCode: 200,
     body: { status: 'UP' },
@@ -15,11 +16,15 @@ const hoisted = vi.hoisted(() => ({
 }));
 
 vi.mock('@/config/environment', () => ({
+  assertSafeApiBaseUrl: hoisted.assertSafeApiBaseUrlMock,
   resolveApiBaseUrl: hoisted.resolveApiBaseUrlMock,
   resolveSessionCookiePolicy: hoisted.resolveSessionCookiePolicyMock,
 }));
 
 vi.mock('@/config/runtime-options', () => ({
+  isDevelopmentRuntime: () => process.env.NODE_ENV !== 'production',
+  resolveApiIngressMode: () => 'direct' as const,
+  resolveRuntimeEdgeBaseUrl: () => undefined,
   resolveRuntimeTarget: () => {
     const value = process.env.MOB_RUNTIME_TARGET;
 
@@ -30,6 +35,7 @@ vi.mock('@/config/runtime-options', () => ({
       : 'ios-simulator';
   },
   resolveRuntimeUrlOverride: () => process.env.MOB_API_BASE_URL,
+  shouldAllowInsecureDevBaseUrl: () => false,
   shouldEnforceStrictCsrfBootstrap: () => {
     const value = process.env.MOB_STRICT_CSRF_BOOTSTRAP;
 
@@ -102,6 +108,7 @@ describe('bootstrap app session', () => {
 
   beforeEach(() => {
     hoisted.state.coldStartErrorStatus = null;
+    hoisted.assertSafeApiBaseUrlMock.mockClear();
     hoisted.resolveApiBaseUrlMock.mockClear();
     hoisted.resolveSessionCookiePolicyMock.mockClear();
     hoisted.checkHealthMock.mockClear();
@@ -153,6 +160,8 @@ describe('bootstrap app session', () => {
       target: 'ios-simulator',
       lanIp: undefined,
       overrideUrl: undefined,
+      ingressMode: 'direct',
+      edgeBaseUrl: undefined,
     });
     expect(hoisted.checkHealthMock).toHaveBeenCalledTimes(1);
     expect(infoSpy).toHaveBeenCalledWith(

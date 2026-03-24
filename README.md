@@ -11,15 +11,53 @@ Mobile foundation scaffold for Epic 0 Story 0.4.
 - Android run uses `npm run android` and now bootstraps SDK/JDK env automatically.
 - Optional Android AVD override: `ANDROID_AVD=\"<Your_AVD_Name>\" npm run android`.
 
-## Host Selection Rule
+## Runtime Modes
 
-`MOB_RUNTIME_TARGET` determines API host:
+`MOB_API_INGRESS_MODE` is the canonical mobile ingress selector:
+
+- `direct` -> keep the existing developer host matrix for simulator/emulator convenience
+- `edge` -> require `MOB_EDGE_BASE_URL` and route mobile traffic through the canonical HTTPS edge ingress
+
+When `MOB_API_INGRESS_MODE` is unset, MOB defaults to `direct`.
+
+Launch arguments map to the same contract:
+
+- `mobRuntimeTarget='android-emulator' | 'ios-simulator' | 'physical-device'`
+- `mobApiIngressMode='direct' | 'edge'`
+- `mobEdgeBaseUrl='https://edge.fix.example'`
+- `mobApiBaseUrl='http://localhost:18080'`
+- `mobAllowInsecureDevBaseUrl='true' | 'false'`
+
+### Direct-dev mode
+
+`MOB_RUNTIME_TARGET` determines the default direct host:
 
 - `android-emulator` -> `http://10.0.2.2:8080`
 - `ios-simulator` -> `http://localhost:8080`
 - `physical-device` -> `http://<LAN_IP>:8080` (`MOB_LAN_IP` required)
 
-`MOB_API_BASE_URL` overrides all targets for local/dev testing.
+Examples:
+
+- Env-driven physical device lane: `MOB_RUNTIME_TARGET=physical-device MOB_LAN_IP=192.168.0.77`
+- Launch-arg physical-device selector: `mobRuntimeTarget='physical-device'` plus env `MOB_LAN_IP=192.168.0.77` or explicit `mobApiBaseUrl` / `MOB_API_BASE_URL`
+
+### Edge mode
+
+Use `MOB_API_INGRESS_MODE=edge` together with `MOB_EDGE_BASE_URL=https://<edge-host>`.
+
+- Edge mode is intended for shared QA, hardened ingress validation, and physical-device flows.
+- `MOB_EDGE_BASE_URL` must be a valid HTTPS origin.
+- Edge mode does not change API paths; MOB continues to use canonical `/api/v1/auth/*`, `/api/v1/orders/*`, and `/api/v1/notifications/*` routes.
+- Live harness validation rejects `MOB_API_BASE_URL` when edge mode is selected so CI proves the canonical selector contract instead of an override escape hatch.
+
+### Explicit override escape hatch
+
+`MOB_API_BASE_URL` still overrides the resolved target or edge mode for controlled testing, but it is now an explicit escape hatch rather than the primary runtime selector.
+
+- Any non-localhost plaintext override that would require `SameSite=None; Secure` fails fast with `MOB-CONFIG-004`.
+- Development-only plaintext testing can bypass that guard with `MOB_ALLOW_INSECURE_DEV_BASE_URL=true`.
+- The bypass is ignored outside development runtime.
+- Override URLs must be valid absolute `http` or `https` URLs without credentials, query params, or fragments.
 
 `MOB_STRICT_CSRF_BOOTSTRAP` controls startup behavior when `GET /api/v1/auth/csrf` is missing:
 
@@ -33,6 +71,7 @@ Mobile foundation scaffold for Epic 0 Story 0.4.
 - CSRF token is read from `XSRF-TOKEN` cookie when available, with fallback to the `GET /api/v1/auth/csrf` response body for backends that use `HttpSessionCsrfTokenRepository`.
 - Non-safe methods inject the server-advertised CSRF header name. Default remains `X-XSRF-TOKEN` when the backend does not override it.
 - CSRF bootstrap/refresh endpoint: `GET /api/v1/auth/csrf` at app start, login success, and foreground resume.
+- Shared QA and physical-device release validation should prefer HTTPS edge mode over plaintext LAN access.
 - Forbidden persistence: password, OTP, raw session cookie, raw CSRF token.
 - Conditional secure-storage only: device-bound key material / future bootstrap secret classes.
 
@@ -114,8 +153,10 @@ Real backend verification flows live in `e2e/maestro/auth-live`.
 Vitest also includes a live auth contract regression for the mobile runtime itself:
 
 - `LIVE_API_BASE_URL=http://localhost:18080 LIVE_EMAIL=<registered_email> LIVE_PASSWORD=<same_password> npm run test:live:auth`
+- `MOB_API_INGRESS_MODE=edge MOB_EDGE_BASE_URL=https://edge.fix.example LIVE_EMAIL=<registered_email> LIVE_PASSWORD=<same_password> npm run test:live:auth`
+- `MOB_RUNTIME_TARGET=physical-device MOB_LAN_IP=192.168.0.77 MOB_ALLOW_INSECURE_DEV_BASE_URL=true LIVE_EMAIL=<registered_email> LIVE_PASSWORD=<same_password> npm run test:live:auth`
 - If `LIVE_EMAIL` / `LIVE_PASSWORD` are omitted, the test self-registers a disposable member before replaying an invalid-credentials login.
-- The Vitest live regression captures the real `/api/v1/auth/login` error body and `X-Correlation-Id` header, then verifies the mobile normalized error preserves that backend correlation metadata.
+- The Vitest live regression now resolves its base URL through the same direct/edge runtime contract as the app, then captures the real `/api/v1/auth/login` error body and `X-Correlation-Id` header to verify the mobile normalized error preserves backend correlation metadata.
 
 - Register against a live backend:
   - `export PATH="$PATH:$HOME/.maestro/bin"`
@@ -134,6 +175,8 @@ Vitest also includes a live auth contract regression for the mobile runtime itse
   - `MOB_MAESTRO_OPEN_URL='fixyz://reset-password?token=<live_reset_token>' LIVE_API_BASE_URL=http://localhost:18080 LIVE_RESET_PASSWORD=<new_password> DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/07-password-reset-success-live-be.yaml`
 
 Run the live flows individually. `01-register-success-live-be.yaml` should run before `02-login-success-live-be.yaml` when you are validating a freshly created account, while `03-login-invalid-credentials-live-be.yaml`, `04-password-recovery-request-live-be.yaml`, `05-password-reset-invalid-token-live-be.yaml`, and `06-password-recovery-challenge-live-be.yaml` can run independently once `LIVE_API_BASE_URL` is reachable. `07-password-reset-success-live-be.yaml` additionally requires a real recovery token supplied through `MOB_MAESTRO_OPEN_URL`.
+
+For hardened ingress validation, prefer the Vitest live lane with `MOB_API_INGRESS_MODE=edge` and `MOB_EDGE_BASE_URL=https://...` so the app runtime exercises the canonical selector contract instead of only `MOB_API_BASE_URL`.
 
 ### Deep-Link Handoff Flow
 
