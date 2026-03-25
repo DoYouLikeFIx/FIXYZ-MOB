@@ -4,7 +4,7 @@
 
 ## Commands
 
-- `npm run test -- tests/e2e/mobile-auth-live.e2e.test.ts tests/e2e/mobile-order-live.e2e.test.ts tests/e2e/mobile-dashboard-live.e2e.test.ts`
+- `LIVE_API_BASE_URL=http://localhost:8080 npm run test -- tests/e2e/mobile-auth-live.e2e.test.ts tests/e2e/mobile-order-live.e2e.test.ts tests/e2e/mobile-dashboard-live.e2e.test.ts`
 - Holdings-backed dashboard parity add-on:
   - `LIVE_API_BASE_URL=http://localhost:8080 LIVE_EMAIL=<registered_email_with_holdings> LIVE_PASSWORD=<same_password> LIVE_TOTP_KEY=<base32_totp_secret> npm run test -- tests/e2e/mobile-dashboard-live.e2e.test.ts -t "keeps holdings-backed dashboard summary and positions aligned after MFA login"`
 

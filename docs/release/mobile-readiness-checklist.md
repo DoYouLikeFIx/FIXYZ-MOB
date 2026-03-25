@@ -13,6 +13,8 @@ npm run release:notes
 ```
 
 The command reads the mobile version from `package.json`, creates the candidate directory under `docs/release/candidates/v<package-version>/`, and refreshes the draft candidate pack until the generated release notes are finalized with a non-draft approval status.
+It creates missing candidate-pack files and preserves any existing candidate evidence, including draft files that already contain manual notes.
+Delete a specific draft file only when you intentionally want to regenerate that template from scratch.
 
 Current mobile package version path:
 
