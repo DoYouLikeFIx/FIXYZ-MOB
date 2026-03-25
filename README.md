@@ -25,7 +25,7 @@ Launch arguments map to the same contract:
 - `mobRuntimeTarget='android-emulator' | 'ios-simulator' | 'physical-device'`
 - `mobApiIngressMode='direct' | 'edge'`
 - `mobEdgeBaseUrl='https://edge.fix.example'`
-- `mobApiBaseUrl='http://localhost:18080'`
+- `mobApiBaseUrl='http://localhost:8080'`
 - `mobAllowInsecureDevBaseUrl='true' | 'false'`
 
 ### Direct-dev mode
@@ -152,31 +152,59 @@ Real backend verification flows live in `e2e/maestro/auth-live`.
 
 Vitest also includes a live auth contract regression for the mobile runtime itself:
 
-- `LIVE_API_BASE_URL=http://localhost:18080 LIVE_EMAIL=<registered_email> LIVE_PASSWORD=<same_password> npm run test:live:auth`
+- `LIVE_API_BASE_URL=http://localhost:8080 LIVE_EMAIL=<registered_email> LIVE_PASSWORD=<same_password> npm run test:live:auth`
 - `MOB_API_INGRESS_MODE=edge MOB_EDGE_BASE_URL=https://edge.fix.example LIVE_EMAIL=<registered_email> LIVE_PASSWORD=<same_password> npm run test:live:auth`
 - `MOB_RUNTIME_TARGET=physical-device MOB_LAN_IP=192.168.0.77 MOB_ALLOW_INSECURE_DEV_BASE_URL=true LIVE_EMAIL=<registered_email> LIVE_PASSWORD=<same_password> npm run test:live:auth`
 - If `LIVE_EMAIL` / `LIVE_PASSWORD` are omitted, the test self-registers a disposable member before replaying an invalid-credentials login.
 - The Vitest live regression now resolves its base URL through the same direct/edge runtime contract as the app, then captures the real `/api/v1/auth/login` error body and `X-Correlation-Id` header to verify the mobile normalized error preserves backend correlation metadata.
 
+For the dashboard-specific live contract, prefer an existing MFA-enabled account that already owns at least one position:
+
+- `LIVE_API_BASE_URL=http://localhost:8080 LIVE_EMAIL=<registered_email_with_holdings> LIVE_PASSWORD=<same_password> LIVE_TOTP_KEY=<base32_totp_secret> npm run test -- tests/e2e/mobile-dashboard-live.e2e.test.ts`
+
+The dashboard live lane can still self-register a disposable member when `LIVE_EMAIL` / `LIVE_PASSWORD` are omitted, and that path now verifies dashboard bootstrap + summary retrieval without requiring synthetic holdings to materialize immediately. Release-readiness runs should still provide a holdings-backed account so chart metadata parity assertions execute instead of skipping.
+
 - Register against a live backend:
   - `export PATH="$PATH:$HOME/.maestro/bin"`
-  - `LIVE_API_BASE_URL=http://localhost:18080 LIVE_EMAIL=<unique_email> LIVE_NAME='<display_name>' LIVE_PASSWORD=<password> DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/01-register-success-live-be.yaml`
+  - `LIVE_API_BASE_URL=http://localhost:8080 LIVE_EMAIL=<unique_email> LIVE_NAME='<display_name>' LIVE_PASSWORD=<password> DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/01-register-success-live-be.yaml`
 - Login against the same live backend account:
-  - `LIVE_API_BASE_URL=http://localhost:18080 LIVE_EMAIL=<registered_email> LIVE_PASSWORD=<same_password> LIVE_NAME='<same_display_name>' DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/02-login-success-live-be.yaml`
+  - `LIVE_API_BASE_URL=http://localhost:8080 LIVE_EMAIL=<registered_email> LIVE_PASSWORD=<same_password> LIVE_NAME='<same_display_name>' DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/02-login-success-live-be.yaml`
 - Invalid-credentials check against the live backend:
-  - `LIVE_API_BASE_URL=http://localhost:18080 LIVE_EMAIL=<registered_email> LIVE_INVALID_PASSWORD=<wrong_password> DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/03-login-invalid-credentials-live-be.yaml`
+  - `LIVE_API_BASE_URL=http://localhost:8080 LIVE_EMAIL=<registered_email> LIVE_INVALID_PASSWORD=<wrong_password> DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/03-login-invalid-credentials-live-be.yaml`
 - Forgot-password request against the live backend:
-  - `LIVE_API_BASE_URL=http://localhost:18080 LIVE_EMAIL=<registered_or_unknown_email> DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/04-password-recovery-request-live-be.yaml`
+  - `LIVE_API_BASE_URL=http://localhost:8080 LIVE_EMAIL=<registered_or_unknown_email> DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/04-password-recovery-request-live-be.yaml`
 - Invalid reset-token guidance against the live backend:
-  - `LIVE_API_BASE_URL=http://localhost:18080 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/05-password-reset-invalid-token-live-be.yaml`
+  - `LIVE_API_BASE_URL=http://localhost:8080 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/05-password-reset-invalid-token-live-be.yaml`
 - Forgot-password challenge bootstrap against the live backend:
-  - `LIVE_API_BASE_URL=http://localhost:18080 LIVE_EMAIL=<registered_or_unknown_email> DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/06-password-recovery-challenge-live-be.yaml`
+  - `LIVE_API_BASE_URL=http://localhost:8080 LIVE_EMAIL=<registered_or_unknown_email> DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/06-password-recovery-challenge-live-be.yaml`
 - Reset-success handoff against the live backend:
-  - `MOB_MAESTRO_OPEN_URL='fixyz://reset-password?token=<live_reset_token>' LIVE_API_BASE_URL=http://localhost:18080 LIVE_RESET_PASSWORD=<new_password> DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/07-password-reset-success-live-be.yaml`
+  - `MOB_MAESTRO_OPEN_URL='fixyz://reset-password?token=<live_reset_token>' LIVE_API_BASE_URL=http://localhost:8080 LIVE_RESET_PASSWORD=<new_password> DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/run-maestro-auth-suite.sh ./e2e/maestro/auth-live/07-password-reset-success-live-be.yaml`
 
 Run the live flows individually. `01-register-success-live-be.yaml` should run before `02-login-success-live-be.yaml` when you are validating a freshly created account, while `03-login-invalid-credentials-live-be.yaml`, `04-password-recovery-request-live-be.yaml`, `05-password-reset-invalid-token-live-be.yaml`, and `06-password-recovery-challenge-live-be.yaml` can run independently once `LIVE_API_BASE_URL` is reachable. `07-password-reset-success-live-be.yaml` additionally requires a real recovery token supplied through `MOB_MAESTRO_OPEN_URL`.
 
 For hardened ingress validation, prefer the Vitest live lane with `MOB_API_INGRESS_MODE=edge` and `MOB_EDGE_BASE_URL=https://...` so the app runtime exercises the canonical selector contract instead of only `MOB_API_BASE_URL`.
+
+### Mobile Release Readiness Pack
+
+Story 10.6 uses the documents under `docs/release` as the mobile release-readiness contract:
+
+- `docs/release/mobile-test-matrix.md` describes the required lanes, commands, and evidence shape.
+- `docs/release/mobile-readiness-checklist.md`, `docs/release/mobile-release-notes.md`, and `docs/release/mobile-handoff-package.md` are the checked-in guide entry points for the versioned candidate pack.
+- `docs/release/candidates/v<package-version>/mobile-readiness-checklist.md` is the candidate-specific evidence index.
+- `docs/release/candidates/v<package-version>/mobile-release-notes.md` is the candidate-specific release summary.
+- `docs/release/candidates/v<package-version>/mobile-handoff-package.md` is the candidate-specific handoff bundle, including rollback and distribution ownership.
+- Current version paths:
+  - `docs/release/candidates/v0.1.0/mobile-readiness-checklist.md`
+  - `docs/release/candidates/v0.1.0/mobile-release-notes.md`
+  - `docs/release/candidates/v0.1.0/mobile-handoff-package.md`
+
+Generate or refresh the draft candidate pack with:
+
+```bash
+npm run release:notes
+```
+
+The mobile release pack links to Story 10.1 CI evidence and Story 10.4 smoke/rehearsal evidence rather than duplicating them, so the mobile reviewer path stays centralized and traceable.
 
 ### Deep-Link Handoff Flow
 
