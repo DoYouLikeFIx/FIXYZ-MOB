@@ -198,11 +198,13 @@ Story 10.6 uses the documents under `docs/release` as the mobile release-readine
   - `docs/release/candidates/v0.1.0/mobile-release-notes.md`
   - `docs/release/candidates/v0.1.0/mobile-handoff-package.md`
 
-Generate or refresh the draft candidate pack with:
+Generate the candidate pack or recreate any missing companion files with:
 
 ```bash
 npm run release:notes
 ```
+
+The generator preserves existing candidate evidence, including approved files, and only creates missing templates.
 
 The mobile release pack links to Story 10.1 CI evidence and Story 10.4 smoke/rehearsal evidence rather than duplicating them, so the mobile reviewer path stays centralized and traceable.
 

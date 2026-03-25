@@ -95,7 +95,7 @@ const createCookieAwareFetch = (
 };
 
 const createLiveIdentity = () => {
-  if (LIVE_EMAIL && LIVE_PASSWORD) {
+  if (HAS_REUSABLE_HOLDINGS_ACCOUNT) {
     return {
       email: LIVE_EMAIL,
       name: LIVE_NAME,

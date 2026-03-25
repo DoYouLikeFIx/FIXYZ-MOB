@@ -46,6 +46,9 @@ describe('mobile release readiness pack', () => {
     expect(matrix).toContain(
       'LIVE_API_BASE_URL=http://localhost:8080 npm run test -- tests/e2e/mobile-auth-live.e2e.test.ts tests/e2e/mobile-order-live.e2e.test.ts tests/e2e/mobile-dashboard-live.e2e.test.ts',
     );
+    expect(matrix).toContain(
+      'The app matches live backend contracts for auth, order, and dashboard bootstrap flows',
+    );
     expect(matrix).toContain('LIVE_EMAIL');
     expect(matrix).toContain('LIVE_PASSWORD');
     expect(matrix).toContain('LIVE_TOTP_KEY');
@@ -56,6 +59,9 @@ describe('mobile release readiness pack', () => {
     expect(matrix).toContain('tests/unit/api/notification-api.test.ts');
     expect(matrix).toContain(
       'tests/unit/order/AuthenticatedHomeScreen.test.tsx',
+    );
+    expect(matrix).toContain(
+      'Notification regressions are tracked separately from the `live-backend-contract` lane',
     );
     expect(matrix).toContain(
       'e2e/maestro/order/18-notification-feed-compact-setup.yaml',
@@ -98,12 +104,15 @@ describe('mobile release readiness pack', () => {
     expect(checklistGuide).toContain('live-backend-contract-evidence.md');
     expect(checklistGuide).toContain('physical-device-edge-smoke-evidence.md');
     expect(checklistGuide).toContain('preserves any existing candidate evidence');
+    expect(checklistGuide).toContain('approved files that must remain immutable');
 
     expect(notesGuide).toContain('docs/release/candidates/v<semver>/mobile-release-notes.md');
     expect(notesGuide).toContain('npm run release:notes');
-    expect(notesGuide).toContain('preserves existing draft evidence');
+    expect(notesGuide).toContain('preserves existing candidate evidence');
+    expect(notesGuide).toContain('approved files that must remain immutable');
     expect(handoffGuide).toContain('docs/release/candidates/v<semver>/mobile-handoff-package.md');
-    expect(handoffGuide).toContain('preserves existing draft evidence');
+    expect(handoffGuide).toContain('preserves existing candidate evidence');
+    expect(handoffGuide).toContain('approved files that must remain immutable');
 
     expect(checklist).toContain(`Candidate version | \`${version}\``);
     expect(checklist).toContain('./ios-simulator-direct-maestro-evidence.md');
@@ -111,6 +120,7 @@ describe('mobile release readiness pack', () => {
     expect(checklist).toContain('./physical-device-edge-smoke-evidence.md');
     expect(checklist).toContain('./upstream-story-10.1-evidence.md');
     expect(checklist).toContain('./upstream-story-10.4-evidence.md');
+    expect(checklist).toContain('notification regression evidence is tracked separately via the shared matrix regression gates');
     expect(checklist).toContain('Device model');
     expect(checklist).toContain('OS version');
     expect(checklist).toContain('App build');
@@ -125,6 +135,7 @@ describe('mobile release readiness pack', () => {
     expect(notes).toContain('./live-backend-contract-evidence.md');
     expect(notes).toContain('./upstream-story-10.1-evidence.md');
     expect(notes).toContain('./upstream-story-10.4-evidence.md');
+    expect(notes).toContain('separate notification assets tracked outside the live lane');
 
     expect(handoff).toContain('Rollback owner');
     expect(handoff).toContain('Contact owner');
@@ -140,6 +151,8 @@ describe('mobile release readiness pack', () => {
     expect(liveEvidence).toContain('tests/e2e/mobile-dashboard-live.e2e.test.ts');
     expect(liveEvidence).toContain('LIVE_API_BASE_URL=http://localhost:8080');
     expect(liveEvidence).toContain('LIVE_TOTP_KEY');
+    expect(liveEvidence).toContain('This lane covers live auth, order, and dashboard bootstrap contracts.');
+    expect(liveEvidence).toContain('Notification regression evidence belongs in the shared matrix regression-gate artifacts, not this live lane.');
     expect(deviceEvidence).toContain('MOB_API_INGRESS_MODE=edge');
     expect(deviceEvidence).toContain('MOB_EDGE_BASE_URL=<https://edge-host>');
     expect(story101Evidence).toContain('Status: `Pending upstream completion`');
