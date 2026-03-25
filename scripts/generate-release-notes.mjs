@@ -16,6 +16,11 @@ async function readTextIfExists(path) {
   }
 }
 
+function isDraftReleaseNotes(contents) {
+  return typeof contents === 'string'
+    && contents.includes('Approval status: `Draft - pending release evidence`');
+}
+
 async function main() {
   const packageJson = JSON.parse(
     await readFile(resolve(mobRoot, 'package.json'), 'utf8'),
@@ -27,7 +32,7 @@ async function main() {
 
   if (
     existingReleaseNotes
-    && !existingReleaseNotes.includes('Approval status: `Draft - pending release evidence`')
+    && !isDraftReleaseNotes(existingReleaseNotes)
   ) {
     console.log(`Preserved approved candidate pack: ${candidateDir}`);
     return;
@@ -203,7 +208,7 @@ This package finalizes the mobile release-readiness handoff for Story 10.6 for v
 
 ## Commands
 
-- \`npm run test -- tests/e2e/mobile-auth-live.e2e.test.ts tests/e2e/mobile-order-live.e2e.test.ts tests/e2e/mobile-dashboard-live.e2e.test.ts\`
+- \`LIVE_API_BASE_URL=http://localhost:8080 npm run test -- tests/e2e/mobile-auth-live.e2e.test.ts tests/e2e/mobile-order-live.e2e.test.ts tests/e2e/mobile-dashboard-live.e2e.test.ts\`
 - Holdings-backed dashboard parity add-on:
   - \`LIVE_API_BASE_URL=http://localhost:8080 LIVE_EMAIL=<registered_email_with_holdings> LIVE_PASSWORD=<same_password> LIVE_TOTP_KEY=<base32_totp_secret> npm run test -- tests/e2e/mobile-dashboard-live.e2e.test.ts -t "keeps holdings-backed dashboard summary and positions aligned after MFA login"\`
 
@@ -303,8 +308,20 @@ This package finalizes the mobile release-readiness handoff for Story 10.6 for v
   await mkdir(candidateDir, { recursive: true });
 
   for (const file of files) {
-    await writeFile(file.path, file.contents, 'utf8');
-    console.log(`Refreshed ${file.path}`);
+    const existing = await readTextIfExists(file.path);
+
+    if (existing === null) {
+      await writeFile(file.path, file.contents, 'utf8');
+      console.log(`Created ${file.path}`);
+      continue;
+    }
+
+    if (existing === file.contents) {
+      console.log(`Kept ${file.path} (already current)`);
+      continue;
+    }
+
+    console.log(`Preserved ${file.path} (existing draft evidence)`);
   }
 }
 
