@@ -44,7 +44,7 @@ describe('mobile release readiness pack', () => {
     expect(matrix).toContain('npm run e2e:maestro:auth');
     expect(matrix).toContain('npm run e2e:maestro:order');
     expect(matrix).toContain(
-      'npm run test -- tests/e2e/mobile-auth-live.e2e.test.ts tests/e2e/mobile-order-live.e2e.test.ts tests/e2e/mobile-dashboard-live.e2e.test.ts',
+      'LIVE_API_BASE_URL=http://localhost:8080 npm run test -- tests/e2e/mobile-auth-live.e2e.test.ts tests/e2e/mobile-order-live.e2e.test.ts tests/e2e/mobile-dashboard-live.e2e.test.ts',
     );
     expect(matrix).toContain('LIVE_EMAIL');
     expect(matrix).toContain('LIVE_PASSWORD');
@@ -52,16 +52,16 @@ describe('mobile release readiness pack', () => {
     expect(matrix).toContain('owning at least one position');
     expect(matrix).toContain('MOB_API_INGRESS_MODE=edge');
     expect(matrix).toContain('MOB_EDGE_BASE_URL=<https://edge-host>');
-    expect(matrix).toContain('MOB/tests/e2e/mobile-dashboard-live.e2e.test.ts');
-    expect(matrix).toContain('MOB/tests/unit/api/notification-api.test.ts');
+    expect(matrix).toContain('tests/e2e/mobile-dashboard-live.e2e.test.ts');
+    expect(matrix).toContain('tests/unit/api/notification-api.test.ts');
     expect(matrix).toContain(
-      'MOB/tests/unit/order/AuthenticatedHomeScreen.test.tsx',
+      'tests/unit/order/AuthenticatedHomeScreen.test.tsx',
     );
     expect(matrix).toContain(
-      'MOB/e2e/maestro/order/18-notification-feed-compact-setup.yaml',
+      'e2e/maestro/order/18-notification-feed-compact-setup.yaml',
     );
     expect(matrix).toContain(
-      'MOB/e2e/maestro/order/19-notification-feed-compact-demo.yaml',
+      'e2e/maestro/order/19-notification-feed-compact-demo.yaml',
     );
     expect(matrix).toContain('Story 10.1 CI evidence');
     expect(matrix).toContain('Story 10.4 smoke/rehearsal evidence');
@@ -97,10 +97,13 @@ describe('mobile release readiness pack', () => {
     expect(checklistGuide).toContain('ios-simulator-direct-maestro-evidence.md');
     expect(checklistGuide).toContain('live-backend-contract-evidence.md');
     expect(checklistGuide).toContain('physical-device-edge-smoke-evidence.md');
+    expect(checklistGuide).toContain('preserves any existing candidate evidence');
 
     expect(notesGuide).toContain('docs/release/candidates/v<semver>/mobile-release-notes.md');
     expect(notesGuide).toContain('npm run release:notes');
+    expect(notesGuide).toContain('preserves existing draft evidence');
     expect(handoffGuide).toContain('docs/release/candidates/v<semver>/mobile-handoff-package.md');
+    expect(handoffGuide).toContain('preserves existing draft evidence');
 
     expect(checklist).toContain(`Candidate version | \`${version}\``);
     expect(checklist).toContain('./ios-simulator-direct-maestro-evidence.md');

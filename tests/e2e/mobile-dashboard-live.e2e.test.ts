@@ -526,9 +526,37 @@ const formatDashboardDebugSnapshot = (input: {
 }) =>
   JSON.stringify(
     {
-      accountId: input.accountId,
-      summary: input.summary,
-      positions: input.positions,
+      accountIdPresent: Boolean(input.accountId),
+      summary: {
+        currency: input.summary.currency,
+        asOfPresent: Boolean(input.summary.asOf),
+        balancePresent: input.summary.balance !== null && input.summary.balance !== undefined,
+        availableBalancePresent:
+          input.summary.availableBalance !== null && input.summary.availableBalance !== undefined,
+        valuationStatus: 'valuationStatus' in input.summary ? input.summary.valuationStatus ?? null : null,
+        marketPricePresent: 'marketPrice' in input.summary
+          ? input.summary.marketPrice !== null && input.summary.marketPrice !== undefined
+          : false,
+        quoteAsOfPresent: 'quoteAsOf' in input.summary ? Boolean(input.summary.quoteAsOf) : false,
+        quoteSourceMode: 'quoteSourceMode' in input.summary
+          ? input.summary.quoteSourceMode ?? null
+          : null,
+      },
+      positionsCount: input.positions.length,
+      positions: input.positions.map((position, index) => ({
+        index,
+        hasSymbol: Boolean(position.symbol),
+        quantityPresent: position.quantity > 0,
+        availableQuantityPresent: resolveAvailableQuantity(position) !== null
+          && resolveAvailableQuantity(position) !== undefined,
+        currency: position.currency,
+        asOfPresent: Boolean(position.asOf),
+        valuationStatus: position.valuationStatus ?? null,
+        marketPricePresent: position.marketPrice !== null && position.marketPrice !== undefined,
+        quoteSnapshotPresent: Boolean(position.quoteSnapshotId),
+        quoteAsOfPresent: Boolean(position.quoteAsOf),
+        quoteSourceMode: position.quoteSourceMode ?? null,
+      })),
     },
     null,
     2,
@@ -575,7 +603,7 @@ describe.runIf(Boolean(LIVE_BASE_URL))('Live mobile dashboard against backend', 
 
     expectProtectedDashboardStatus(summaryResponse.status);
     expectProtectedDashboardStatus(positionsResponse.status);
-  });
+  }, 120_000);
 
   const holdingsBackedDashboardParity = HAS_REUSABLE_HOLDINGS_ACCOUNT ? it : it.skip;
 
@@ -615,6 +643,7 @@ describe.runIf(Boolean(LIVE_BASE_URL))('Live mobile dashboard against backend', 
         expect(chartReadyPosition.avgPrice).toBeGreaterThan(0);
       }
     },
+    120_000,
   );
 
   it('returns dashboard bootstrap data after fresh MFA login', async () => {
