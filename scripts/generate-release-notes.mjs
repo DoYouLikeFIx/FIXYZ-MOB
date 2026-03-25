@@ -29,13 +29,13 @@ async function main() {
   const candidateDir = resolve(mobRoot, 'docs/release/candidates', `v${version}`);
   const releaseNotesFile = resolve(candidateDir, 'mobile-release-notes.md');
   const existingReleaseNotes = await readTextIfExists(releaseNotesFile);
-
-  if (
+  const preservesApprovedCandidatePack = Boolean(
     existingReleaseNotes
-    && !isDraftReleaseNotes(existingReleaseNotes)
-  ) {
-    console.log(`Preserved approved candidate pack: ${candidateDir}`);
-    return;
+    && !isDraftReleaseNotes(existingReleaseNotes),
+  );
+
+  if (preservesApprovedCandidatePack) {
+    console.log(`Preserving approved candidate evidence while creating any missing files: ${candidateDir}`);
   }
 
   const files = [
@@ -76,7 +76,7 @@ async function main() {
 | Lane | Result | Evidence | Notes |
 | --- | --- | --- | --- |
 | \`ios-simulator/direct-maestro\` | \`<fill-in-result>\` | [ios-simulator-direct-maestro-evidence.md](./ios-simulator-direct-maestro-evidence.md) | Auth and order Maestro runs |
-| \`live-backend-contract\` | \`<fill-in-result>\` | [live-backend-contract-evidence.md](./live-backend-contract-evidence.md) | Dashboard bootstrap is always required; holdings-backed chart parity must be attached when reusable MFA credentials are provided |
+| \`live-backend-contract\` | \`<fill-in-result>\` | [live-backend-contract-evidence.md](./live-backend-contract-evidence.md) | Dashboard bootstrap is always required; holdings-backed chart parity must be attached when reusable MFA credentials are provided; notification regression evidence is tracked separately via the shared matrix regression gates |
 | \`physical-device/edge-smoke\` | \`<fill-in-result>\` | [physical-device-edge-smoke-evidence.md](./physical-device-edge-smoke-evidence.md) | Manual approved-build smoke metadata and reviewer signoff |
 
 ## Manual Smoke Metadata
@@ -125,7 +125,7 @@ This package captures the mobile release-readiness evidence for Story 10.6 for v
 - Shared release matrix definition for mobile lanes
 - Candidate checklist and evidence-link index
 - Candidate handoff package with rollback and distribution ownership
-- Regression coverage references for auth, order, notification, and dashboard bootstrap flows
+- Regression coverage references for auth, order, and dashboard bootstrap flows, plus separate notification assets tracked outside the live lane
 
 ## Approval
 
@@ -222,8 +222,10 @@ This package finalizes the mobile release-readiness handoff for Story 10.6 for v
 
 ## Dashboard Scope
 
+- This lane covers live auth, order, and dashboard bootstrap contracts.
 - Dashboard bootstrap after fresh MFA login is always required for the automated lane.
 - Holdings-backed chart parity is required for release evidence when reusable MFA credentials are available for the approved candidate.
+- Notification regression evidence belongs in the shared matrix regression-gate artifacts, not this live lane.
 - If holdings-backed parity is not attached yet, keep the overall candidate package in draft state.
 `,
     },
@@ -321,7 +323,7 @@ This package finalizes the mobile release-readiness handoff for Story 10.6 for v
       continue;
     }
 
-    console.log(`Preserved ${file.path} (existing draft evidence)`);
+    console.log(`Preserved ${file.path} (existing candidate evidence)`);
   }
 }
 
