@@ -18,6 +18,8 @@
 
 ## Dashboard Scope
 
+- This lane covers live auth, order, and dashboard bootstrap contracts.
 - Dashboard bootstrap after fresh MFA login is always required for the automated lane.
 - Holdings-backed chart parity is required for release evidence when reusable MFA credentials are available for the approved candidate.
+- Notification regression evidence belongs in the shared matrix regression-gate artifacts, not this live lane.
 - If holdings-backed parity is not attached yet, keep the overall candidate package in draft state.

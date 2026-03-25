@@ -12,7 +12,8 @@ Run the scaffold command after the mobile release lanes are ready to package:
 npm run release:notes
 ```
 
-The command reads the mobile version from `package.json`, creates the candidate directory under `docs/release/candidates/v<package-version>/`, creates any missing candidate-pack files, and preserves existing draft evidence.
+The command reads the mobile version from `package.json`, creates the candidate directory under `docs/release/candidates/v<package-version>/`, creates any missing candidate-pack files, and preserves existing candidate evidence.
+That preservation applies to both draft files with manual notes and approved files that must remain immutable.
 Delete a specific draft file only when you intentionally want to regenerate that template from scratch.
 
 Current mobile package version path:

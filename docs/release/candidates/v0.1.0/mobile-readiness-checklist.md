@@ -33,7 +33,7 @@
 | Lane | Result | Evidence | Notes |
 | --- | --- | --- | --- |
 | `ios-simulator/direct-maestro` | `<fill-in-result>` | [ios-simulator-direct-maestro-evidence.md](./ios-simulator-direct-maestro-evidence.md) | Auth and order Maestro runs |
-| `live-backend-contract` | `<fill-in-result>` | [live-backend-contract-evidence.md](./live-backend-contract-evidence.md) | Dashboard bootstrap is always required; holdings-backed chart parity must be attached when reusable MFA credentials are provided |
+| `live-backend-contract` | `<fill-in-result>` | [live-backend-contract-evidence.md](./live-backend-contract-evidence.md) | Dashboard bootstrap is always required; holdings-backed chart parity must be attached when reusable MFA credentials are provided; notification regression evidence is tracked separately via the shared matrix regression gates |
 | `physical-device/edge-smoke` | `<fill-in-result>` | [physical-device-edge-smoke-evidence.md](./physical-device-edge-smoke-evidence.md) | Manual approved-build smoke metadata and reviewer signoff |
 
 ## Manual Smoke Metadata

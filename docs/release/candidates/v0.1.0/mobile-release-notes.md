@@ -23,7 +23,7 @@ This package captures the mobile release-readiness evidence for Story 10.6 for v
 - Shared release matrix definition for mobile lanes
 - Candidate checklist and evidence-link index
 - Candidate handoff package with rollback and distribution ownership
-- Regression coverage references for auth, order, notification, and dashboard bootstrap flows
+- Regression coverage references for auth, order, and dashboard bootstrap flows, plus separate notification assets tracked outside the live lane
 
 ## Approval
 
