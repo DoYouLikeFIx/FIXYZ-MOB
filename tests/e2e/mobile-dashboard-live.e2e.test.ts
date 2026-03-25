@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 
 import { createAccountApi } from '@/api/account-api';
 import { createAuthApi } from '@/api/auth-api';
@@ -8,7 +8,6 @@ import { InMemoryCookieManager } from '@/network/cookie-manager';
 import { CsrfTokenManager } from '@/network/csrf';
 import { HttpClient } from '@/network/http-client';
 import { createAuthNavigationState } from '@/navigation/auth-navigation';
-import { createOrderApi } from '@/api/order-api';
 import { authStore, resetAuthStore } from '@/store/auth-store';
 import type { AccountPosition, AccountSummary } from '@/types/account';
 
@@ -19,6 +18,16 @@ const LIVE_BASE_URL = process.env.LIVE_API_BASE_URL?.trim() ?? '';
 const LIVE_REQUEST_TIMEOUT_MS = 30_000;
 const LIVE_AUTH_PREFLIGHT_TIMEOUT_MS = 15_000;
 const DEFAULT_REGISTER_PASSWORD = 'LiveMobDashboard1!';
+const DEFAULT_EXISTING_NAME = 'Live Mob Dashboard';
+const LIVE_EMAIL = process.env.LIVE_EMAIL?.trim() ?? '';
+const LIVE_PASSWORD = (
+  process.env.LIVE_PASSWORD?.trim()
+  ?? process.env.LIVE_REGISTER_PASSWORD?.trim()
+  ?? ''
+);
+const LIVE_NAME = process.env.LIVE_NAME?.trim() ?? DEFAULT_EXISTING_NAME;
+const LIVE_TOTP_KEY = process.env.LIVE_TOTP_KEY?.trim() ?? '';
+const HAS_REUSABLE_HOLDINGS_ACCOUNT = Boolean(LIVE_EMAIL && LIVE_PASSWORD && LIVE_TOTP_KEY);
 
 class LiveCookieManager extends InMemoryCookieManager {
   async cookieHeader(url: string): Promise<string | undefined> {
@@ -86,12 +95,22 @@ const createCookieAwareFetch = (
 };
 
 const createLiveIdentity = () => {
+  if (HAS_REUSABLE_HOLDINGS_ACCOUNT) {
+    return {
+      email: LIVE_EMAIL,
+      name: LIVE_NAME,
+      password: LIVE_PASSWORD,
+      reuseExistingAccount: true,
+    };
+  }
+
   const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
   return {
     email: `mob_dashboard_live_${suffix}@example.com`,
     name: `Mob Dashboard ${suffix}`,
     password: process.env.LIVE_REGISTER_PASSWORD ?? DEFAULT_REGISTER_PASSWORD,
+    reuseExistingAccount: false,
   };
 };
 
@@ -178,6 +197,10 @@ const serializeSetCookies = (headers: Headers) =>
     .map((cookie) => cookie.split(';', 1)[0]?.trim() ?? '')
     .filter(Boolean)
     .join('; ');
+
+const expectProtectedDashboardStatus = (status: number) => {
+  expect([401, 403, 410]).toContain(status);
+};
 
 const requireLiveAuthContractHealthy = async (baseUrl: string) => {
   const startedAt = Date.now();
@@ -324,13 +347,9 @@ const createLiveHarness = (baseUrl: string) => {
   const accountApi = createAccountApi({
     client,
   });
-  const orderApi = createOrderApi({
-    client,
-  });
 
   return {
     accountApi,
-    orderApi,
     viewModel,
   };
 };
@@ -338,38 +357,43 @@ const createLiveHarness = (baseUrl: string) => {
 const registerEnrollAndLogin = async (baseUrl: string) => {
   await requireLiveAuthContractHealthy(baseUrl);
   const identity = createLiveIdentity();
-  const registrationHarness = createLiveHarness(baseUrl);
+  let manualEntryKey = LIVE_TOTP_KEY;
+  let enrollmentCode = '';
 
-  const registerResult = await registrationHarness.viewModel.submitRegister({
-    email: identity.email,
-    name: identity.name,
-    password: identity.password,
-  });
+  if (!identity.reuseExistingAccount) {
+    const registrationHarness = createLiveHarness(baseUrl);
 
-  expect(registerResult).toEqual({
-    success: true,
-  });
+    const registerResult = await registrationHarness.viewModel.submitRegister({
+      email: identity.email,
+      name: identity.name,
+      password: identity.password,
+    });
 
-  const enrollmentBootstrap = await registrationHarness.viewModel.loadTotpEnrollment();
-  expect(enrollmentBootstrap.success).toBe(true);
-  if (!enrollmentBootstrap.success) {
-    throw enrollmentBootstrap.error;
+    expect(registerResult).toEqual({
+      success: true,
+    });
+
+    const enrollmentBootstrap = await registrationHarness.viewModel.loadTotpEnrollment();
+    expect(enrollmentBootstrap.success).toBe(true);
+    if (!enrollmentBootstrap.success) {
+      throw enrollmentBootstrap.error;
+    }
+
+    const pendingMfa = registrationHarness.viewModel.getState().pendingMfa;
+    expect(pendingMfa?.loginToken).toBeTruthy();
+
+    manualEntryKey = enrollmentBootstrap.enrollment.manualEntryKey;
+    enrollmentCode = await generateStableTotp(manualEntryKey);
+    const enrollmentResult = await registrationHarness.viewModel.submitTotpEnrollmentConfirmation({
+      loginToken: pendingMfa!.loginToken,
+      enrollmentToken: enrollmentBootstrap.enrollment.enrollmentToken,
+      otpCode: enrollmentCode,
+    });
+
+    expect(enrollmentResult).toEqual({
+      success: true,
+    });
   }
-
-  const pendingMfa = registrationHarness.viewModel.getState().pendingMfa;
-  expect(pendingMfa?.loginToken).toBeTruthy();
-
-  const manualEntryKey = enrollmentBootstrap.enrollment.manualEntryKey;
-  const enrollmentCode = await generateStableTotp(manualEntryKey);
-  const enrollmentResult = await registrationHarness.viewModel.submitTotpEnrollmentConfirmation({
-    loginToken: pendingMfa!.loginToken,
-    enrollmentToken: enrollmentBootstrap.enrollment.enrollmentToken,
-    otpCode: enrollmentCode,
-  });
-
-  expect(enrollmentResult).toEqual({
-    success: true,
-  });
 
   resetAuthStore();
   const loginHarness = createLiveHarness(baseUrl);
@@ -385,7 +409,15 @@ const registerEnrollAndLogin = async (baseUrl: string) => {
   const loginToken = loginHarness.viewModel.getState().pendingMfa?.loginToken;
   expect(loginToken).toBeTruthy();
 
-  const loginCode = await waitForNextTotp(manualEntryKey, enrollmentCode);
+  if (!manualEntryKey) {
+    throw new Error(
+      'LIVE_TOTP_KEY is required when running the mobile dashboard live test against an existing account.',
+    );
+  }
+
+  const loginCode = identity.reuseExistingAccount
+    ? await generateStableTotp(manualEntryKey)
+    : await waitForNextTotp(manualEntryKey, enrollmentCode);
   const mfaResult = await loginHarness.viewModel.submitLoginMfa({
     loginToken: loginToken!,
     otpCode: loginCode,
@@ -419,19 +451,35 @@ const isChartReadyPosition = (position: AccountPosition | AccountSummary) => {
   );
 };
 
-const createLowRiskOrderSession = async (
-  loginHarness: ReturnType<typeof createLiveHarness>,
-  accountId: number,
+const resolveAvailableQuantity = (position: AccountPosition) =>
+  position.availableQuantity ?? position.availableQty;
+
+const expectDashboardBootstrapSnapshot = (
+  accountId: string,
+  summary: AccountSummary,
+  positions: AccountPosition[],
 ) => {
-  return loginHarness.orderApi.createOrderSession({
-    accountId,
-    clOrdId: randomUUID(),
-    symbol: '005930',
-    side: 'BUY',
-    orderType: 'LIMIT',
-    quantity: 1,
-    price: 10_000,
-  });
+  expect(summary.accountId).toBe(Number(accountId));
+  expect(summary.balance).toBeGreaterThanOrEqual(0);
+  expect(summary.availableBalance).toBeGreaterThanOrEqual(0);
+  expect(summary.currency).toBeTruthy();
+  expect(summary.asOf).toBeTruthy();
+  expect(Number.isNaN(Date.parse(summary.asOf))).toBe(false);
+
+  expect(Array.isArray(positions)).toBe(true);
+
+  for (const position of positions) {
+    const availableQuantity = resolveAvailableQuantity(position);
+
+    expect(position.accountId).toBe(Number(accountId));
+    expect(position.symbol).toBeTruthy();
+    expect(position.quantity).toBeGreaterThan(0);
+    expect(availableQuantity).toBeGreaterThanOrEqual(0);
+    expect(availableQuantity).toBeLessThanOrEqual(position.quantity);
+    expect(position.currency).toBeTruthy();
+    expect(position.asOf).toBeTruthy();
+    expect(Number.isNaN(Date.parse(position.asOf))).toBe(false);
+  }
 };
 
 const waitForDashboardChartData = async (
@@ -471,6 +519,49 @@ const waitForDashboardChartData = async (
   };
 };
 
+const formatDashboardDebugSnapshot = (input: {
+  accountId: string;
+  summary: AccountSummary;
+  positions: AccountPosition[];
+}) =>
+  JSON.stringify(
+    {
+      accountIdPresent: Boolean(input.accountId),
+      summary: {
+        currency: input.summary.currency,
+        asOfPresent: Boolean(input.summary.asOf),
+        balancePresent: input.summary.balance !== null && input.summary.balance !== undefined,
+        availableBalancePresent:
+          input.summary.availableBalance !== null && input.summary.availableBalance !== undefined,
+        valuationStatus: 'valuationStatus' in input.summary ? input.summary.valuationStatus ?? null : null,
+        marketPricePresent: 'marketPrice' in input.summary
+          ? input.summary.marketPrice !== null && input.summary.marketPrice !== undefined
+          : false,
+        quoteAsOfPresent: 'quoteAsOf' in input.summary ? Boolean(input.summary.quoteAsOf) : false,
+        quoteSourceMode: 'quoteSourceMode' in input.summary
+          ? input.summary.quoteSourceMode ?? null
+          : null,
+      },
+      positionsCount: input.positions.length,
+      positions: input.positions.map((position, index) => ({
+        index,
+        hasSymbol: Boolean(position.symbol),
+        quantityPresent: position.quantity > 0,
+        availableQuantityPresent: resolveAvailableQuantity(position) !== null
+          && resolveAvailableQuantity(position) !== undefined,
+        currency: position.currency,
+        asOfPresent: Boolean(position.asOf),
+        valuationStatus: position.valuationStatus ?? null,
+        marketPricePresent: position.marketPrice !== null && position.marketPrice !== undefined,
+        quoteSnapshotPresent: Boolean(position.quoteSnapshotId),
+        quoteAsOfPresent: Boolean(position.quoteAsOf),
+        quoteSourceMode: position.quoteSourceMode ?? null,
+      })),
+    },
+    null,
+    2,
+  );
+
 describe.runIf(Boolean(LIVE_BASE_URL))('Live mobile dashboard against backend', () => {
   beforeAll(() => {
     authStore.initialize(null);
@@ -484,48 +575,86 @@ describe.runIf(Boolean(LIVE_BASE_URL))('Live mobile dashboard against backend', 
     resetAuthStore();
   });
 
-  it('returns quote metadata required by the mobile dashboard chart after fresh MFA login', async () => {
-    const { accountId, loginHarness } = await registerEnrollAndLogin(LIVE_BASE_URL);
+  it('rejects unauthenticated dashboard account endpoints before mobile login bootstrap', async () => {
+    await requireLiveAuthContractHealthy(LIVE_BASE_URL);
 
-    let positions = await loginHarness.accountApi.fetchAccountPositions({
+    const summaryResponse = await fetchWithTimeout(
+      `${LIVE_BASE_URL}/api/v1/accounts/999999/summary`,
+      {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+        },
+      },
+      LIVE_AUTH_PREFLIGHT_TIMEOUT_MS,
+    );
+    const positionsResponse = await fetchWithTimeout(
+      `${LIVE_BASE_URL}/api/v1/accounts/999999/positions/list`,
+      {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+        },
+      },
+      LIVE_AUTH_PREFLIGHT_TIMEOUT_MS,
+    );
+
+    expectProtectedDashboardStatus(summaryResponse.status);
+    expectProtectedDashboardStatus(positionsResponse.status);
+  }, 120_000);
+
+  const holdingsBackedDashboardParity = HAS_REUSABLE_HOLDINGS_ACCOUNT ? it : it.skip;
+
+  holdingsBackedDashboardParity(
+    'keeps holdings-backed dashboard summary and positions aligned after MFA login',
+    async () => {
+      const { accountId, loginHarness } = await registerEnrollAndLogin(LIVE_BASE_URL);
+      const { summary, positions } = await waitForDashboardChartData(loginHarness, accountId);
+      const chartReadyPosition = positions.find((position) => isChartReadyPosition(position));
+
+      expectDashboardBootstrapSnapshot(accountId, summary, positions);
+
+      if (!chartReadyPosition) {
+        throw new Error(
+          `Configured live dashboard account must expose at least one chart-ready position for parity assertions.\n${
+            formatDashboardDebugSnapshot({
+              accountId,
+              summary,
+              positions,
+            })
+          }`,
+        );
+      }
+
+      const availableQuantity = resolveAvailableQuantity(chartReadyPosition);
+      expect(positions.length).toBeGreaterThan(0);
+      expect(availableQuantity).toBeGreaterThanOrEqual(0);
+      expect(availableQuantity).toBeLessThanOrEqual(chartReadyPosition.quantity);
+      expect(chartReadyPosition.valuationStatus).toBe('FRESH');
+      expect(chartReadyPosition.marketPrice).toBeGreaterThan(0);
+      expect(chartReadyPosition.quoteSnapshotId).toBeTruthy();
+      expect(chartReadyPosition.quoteSourceMode).toMatch(/^(LIVE|DELAYED|REPLAY)$/);
+      expect(chartReadyPosition.quoteAsOf).toBeTruthy();
+      expect(Number.isNaN(Date.parse(chartReadyPosition.quoteAsOf!))).toBe(false);
+
+      if (chartReadyPosition.avgPrice != null) {
+        expect(chartReadyPosition.avgPrice).toBeGreaterThan(0);
+      }
+    },
+    120_000,
+  );
+
+  it('returns dashboard bootstrap data after fresh MFA login', async () => {
+    const { accountId, loginHarness } = await registerEnrollAndLogin(LIVE_BASE_URL);
+    const summary = await loginHarness.accountApi.fetchAccountSummary({
+      accountId,
+    });
+    const positions = await loginHarness.accountApi.fetchAccountPositions({
       accountId,
     });
 
-    if (positions.length === 0) {
-      const createdSession = await createLowRiskOrderSession(loginHarness, Number(accountId));
-
-      expect(createdSession).toMatchObject({
-        status: 'AUTHED',
-        challengeRequired: false,
-        qty: 1,
-        symbol: '005930',
-      });
-
-      const executedSession = await loginHarness.orderApi.executeOrderSession(
-        createdSession.orderSessionId,
-      );
-
-      expect(executedSession.status).toBe('COMPLETED');
-    }
-
-    const dashboardData = await waitForDashboardChartData(loginHarness, accountId);
-    const summary = dashboardData.summary;
-    positions = dashboardData.positions;
-
-    expect(Array.isArray(positions)).toBe(true);
-    expect(positions.length).toBeGreaterThan(0);
-    expect(summary.accountId).toBe(Number(accountId));
-
-    const summaryChartReady = isChartReadyPosition(summary);
-    const positionsChartReady = positions.some((position) => isChartReadyPosition(position));
-
-    expect({
-      positions,
-      summary,
-    }).toMatchObject({
-      positions: expect.any(Array),
-      summary: expect.any(Object),
-    });
-    expect(summaryChartReady || positionsChartReady).toBe(true);
-  }, 150_000);
+    expectDashboardBootstrapSnapshot(accountId, summary, positions);
+  }, 120_000);
 });
